@@ -1,0 +1,121 @@
+ POST /api/chat 200 in 7.3s (next.js: 3ms, application-code: 7.3s)
+ GET /api/chats 200 in 424ms (next.js: 3ms, application-code: 421ms)
+Error [AI_APICallError]: Request contains an invalid argument.
+    at ignore-listed frames {
+  cause: undefined,
+  url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:streamGenerateContent?alt=sse',
+  requestBodyValues: {
+    generationConfig: {
+      maxOutputTokens: undefined,
+      temperature: undefined,
+      topK: undefined,
+      topP: undefined,
+      frequencyPenalty: undefined,
+      presencePenalty: undefined,
+      stopSequences: undefined,
+      seed: undefined,
+      responseMimeType: undefined,
+      responseJsonSchema: undefined,
+      responseModalities: undefined,
+      thinkingConfig: undefined
+    },
+    contents: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object]
+    ],
+    systemInstruction: { parts: [Array] },
+    safetySettings: undefined,
+    tools: [ [Object] ],
+    toolConfig: { functionCallingConfig: [Object] },
+    cachedContent: undefined,
+    labels: undefined,
+    serviceTier: undefined
+  },
+  statusCode: 400,
+  responseHeaders: {
+    'alt-svc': 'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000',
+    'content-length': '127',
+    'content-type': 'text/event-stream',
+    date: 'Fri, 30 Oct 2026 21:24:34 GMT',
+    server: 'scaffolding on HTTPServer2',
+    'server-timing': 'gfet4t7; dur=5813',
+    vary: 'Origin, X-Origin, Referer',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'SAMEORIGIN',
+    'x-xss-protection': '0'
+  },
+  responseBody: '{\n' +
+    '  "error": {\n' +
+    '    "code": 400,\n' +
+    '    "message": "Request contains an invalid argument.",\n' +
+    '    "status": "INVALID_ARGUMENT"\n' +
+    '  }\n' +
+    '}\n',
+  isRetryable: false,
+  data: {
+    error: {
+      code: 400,
+      message: 'Request contains an invalid argument.',
+      status: 'INVALID_ARGUMENT'
+    }
+  }
+}
+
+---
+
+(node:18284) Warning: AI SDK Warning (google.generative-ai / gemini-3.1-flash-lite): Replayed 1 `functionCall` part(s) for a Gemini 3 model without a `thoughtSignature` (tools: `renderUi`). Injected the documented `skip_thought_signature_validator` sentinel to keep the request from failing with HTTP 400. The likely cause is application code that drops `providerOptions.google.thoughtSignature` when persisting or serializing assistant tool-call messages. See https://ai.google.dev/gemini-api/docs/thought-signatures.
+agent_step_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  step: 2,
+  finishReason: 'tool-calls',
+  inputTokens: 10267,
+  outputTokens: 248,
+  toolCalls: [ 'renderUi' ]
+}
+(node:18284) Warning: AI SDK Warning (google.generative-ai / gemini-3.1-flash-lite): Replayed 1 `functionCall` part(s) for a Gemini 3 model without a `thoughtSignature` (tools: `renderUi`). Injected the documented `skip_thought_signature_validator` sentinel to keep the request from failing with HTTP 400. The likely cause is application code that drops `providerOptions.google.thoughtSignature` when persisting or serializing assistant tool-call messages. See https://ai.google.dev/gemini-api/docs/thought-signatures.
+agent_step_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  step: 3,
+  finishReason: 'tool-calls',
+  inputTokens: 12285,
+  outputTokens: 87,
+  toolCalls: [ 'renderUi' ]
+}
+(node:18284) Warning: AI SDK Warning (google.generative-ai / gemini-3.1-flash-lite): Replayed 1 `functionCall` part(s) for a Gemini 3 model without a `thoughtSignature` (tools: `renderUi`). Injected the documented `skip_thought_signature_validator` sentinel to keep the request from failing with HTTP 400. The likely cause is application code that drops `providerOptions.google.thoughtSignature` when persisting or serializing assistant tool-call messages. See https://ai.google.dev/gemini-api/docs/thought-signatures.
+agent_step_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  step: 4,
+  finishReason: 'tool-calls',
+  inputTokens: 12471,
+  outputTokens: 118,
+  toolCalls: [ 'updatePlan' ]
+}
+(node:18284) Warning: AI SDK Warning (google.generative-ai / gemini-3.1-flash-lite): Replayed 1 `functionCall` part(s) for a Gemini 3 model without a `thoughtSignature` (tools: `renderUi`). Injected the documented `skip_thought_signature_validator` sentinel to keep the request from failing with HTTP 400. The likely cause is application code that drops `providerOptions.google.thoughtSignature` when persisting or serializing assistant tool-call messages. See https://ai.google.dev/gemini-api/docs/thought-signatures.
+agent_step_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  step: 5,
+  finishReason: 'tool-calls',
+  inputTokens: 5209,
+  outputTokens: 149,
+  toolCalls: [ 'renderUi' ]
+}
+agent_step_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  step: 6,
+  finishReason: 'stop',
+  inputTokens: 5788,
+  outputTokens: 164,
+  toolCalls: []
+}
+agent_end {
+  chatId: 'b4b58b36-2e70-4193-8cbd-8b7699edb17a',
+  steps: 6,
+  aborted: false,
+  outcome: 'completed'
+}
+
+isso acontece durante o uso de chat-ui essa api acaba causando alguns bugs'

@@ -130,7 +130,11 @@ export function ModelSelect({
       return
     }
 
-    if (!quickModels.some((model) => getModelKey(model) === value)) {
+    const hasMatchingModel = quickModels.some(
+      (model) => getModelKey(model) === value,
+    )
+
+    if (!hasMatchingModel && typeof value === "string" && value.includes(":")) {
       onChange(getModelKey(quickModels[0]))
     }
   }, [quickModels, value, onChange])

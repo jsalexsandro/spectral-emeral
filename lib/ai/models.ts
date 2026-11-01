@@ -227,6 +227,21 @@ const modelCatalog = [
     },
     status: "available",
   },
+  {
+    id: "cohere/north-mini-code:free",
+    provider: "openrouter",
+    name: "Cohere: North Mini Code (free)",
+    description:
+      "Modelo gratuito da Cohere via OpenRouter, voltado para código com bom custo-benefício.",
+    releasedAt: "2026-01-01",
+    contextWindow: 128_000,
+    pricing: {
+      currency: "USD",
+      inputPerMillion: 0,
+      outputPerMillion: 0,
+    },
+    status: "available",
+  },
 ] as const satisfies readonly AIModel[]
 
 export const aiModels: readonly AIModel[] =

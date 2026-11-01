@@ -11,6 +11,7 @@ import {
 import { ArrowUp, Loader2, Paperclip, Square } from "lucide-react"
 import { useChatSession } from "@/app/app/chat-provider"
 import { RenderUiPart } from "@/components/ai-ui"
+import { ExternUiHandler } from "@/components/ai-ui/extern-ui-handler"
 import {
   resolveDefaultModelKey,
   type InstantModelPreference,
@@ -199,9 +200,11 @@ function ChatSession({
                   ) : (
                     <div className="flex flex-col gap-2">
                       <AgentActivity
+                        key={`${item.id}-activity`}
                         parts={item.parts}
                         isStreaming={isStreaming}
                       />
+                      <ExternUiHandler key={`${item.id}-extern`} parts={item.parts} />
                       {item.parts.map((part, index) => {
                         if (part.type === "text" && part.text.trim()) {
                           return (

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import type { RenderUiInput, UiComponentName } from "@/lib/ai/ui/catalog"
 import { Callout } from "./callout"
+import { ChatUi } from "./chat-ui"
 import { DataTable } from "./data-table"
 import { InfoCard } from "./info-card"
 import { SourceList } from "./source-list"
@@ -14,6 +15,7 @@ export const aiUiRegistry = {
   dataTable: DataTable,
   timeline: Timeline,
   sourceList: SourceList,
+  chatUi: ChatUi,
 } as const satisfies Record<UiComponentName, unknown>
 
 export function renderAiUiComponent(input: RenderUiInput): ReactNode {
@@ -30,6 +32,8 @@ export function renderAiUiComponent(input: RenderUiInput): ReactNode {
       return <Timeline {...input.props} />
     case "sourceList":
       return <SourceList {...input.props} />
+    case "chatUi":
+      return <ChatUi {...input.props} />
     default: {
       const exhaustive: never = input
       return exhaustive

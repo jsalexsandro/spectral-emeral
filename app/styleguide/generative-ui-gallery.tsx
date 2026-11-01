@@ -105,6 +105,40 @@ const successFixtures: { label: string; input: RenderUiInput }[] = [
       },
     },
   },
+  {
+    label: "chatUi",
+    input: {
+      component: "chatUi",
+      props: {
+        title: "Ação rápida recomendada",
+        children: [
+          {
+            type: "text",
+            value: "Deseja aplicar esta otimização agora?",
+            variant: "p",
+          },
+          {
+            type: "div",
+            className: "flex flex-row gap-2",
+            children: [
+              {
+                type: "button",
+                label: "Confirmar",
+                variant: "default",
+                action: "confirm",
+              },
+              {
+                type: "button",
+                label: "Cancelar",
+                variant: "outline",
+                action: "cancel",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
 ]
 
 const stateFixtures: { label: string; part: RenderUiPartData }[] = [

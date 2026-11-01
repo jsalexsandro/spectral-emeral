@@ -4,6 +4,22 @@ export const UI_CATALOG_VERSION = 1
 
 export const RENDER_UI_TOOL_NAME = "renderUi" as const
 
+export const uiComponentNames = [
+  "callout",
+  "infoCard",
+  "statGrid",
+  "dataTable",
+  "timeline",
+  "sourceList",
+  "chatUi",
+] as const
+
+export type UiComponentName = (typeof uiComponentNames)[number]
+
+export function isUiComponentName(value: string): value is UiComponentName {
+  return (uiComponentNames as readonly string[]).includes(value)
+}
+
 const boundedText = (max: number) => z.string().trim().min(1).max(max)
 const optionalText = (max: number) => z.string().trim().min(1).max(max).optional()
 
@@ -91,20 +107,56 @@ export const sourceListPropsSchema = z.object({
     .max(8),
 })
 
-export const uiComponentNames = [
-  "callout",
-  "infoCard",
-  "statGrid",
-  "dataTable",
-  "timeline",
-  "sourceList",
-] as const
+const chatUiTextSchema = z.object({
+  type: z.literal("text"),
+  value: boundedText(1000),
+  variant: z.enum(["h1", "h2", "p", "span", "muted", "caption"]).optional(),
+  weight: z.enum(["normal", "medium", "semibold", "bold"]).optional(),
+})
 
-export type UiComponentName = (typeof uiComponentNames)[number]
+const chatUiButtonSchema = z.object({
+  type: z.literal("button"),
+  label: boundedText(60),
+  variant: z.enum(["default", "outline", "secondary", "ghost"]).optional(),
+  action: optionalText(120),
+})
 
-export function isUiComponentName(value: string): value is UiComponentName {
-  return (uiComponentNames as readonly string[]).includes(value)
-}
+const chatUiLeafNodeSchema = z.discriminatedUnion("type", [chatUiTextSchema, chatUiButtonSchema])
+
+const chatUiDivLevel2Schema = z.object({
+  type: z.literal("div"),
+  className: optionalText(200),
+  children: z.array(chatUiLeafNodeSchema).min(1).max(10),
+})
+
+const chatUiDivLevel1ChildSchema = z.discriminatedUnion("type", [
+  chatUiTextSchema,
+  chatUiButtonSchema,
+  chatUiDivLevel2Schema,
+])
+
+const chatUiDivLevel1Schema = z.object({
+  type: z.literal("div"),
+  className: optionalText(200),
+  children: z.array(chatUiDivLevel1ChildSchema).min(1).max(10),
+})
+
+export const chatUiNodeSchema = z.discriminatedUnion("type", [
+  chatUiTextSchema,
+  chatUiButtonSchema,
+  chatUiDivLevel1Schema,
+])
+
+export const chatUiPropsSchema = z.object({
+  title: optionalText(120),
+  children: z.array(chatUiNodeSchema).min(1).max(12),
+})
+
+export type ChatUiTextNode = z.infer<typeof chatUiTextSchema>
+export type ChatUiButtonNode = z.infer<typeof chatUiButtonSchema>
+export type ChatUiDivNode = z.infer<typeof chatUiDivLevel1Schema>
+export type ChatUiNode = z.infer<typeof chatUiNodeSchema>
+export type ChatUiProps = z.infer<typeof chatUiPropsSchema>
 
 export const uiComponentDescriptions: Record<UiComponentName, string> = {
   callout:
@@ -119,6 +171,8 @@ export const uiComponentDescriptions: Record<UiComponentName, string> = {
     "Lista ordenada de etapas com status done, current ou pending. Use para processos, planos e sequências.",
   sourceList:
     "Lista de fontes reais com título, URL http(s) e trecho opcional. Use somente com páginas já consultadas.",
+  chatUi:
+    "Apenas primitivos: text, button, div. Max 2 níveis de divs (div > div). Div interno só pode ter text ou button. Use className para layout (flex, grid).",
 }
 
 export const uiCatalogSummary = uiComponentNames
@@ -149,6 +203,10 @@ export const renderUiInputSchema = z.discriminatedUnion("component", [
   z.object({
     component: z.literal("sourceList"),
     props: sourceListPropsSchema,
+  }),
+  z.object({
+    component: z.literal("chatUi"),
+    props: chatUiPropsSchema,
   }),
 ])
 

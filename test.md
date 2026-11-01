@@ -1,0 +1,1 @@
+1. Testar a chatUI, pois ela da muito erro. Algumas IA não consegue usalas.

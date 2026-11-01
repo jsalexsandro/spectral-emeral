@@ -183,7 +183,8 @@ Passo 5:
   - Adicionar personalização por usuário → criar nova seção (ou ampliar `PromptContext`), nunca editar o prompt já versionado sem subir a versão.
   - `Message.promptVersion` registra qual versão gerou cada resposta do assistente.
 
-- Tools nativas
+Passo 6
+- Tools nativas (a nivel de chat)
   Isso deve ser feita de maneira profissional pois um dos diferencias da IA é as tools nativas
 
   - [x] Camada de tools em `lib/ai/tools/` com registro `getChatTools()`
@@ -201,7 +202,9 @@ Passo 5:
     - [x] Tool nativa: Planejamento visível (`updatePlan`)
     - [x] Formatação nativa das respostas em markdown (`components/chat/markdown-message.tsx`, `react-markdown` + `remark-gfm`)
 
+  essas tools rodam no chat, no futuro teremos tools externas que rodam ana aplicação, ela possuiram o sufixo ExternTools
 
+Passo 7:
 Loop agêntico
 - Agente: `lib/ai/agents/spectral-agent.ts` (`ToolLoopAgent`, `isStepCount(12)` + budget de tokens)
 - Plano: `lib/ai/tools/update-plan.ts` e `lib/ai/plan.ts`
@@ -210,35 +213,62 @@ Loop agêntico
 - Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
 
 
-Passo 7 — Generative UI
+# Passo 8 — Generative UI
+
 Aqui começa uma das funcionalidades mais interessantes do Spectral.
 
 Referência técnica completa: [`specs/ui-generative-components.md`](./ui-generative-components.md)
 
 Criar uma camada de componentes dinâmicos que podem ser apresentados pela IA dentro da conversa.
 
-Existiram dois tipos de components:
-1. Components a nivel de chat (aparecem no chat)
-2. Components a nivel de aplicação (aparecem na ui do site, na aplicação inteira)
+## Tipos de componentes
+1. **Componentes a nível de chat** (aparecem no chat) — Implementado (interno de chat)
+2. **Componentes a nível de aplicação** (aparecem na UI do site) — Futuro (externo de chat)
 
-(Inicialmente implementaremos apenas o tipo 01)
+## Infraestrutura
+- [x] Criar `components/ai-ui/`
+- [x] Criar registro de componentes permitidos (`components/ai-ui/registry.tsx`)
+- [x] Criar mecanismo de identificação das chamadas de UI (`RENDER_UI_TOOL_NAME`)
+- [x] Criar renderizador de componentes (`components/ai-ui/render-ui-part.tsx`)
+- [x] Implementar estados: loading, success, error e waiting
+- [x] Persistir os dados necessários para recuperar as interfaces no histórico (`Message.parts`)
+- [x] Catálogo versionado `UI_CATALOG_VERSION = 1`
+- [x] Tool `renderUi` registrada em `getChatTools()` e anunciada no system prompt
+- [x] Validação Zod no servidor e revalidação no cliente antes de renderizar
 
-Sugestão de implementação:
-- [x] Criar components/ai-ui/.
-- [x] Criar registro de componentes permitidos (`components/ai-ui/registry.tsx`).
-- [x] Criar mecanismo de identificação das chamadas de UI (`RENDER_UI_TOOL_NAME` + `getToolName`).
-- [x] Criar renderizador de componentes (`components/ai-ui/render-ui-part.tsx`).
-- [x] Implementar estados: loading, success, error e waiting.
-- [x] Persistir os dados necessários para recuperar as interfaces no histórico (`Message.parts`).
-- [x] Catálogo versionado `UI_CATALOG_VERSION = 1` com 6 componentes (callout, infoCard, statGrid, dataTable, timeline, sourceList).
-- [x] Tool `renderUi` registrada em `getChatTools()` e anunciada no system prompt v3.
-- [x] Validação Zod no servidor e revalidação no cliente antes de renderizar.
-- [x] Galeria de validação visual em `/styleguide#generative-ui`.
+## Componentes Específicos (nível de chat)
+- [x] `callout` (Destaque/alerta)
+- [x] `infoCard` (Resumo com rótulo/valor)
+- [x] `statGrid` (Grade de métricas)
+- [x] `dataTable` (Tabela estruturada)
+- [x] `timeline` (Etapas de processo)
+- [x] `sourceList` (Fontes e referências)
+
+## ChatUI.Api (Primitivos, nível de chat)
+- [x] `Text` (variantes: h1, h2, p, span, muted, caption + pesos normal/medium/semibold/bold)
+- [x] `Button` (variantes: default, outline, secondary, ghost)
+- [x] `Div` (container com `className` para controle de layout)
+
+**Regras:**
+- [x] Apenas `text`, `button`, `div`
+- [x] Máximo 2 níveis de `div` (`div > div`)
+- [x] Se `div` estiver dentro de outro `div` (nível 2), seus filhos só podem ser `text` ou `button`
+- [x] `div` no topo (nível 1) pode conter `text`, `button` ou `div` (nível 2)
+- [x] Layout controlado via `className` (`flex`, `flex-row`, `flex-col`, `gap`, `justify-*`, `items-*`, `grid`)
+- [x] Sem recursão — schemas explícitos por nível
+- [x] Sem `component` dentro do `chatUi`
+
+## Componentes Externos (nível de aplicação)
+- [x] **ExternUI.Api** — Componentes que rodam fora do chat (na aplicação). Integrado ao sistema.
+
+  Componentes:
+    - [x] `Toast` (ExternUI.Api.Toast) — Exibir notificação toast na aplicação via tool `externUi` (estilizado com design system, com prevenção de duplicados)
 
 
+Passo 10:
+  coloque aqui...'
 
 
-  
 
 ### Passo 40 (futuro): configurações personalizadas de prompt
 
@@ -253,7 +283,23 @@ uma camada de preferências por usuário.
 - [ ] Ampliar `PromptContext` e criar seções condicionais em `lib/ai/prompts/sections/` que só entram quando houver preferência
 - [ ] Manter o prompt base sempre acima das preferências (preferências não podem remover segurança/limites)
 - [ ] Incrementar `SYSTEM_PROMPT_VERSION` ao introduzir a composição com preferências
-- [ ] Rotas `GET/PUT /api/prompt-preferences` com validação Zod
+- [ ] Rotas `GET/PUT /api/prompt-preferences` com validação Zod'
 - [ ] `Message.promptVersion` + hash/registro das preferências aplicadas para rastreabilidade
 
+  Passo 41: tools de estado interativo: futuro
+  vamos criar uma tools de estado interativo
+  isso será uma maneira de termos "state" no chat
+  isso se chamará "chatState" e servirá pra salvar dados
+  isso no dara dinamismo, trazendo mais poder pra a ui do chat
+  o chatState controla a reatividade do react
+
+  exemplos legais:
+    Crie um text com o numero 10
+    (A IA vai criar um texto com o numero 10)
+
+    Some + 10 naquele text
+    (a reatividade do sistema vai fazer isso ficar muito bom!!)
+
+    A IA deverá saber integrar isso a UI
+    
   
