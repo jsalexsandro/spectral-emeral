@@ -1,7 +1,11 @@
-import type { ChatUiNode, ChatUiProps } from "@/lib/ai/ui/catalog"
-import { cn } from "@/lib/utils"
+"use client"
 
-function renderNode(node: ChatUiNode, index: number): React.ReactNode {
+import type { ReactNode } from "react"
+import type { PanelNode, PanelProps } from "@/lib/ai/ui/catalog"
+import { cn } from "@/lib/utils"
+import { useActionRunner } from "./action-context"
+
+function renderNode(node: PanelNode, index: number): ReactNode {
   switch (node.type) {
     case "text": {
       const Component =
@@ -55,21 +59,12 @@ function renderNode(node: ChatUiNode, index: number): React.ReactNode {
               : "bg-primary text-primary-foreground hover:bg-primary/80"
 
       return (
-        <button
+        <PanelButton
           key={`button-${index}`}
-          type="button"
-          onClick={() => {
-            if (node.action) {
-              console.info("ChatUI.Api Action clicked:", node.action)
-            }
-          }}
-          className={cn(
-            "inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-            variantClasses,
-          )}
-        >
-          {node.label}
-        </button>
+          action={node.action}
+          label={node.label}
+          className={variantClasses}
+        />
       )
     }
     case "div": {
@@ -78,9 +73,22 @@ function renderNode(node: ChatUiNode, index: number): React.ReactNode {
           key={`div-${index}`}
           className={cn("flex flex-col gap-2.5", node.className)}
         >
-          {node.children.map((child, childIndex) =>
-            renderNode(child as ChatUiNode, childIndex),
-          )}
+          {node.children.map((child, childIndex) => {
+            if (child.type === "div") {
+              return (
+                <div
+                  key={`div-${index}-${childIndex}`}
+                  className={cn("flex flex-col gap-2.5", child.className)}
+                >
+                  {child.children.map((leaf, leafIndex) =>
+                    renderNode(leaf, leafIndex),
+                  )}
+                </div>
+              )
+            }
+
+            return renderNode(child, childIndex)
+          })}
         </div>
       )
     }
@@ -89,7 +97,39 @@ function renderNode(node: ChatUiNode, index: number): React.ReactNode {
   }
 }
 
-export function ChatUi({ title, children }: ChatUiProps) {
+function PanelButton({
+  action,
+  label,
+  className,
+}: {
+  action: Extract<PanelNode, { type: "button" }>["action"]
+  label: string
+  className: string
+}) {
+  const run = useActionRunner()
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+      if (action) {
+        if (action.type === "navigate") {
+          if (!window.confirm("Confirmar navegação para " + action.path + "?")) return
+        }
+        void run(action)
+      }
+    }}
+      className={cn(
+        "inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+        className,
+      )}
+    >
+      {label}
+    </button>
+  )
+}
+
+export function Panel({ title, children }: PanelProps) {
   return (
     <div className="rounded-xl border border-border/70 bg-card p-4 shadow-soft">
       {title && (
@@ -103,3 +143,6 @@ export function ChatUi({ title, children }: ChatUiProps) {
     </div>
   )
 }
+
+/** @deprecated Use `Panel`. */
+export const ChatUi = Panel

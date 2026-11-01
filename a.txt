@@ -1,0 +1,22 @@
+esqueça isso. vamos criar outras coisas.
+
+minha ideia.
+
+é criar agora uma nova funcionalidade chamada "devices" (dispositivos)
+
+e o que será isso?
+
+isso seraá uma maneira de conectar dispositivos fisicos.
+exemplo: vamos supor que conecte um no spectral
+fazendo a ia vai ganhar poderes pois ela vai conseguir controlar esse dispositvo a distância.
+
+como vai funcionar isso?
+
+no pc/qualquer-dispositivo compativel
+a gente vai instalar o driver do spectral/driver
+
+esse drive se conecta com o spectral tendo a conexão feita a IA, ja vai pode controlar o dispositivo.
+---
+
+no momento quero apenas fazer esse sistema de conexão ok?
+

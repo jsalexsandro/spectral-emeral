@@ -106,9 +106,9 @@ const successFixtures: { label: string; input: RenderUiInput }[] = [
     },
   },
   {
-    label: "chatUi",
+    label: "panel",
     input: {
-      component: "chatUi",
+      component: "panel",
       props: {
         title: "Ação rápida recomendada",
         children: [
@@ -125,13 +125,17 @@ const successFixtures: { label: string; input: RenderUiInput }[] = [
                 type: "button",
                 label: "Confirmar",
                 variant: "default",
-                action: "confirm",
+                action: { type: "sendMessage", text: "Confirmar" },
               },
               {
                 type: "button",
                 label: "Cancelar",
                 variant: "outline",
-                action: "cancel",
+                action: {
+                  type: "toast",
+                  title: "Ação cancelada",
+                  variant: "info",
+                },
               },
             ],
           },

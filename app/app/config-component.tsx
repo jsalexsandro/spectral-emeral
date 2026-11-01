@@ -38,12 +38,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useTheme, type Theme } from "@/components/theme-provider"
+import type { ConfigSection } from "@/lib/config-sections"
 import { cn } from "@/lib/utils"
 import { ByokSection } from "./byok-section"
 
-type ConfigSection = "general" | "account" | "byok"
-
-type ConfigUser = {
+export type ConfigUser = {
   name?: string | null
   nickname?: string | null
   email?: string | null
@@ -55,6 +54,8 @@ type SaveStatus = "idle" | "saving" | "saved" | "error"
 type ConfigComponentProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  section: ConfigSection
+  onSectionChange: (section: ConfigSection) => void
   user: ConfigUser
 }
 
@@ -95,20 +96,12 @@ function getInitials(user: ConfigUser) {
 export function ConfigComponent({
   open,
   onOpenChange,
+  section,
+  onSectionChange,
   user,
 }: ConfigComponentProps) {
-  const [section, setSection] = useState<ConfigSection>("general")
-
-  function handleOpenChange(nextOpen: boolean) {
-    onOpenChange(nextOpen)
-
-    if (!nextOpen) {
-      setSection("general")
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         padded={false}
         className="h-[min(640px,calc(100dvh-2rem))] max-w-3xl"
@@ -128,7 +121,7 @@ export function ConfigComponent({
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setSection(id)}
+                  onClick={() => onSectionChange(id)}
                   aria-current={section === id ? "page" : undefined}
                   className={cn(
                     navItemClassName,

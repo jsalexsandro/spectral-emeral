@@ -165,108 +165,94 @@ Passo 4 (o basico do funcionamento dos chats)
   ao clicar nesse component ele deve se comrportar assim na url: /chat/[uuid], mantendo o layout padrão do site, mudar apenas url
 
 
-Passo 5:
-- System prompt básico (definição do sistema de prompts internos)
-  Isso deve ser bem construido pois com a evolução do sistema, os system prompts vão evoluindo para se adequar ao user!!
-  #### System prompt v4 (`SYSTEM_PROMPT_VERSION = 4`)
+# Passo 5 — System prompt versionado
 
-  Referências:
-  - Composição: `lib/ai/prompts/build.ts` (`buildSystemPrompt`)
-  - Seções: `lib/ai/prompts/sections/` (identidade, estilo, capacidades, loop agêntico, interfaces generativas, segurança, contexto do usuário)
-  - Versão e changelog: `lib/ai/prompts/registry.ts`
-  - Injeção: `app/api/chat/route.ts`
-  - Persistência: `Message.promptVersion`
-  - Revisão do prompt composto: `npm run prompt:print`
-  
-  Regras de evolução:
-  - Mudou o texto de qualquer seção → incrementar `SYSTEM_PROMPT_VERSION` e registrar em `systemPromptChangelog`.
-  - Adicionar personalização por usuário → criar nova seção (ou ampliar `PromptContext`), nunca editar o prompt já versionado sem subir a versão.
-  - `Message.promptVersion` registra qual versão gerou cada resposta do assistente.
+O prompt é composto por seções independentes e versionado para permitir evolução segura.
 
-Passo 6
-- Tools nativas (a nivel de chat)
-  Isso deve ser feita de maneira profissional pois um dos diferencias da IA é as tools nativas
+- [x] Composição em `lib/ai/prompts/build.ts` (`buildSystemPrompt`)
+- [x] Seções em `lib/ai/prompts/sections/` (identidade, estilo, capacidades, loop agêntico, UI e ações, segurança, contexto do usuário)
+- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 7`)
+- [x] Injeção em `app/api/chat/route.ts`
+- [x] Persistência da versão em `Message.promptVersion`
+- [x] Revisão do prompt composto com `npm run prompt:print`
 
-  - [x] Camada de tools em `lib/ai/tools/` com registro `getChatTools()`
+Regras de evolução:
+- Mudou o texto de qualquer seção → incrementar `SYSTEM_PROMPT_VERSION` e registrar em `systemPromptChangelog`.
+- Adicionar personalização por usuário → criar nova seção ou ampliar `PromptContext`; nunca editar o prompt já versionado sem subir a versão.
+- `Message.promptVersion` registra qual versão gerou cada resposta do assistente.
 
-  - [x] Proteções: timeout, limite de resposta, bloqueio de localhost/IPs privados e revalidação de redirects (SSRF)
-  - [x] Loop agêntico no `/api/chat` com `ToolLoopAgent`, até 12 passos e budget de tokens
-  - [x] Tool `updatePlan` com timeline expansível em `components/chat/agent-activity.tsx`
-  - [x] Poda de contexto em `prepareStep` com `pruneMessages`
-  - [x] Renderização das tool parts no chat (`components/chat/chat.tsx`)
-  - [x] System prompt v4 anuncia as tools e orienta planejamento, citação da fonte e limites
+# Passo 6 — Tools nativas
 
+- [x] Camada de tools em `lib/ai/tools/` com registro `getChatTools()`
+- [x] Proteções de `fetchUrl`: timeout, limite de resposta, bloqueio de localhost/IPs privados e revalidação de redirects (SSRF)
+- [x] Tool `fetchUrl` para consultas GET/POST
+- [x] Tool `updatePlan` para planejamento visível
+- [x] Tool `renderUi` para conteúdo visual no chat
+- [x] Tool `runAction` para efeitos na aplicação
+- [x] Poda de contexto em `prepareStep` com `pruneMessages`
+- [x] Renderização das tool parts no chat (`components/chat/chat.tsx`)
+- [x] Formatação das respostas em Markdown (`components/chat/markdown-message.tsx`, `react-markdown` + `remark-gfm`)
+- [x] JSON Schema das tools sem `$ref` no topo (compatível com Gemini)
 
-  todas tools:
-    - [x] Tool nativa: Requisição de api [fetch] (`fetchUrl`, GET/POST)
-    - [x] Tool nativa: Planejamento visível (`updatePlan`)
-    - [x] Formatação nativa das respostas em markdown (`components/chat/markdown-message.tsx`, `react-markdown` + `remark-gfm`)
+# Passo 7 — Loop agêntico
 
-  essas tools rodam no chat, no futuro teremos tools externas que rodam ana aplicação, ela possuiram o sufixo ExternTools
-
-Passo 7:
-Loop agêntico
-- Agente: `lib/ai/agents/spectral-agent.ts` (`ToolLoopAgent`, `isStepCount(12)` + budget de tokens)
-- Plano: `lib/ai/tools/update-plan.ts` e `lib/ai/plan.ts`
-- Timeline: `components/chat/agent-activity.tsx` e `components/chat/agent-plan.tsx`
-- Persistência: `Message.parts` (jsonb), sem migração adicional
-- Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
-
+- [x] Agente: `lib/ai/agents/spectral-agent.ts` (`ToolLoopAgent`, `isStepCount(12)` + budget de tokens)
+- [x] Plano: `lib/ai/tools/update-plan.ts` e `lib/ai/plan.ts`
+- [x] Timeline: `components/chat/agent-activity.tsx` e `components/chat/agent-plan.tsx`
+- [x] Persistência: `Message.parts` (jsonb), sem migração adicional
+- [x] Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
+- [x] `renderUi` e `runAction` não aparecem como cartões na timeline; o efeito visual é o feedback
 
 # Passo 8 — Generative UI
 
-Aqui começa uma das funcionalidades mais interessantes do Spectral.
-
 Referência técnica completa: [`specs/ui-generative-components.md`](./ui-generative-components.md)
 
-Criar uma camada de componentes dinâmicos que podem ser apresentados pela IA dentro da conversa.
+- [x] `components/ai-ui/` com registry, renderer e estados loading/waiting/success/error
+- [x] Validação Zod no servidor e revalidação no cliente
+- [x] Persistência dos componentes em `Message.parts`
+- [x] Catálogo versionado `UI_CATALOG_VERSION = 2`
+- [x] Tool `renderUi` registrada e anunciada no system prompt
+- [x] Componentes específicos: `callout`, `infoCard`, `statGrid`, `dataTable`, `timeline`, `sourceList`
+- [x] `panel` com primitivos `text`, `button` e `div`
+- [x] Botões do `panel` com ações tipadas (`sendMessage`, `openSettings`, `toast`, `setTheme`, `navigate`, `copy`)
+- [x] Compatibilidade de histórico: `chatUi` legado é normalizado para `panel`; ações string viram `sendMessage`
+- [x] Sem recursão e no máximo 2 níveis de `div`
 
-## Tipos de componentes
-1. **Componentes a nível de chat** (aparecem no chat) — Implementado (interno de chat)
-2. **Componentes a nível de aplicação** (aparecem na UI do site) — Futuro (externo de chat)
+# Passo 9 — Ações da aplicação
 
-## Infraestrutura
-- [x] Criar `components/ai-ui/`
-- [x] Criar registro de componentes permitidos (`components/ai-ui/registry.tsx`)
-- [x] Criar mecanismo de identificação das chamadas de UI (`RENDER_UI_TOOL_NAME`)
-- [x] Criar renderizador de componentes (`components/ai-ui/render-ui-part.tsx`)
-- [x] Implementar estados: loading, success, error e waiting
-- [x] Persistir os dados necessários para recuperar as interfaces no histórico (`Message.parts`)
-- [x] Catálogo versionado `UI_CATALOG_VERSION = 1`
-- [x] Tool `renderUi` registrada em `getChatTools()` e anunciada no system prompt
-- [x] Validação Zod no servidor e revalidação no cliente antes de renderizar
+Referência completa: [`specs/ai-interaction-model.md`](./ai-interaction-model.md)
 
-## Componentes Específicos (nível de chat)
-- [x] `callout` (Destaque/alerta)
-- [x] `infoCard` (Resumo com rótulo/valor)
-- [x] `statGrid` (Grade de métricas)
-- [x] `dataTable` (Tabela estruturada)
-- [x] `timeline` (Etapas de processo)
-- [x] `sourceList` (Fontes e referências)
+Modelo **“UI é dado, ação é evento”**:
 
-## ChatUI.Api (Primitivos, nível de chat)
-- [x] `Text` (variantes: h1, h2, p, span, muted, caption + pesos normal/medium/semibold/bold)
-- [x] `Button` (variantes: default, outline, secondary, ghost)
-- [x] `Div` (container com `className` para controle de layout)
+- `renderUi` mostra conteúdo no chat.
+- `runAction` executa efeitos na aplicação.
+- `fetchUrl` busca dados.
+- `updatePlan` mostra progresso.
+- `sendMessage` é ação exclusiva de botão e nunca é exposta à IA.
 
-**Regras:**
-- [x] Apenas `text`, `button`, `div`
-- [x] Máximo 2 níveis de `div` (`div > div`)
-- [x] Se `div` estiver dentro de outro `div` (nível 2), seus filhos só podem ser `text` ou `button`
-- [x] `div` no topo (nível 1) pode conter `text`, `button` ou `div` (nível 2)
-- [x] Layout controlado via `className` (`flex`, `flex-row`, `flex-col`, `gap`, `justify-*`, `items-*`, `grid`)
-- [x] Sem recursão — schemas explícitos por nível
-- [x] Sem `component` dentro do `chatUi`
+Implementado:
+- [x] Catálogo versionado `ACTION_CATALOG_VERSION = 1`
+- [x] Tipos: `toast`, `setTheme`, `openSettings`, `navigate`, `copy`, `sendMessage`
+- [x] `aiActionSchema` sem `sendMessage`; `appActionSchema` completo
+- [x] Allowlist de `navigate`: `/app`, `/providers/select-model`, `/provider/{provider}/models`
+- [x] Tool `runAction` server-acknowledged: valida no servidor e executa no cliente
+- [x] `AppActionsProvider` com tema, toast, router, clipboard e configurações
+- [x] `ChatActionProvider` com `sendMessage` e bloqueio de `sendMessage` vindo da IA
+- [x] `ConfigComponent` com seção controlada (`general`, `account`, `byok`)
+- [x] `openSettings({ section: "byok" })` abre o formulário; a IA nunca recebe chaves
+- [x] `AppActionHandler` com dedupe por `toolCallId` e skip de mensagens do histórico inicial
+- [x] `externUi` removido; tool parts antigas são ignoradas
 
-## Componentes Externos (nível de aplicação)
-- [x] **ExternUI.Api** — Componentes que rodam fora do chat (na aplicação). Integrado ao sistema.
+# Passo 10 — Garantias, testes e próximos passos
 
-  Componentes:
-    - [x] `Toast` (ExternUI.Api.Toast) — Exibir notificação toast na aplicação via tool `externUi` (estilizado com design system, com prevenção de duplicados)
-
-
-Passo 10:
-  coloque aqui...'
+- [x] Testes com Vitest para catálogo de ações, catálogo de UI, normalização legada e allowlist
+- [x] Teste de JSON Schema sem `$ref`/`$defs`/`definitions` para as tools
+- [x] `npm run typecheck` e `npm run test`
+- [x] Documentação do modelo em `specs/ai-interaction-model.md`
+- [x] Styleguide atualizado para `panel` com ações reais
+- [x] Fase 2: execução determinística de tool a partir do clique (sem depender do modelo)
+- [x] Fase 2: confirmação explícita para ações sensíveis (ex.: `navigate` iniciado pela IA)
+- [ ] Fase futura: estado interativo no chat, avaliado sem reintroduzir `chatState`
 
 
 
@@ -286,20 +272,15 @@ uma camada de preferências por usuário.
 - [ ] Rotas `GET/PUT /api/prompt-preferences` com validação Zod'
 - [ ] `Message.promptVersion` + hash/registro das preferências aplicadas para rastreabilidade
 
-  Passo 41: tools de estado interativo: futuro
-  vamos criar uma tools de estado interativo
-  isso será uma maneira de termos "state" no chat
-  isso se chamará "chatState" e servirá pra salvar dados
-  isso no dara dinamismo, trazendo mais poder pra a ui do chat
-  o chatState controla a reatividade do react
+### Passo 41 (futuro): estado interativo no chat
 
-  exemplos legais:
-    Crie um text com o numero 10
-    (A IA vai criar um texto com o numero 10)
+Avaliar um modelo de estado interativo **sem reintroduzir o antigo `chatState`**, que foi removido
+por não ter um contrato claro de persistência e segurança. A nova abordagem deve:
 
-    Some + 10 naquele text
-    (a reatividade do sistema vai fazer isso ficar muito bom!!)
-
-    A IA deverá saber integrar isso a UI
+- [ ] Definir um estado tipado e versionado, com persistência explícita em `Message.parts`
+- [ ] Separar estado de apresentação (`renderUi`) de efeitos (`runAction`)
+- [ ] Permitir que botões atualizem o estado sem depender de uma nova resposta do modelo
+- [ ] Manter validação Zod no servidor e no cliente
+- [ ] Documentar o contrato antes de implementar
     
   

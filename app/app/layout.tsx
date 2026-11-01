@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
+import { AppActionsProvider } from "./app-actions-provider"
 import { AppSidebar } from "./app-sidebar"
 import { ChatProvider } from "./chat-provider"
 import { AppSessionProvider } from "./session-provider"
@@ -23,12 +24,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <AppSessionProvider session={session}>
-      <ChatProvider>
-        <div className="flex h-dvh w-full overflow-hidden bg-background">
-          <AppSidebar user={user} />
-          <main className="flex min-w-0 flex-1 flex-col">{children}</main>
-        </div>
-      </ChatProvider>
+      <AppActionsProvider user={user}>
+        <ChatProvider>
+          <div className="flex h-dvh w-full overflow-hidden bg-background">
+            <AppSidebar user={user} />
+            <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+          </div>
+        </ChatProvider>
+      </AppActionsProvider>
     </AppSessionProvider>
   )
 }

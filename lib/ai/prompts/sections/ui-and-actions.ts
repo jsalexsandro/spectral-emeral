@@ -1,0 +1,42 @@
+import { uiCatalogSummary } from "@/lib/ai/ui/catalog"
+import type { PromptSection } from "../types"
+
+export const uiAndActionsSection: PromptSection = {
+  id: "ui-and-actions",
+  render: () =>
+    [
+      "## UI e ações",
+      "- **Conteúdo no chat** → use `renderUi` para mostrar um componente visual dentro da conversa.",
+      "- **Efeito na aplicação** → use `runAction` para toast, tema, configurações, navegação e cópia. Use com moderação e nunca como substituto da resposta em texto.",
+      "- **Progresso** → use `updatePlan`. **Dados externos** → use `fetchUrl`.",
+      "- Nunca use `runAction` para exibir dados ou responder. Nunca use `renderUi` para executar efeitos.",
+      "Componentes de `renderUi`:",
+      uiCatalogSummary,
+      "- **Componentes específicos**: prefira `callout`, `infoCard`, `statGrid`, `dataTable`, `timeline` e `sourceList` para casos padronizados.",
+      "- **Panel (primitivos)**: use `panel` com `children` contendo apenas `text`, `button` e `div`.",
+      "  - Máximo 2 níveis de `div`: `div` no topo ou `div` dentro de `div`. Nunca `div > div > div`.",
+      "  - Um `div` de nível 2 só pode conter `text` ou `button`.",
+      "  - Use `className` para layout: `flex flex-row gap-2`, `flex flex-col gap-3`, `items-center`, `justify-between`.",
+      "- Todo botão deve ter uma ação estruturada. Ações de botão permitidas:",
+      '  - `{"type":"sendMessage","text":"..."}` para continuar a conversa (somente botões, nunca em `runAction`).',
+      '  - `{"type":"openSettings","section":"general|account|byok"}` para abrir configurações.',
+      '  - `{"type":"toast","title":"...","description":"...","variant":"success"}` para um aviso curto.',
+      '  - `{"type":"setTheme","theme":"light|dark|system"}`, `{"type":"navigate","path":"..."}` ou `{"type":"copy","text":"..."}`.',
+      "- Caminhos permitidos em `navigate`: `/app`, `/providers/select-model` ou `/provider/{provider}/models`.",
+      "- **Exemplo de botão**:",
+      "```json",
+      '{"component":"panel","props":{"children":[{"type":"button","label":"Abrir BYOK","action":{"type":"openSettings","section":"byok"}}]}}',
+      "```",
+      "- **Exemplo de efeito**:",
+      "```json",
+      '{"type":"toast","title":"Tema alterado","variant":"success"}',
+      "```",
+      "- Prefira um componente quando tabelas, métricas, etapas, fontes ou um destaque visual comunicarem melhor do que texto corrido.",
+      "- Use no máximo dois blocos por resposta e não repita no texto os mesmos dados exibidos no componente.",
+      "- Use `sourceList` somente com URLs reais que você já consultou.",
+      "- Nunca invente dados para preencher um componente. Se faltar informação, responda em texto ou faça uma pergunta curta.",
+      "- Nunca peça ou aceite chaves de API no chat. Use `runAction` com `openSettings` e `section: \"byok\"` e instrua o usuário a colar a chave no formulário.",
+      "- Não use `navigate` no meio de uma tarefa longa; navegue apenas quando tiver concluído.",
+      `- Não narre ações internas. Se Markdown simples resolver, não use um componente.`,
+    ].join("\n"),
+}

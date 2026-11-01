@@ -1,6 +1,7 @@
 import { Loader2, XCircle } from "lucide-react"
 import {
   UI_CATALOG_VERSION,
+  normalizeRenderUiOutput,
   renderUiInputSchema,
   renderUiOutputSchema,
 } from "@/lib/ai/ui/catalog"
@@ -80,11 +81,13 @@ export function RenderUiPart({ part }: { part: RenderUiPartData }) {
       )
     }
 
-    if (!(parsed.data.component in aiUiRegistry)) {
+    const normalized = normalizeRenderUiOutput(parsed.data)
+
+    if (!(normalized.component in aiUiRegistry)) {
       return <RenderUiError message="Componente não permitido." />
     }
 
-    return renderAiUiComponent(parsed.data)
+    return renderAiUiComponent(normalized)
   }
 
   if (

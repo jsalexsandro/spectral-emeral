@@ -9,10 +9,18 @@ import {
   type UIMessage,
 } from "ai"
 import { ChevronDown, Loader2 } from "lucide-react"
-import { RENDER_UI_TOOL_NAME } from "@/lib/ai/ui/catalog"
+import { RUN_ACTION_TOOL_NAME } from "@/lib/ai/actions/catalog"
+import { LEGACY_EXTERN_UI_TOOL_NAME } from "@/lib/ai/actions/legacy"
 import { UPDATE_PLAN_TOOL_NAME } from "@/lib/ai/plan"
+import { RENDER_UI_TOOL_NAME } from "@/lib/ai/ui/catalog"
 import { AgentPlanPart } from "./agent-plan"
 import { ToolPartCard } from "./tool-part-card"
+
+const hiddenToolNames = new Set<string>([
+  RENDER_UI_TOOL_NAME,
+  RUN_ACTION_TOOL_NAME,
+  LEGACY_EXTERN_UI_TOOL_NAME,
+])
 
 type ActivityGroup = {
   step: number
@@ -34,7 +42,7 @@ function groupActivity(parts: UIMessage["parts"]): ActivityGroup[] {
       continue
     }
 
-    if (getToolName(part) === RENDER_UI_TOOL_NAME) {
+    if (hiddenToolNames.has(getToolName(part))) {
       continue
     }
 

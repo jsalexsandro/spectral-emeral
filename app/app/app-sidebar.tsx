@@ -41,8 +41,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { useAppActions } from "./app-actions-provider"
 import { useChatSession } from "./chat-provider"
-import { ConfigComponent } from "./config-component"
 import { MyChats } from "./my-chats"
 import { OptionComponent } from "./option-component"
 
@@ -66,11 +66,11 @@ function getInitials(user: SidebarUser) {
 
 export function AppSidebar({ user }: { user: SidebarUser }) {
   const [open, setOpen] = useState(true)
-  const [configOpen, setConfigOpen] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const { startNewChat, chats, chatsLoading, isDraft } = useChatSession()
+  const { openSettings } = useAppActions()
   const router = useRouter()
 
   function handleNewChat() {
@@ -180,7 +180,7 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
             sideOffset={8}
             className={cn(!open && "ml-4")}
           >
-            <DropdownMenuItem onClick={() => setConfigOpen(true)}>
+            <DropdownMenuItem onClick={() => openSettings("general")}>
               <Settings />
               Configurações
             </DropdownMenuItem>
@@ -199,12 +199,6 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </footer>
-
-      <ConfigComponent
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        user={user}
-      />
 
       <Dialog open={searchOpen} onOpenChange={handleSearchOpenChange}>
         <DialogContent>

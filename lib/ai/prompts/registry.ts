@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 6
+export const SYSTEM_PROMPT_VERSION = 7
 
 export type SystemPromptChange = {
   version: number
@@ -35,12 +35,18 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     version: 5,
     date: "2026-10-30",
     summary:
-      "Diferencia componentes específicos de componentes primitivos (ChatUI.Api) e orienta sua combinação para layouts customizados.",
+      "Diferencia componentes específicos de componentes primitivos e orienta sua combinação para layouts customizados.",
   },
   {
     version: 6,
     date: "2026-11-01",
     summary:
-      "Remove a tool chatState e o nó stateText, simplificando o ChatUI.Api para apenas text, button e div.",
+      "Remove a tool chatState e o nó stateText, simplificando os primitivos para apenas text, button e div.",
+  },
+  {
+    version: 7,
+    date: "2026-11-01",
+    summary:
+      "Separa UI de ações: renderUi para conteúdo, runAction para efeitos, panel no lugar de chatUi e ações tipadas em botões.",
   },
 ]

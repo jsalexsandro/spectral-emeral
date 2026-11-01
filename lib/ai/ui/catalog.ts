@@ -1,6 +1,8 @@
 import { z } from "zod"
+import { appActionSchema, type AppAction } from "@/lib/ai/actions/catalog"
+import { LEGACY_CHAT_UI_COMPONENT_NAME } from "@/lib/ai/actions/legacy"
 
-export const UI_CATALOG_VERSION = 1
+export const UI_CATALOG_VERSION = 2
 
 export const RENDER_UI_TOOL_NAME = "renderUi" as const
 
@@ -11,7 +13,7 @@ export const uiComponentNames = [
   "dataTable",
   "timeline",
   "sourceList",
-  "chatUi",
+  "panel",
 ] as const
 
 export type UiComponentName = (typeof uiComponentNames)[number]
@@ -107,56 +109,83 @@ export const sourceListPropsSchema = z.object({
     .max(8),
 })
 
-const chatUiTextSchema = z.object({
+const panelTextSchema = z.object({
   type: z.literal("text"),
   value: boundedText(1000),
   variant: z.enum(["h1", "h2", "p", "span", "muted", "caption"]).optional(),
   weight: z.enum(["normal", "medium", "semibold", "bold"]).optional(),
 })
 
-const chatUiButtonSchema = z.object({
+const panelButtonSchema = z.object({
   type: z.literal("button"),
   label: boundedText(60),
   variant: z.enum(["default", "outline", "secondary", "ghost"]).optional(),
-  action: optionalText(120),
+  action: appActionSchema.optional(),
 })
 
-const chatUiLeafNodeSchema = z.discriminatedUnion("type", [chatUiTextSchema, chatUiButtonSchema])
-
-const chatUiDivLevel2Schema = z.object({
-  type: z.literal("div"),
-  className: optionalText(200),
-  children: z.array(chatUiLeafNodeSchema).min(1).max(10),
+const legacyPanelButtonSchema = z.object({
+  type: z.literal("button"),
+  label: boundedText(60),
+  variant: z.enum(["default", "outline", "secondary", "ghost"]).optional(),
+  action: z.union([appActionSchema, boundedText(120)]).optional(),
 })
 
-const chatUiDivLevel1ChildSchema = z.discriminatedUnion("type", [
-  chatUiTextSchema,
-  chatUiButtonSchema,
-  chatUiDivLevel2Schema,
-])
+function createPanelSchemas<B extends z.ZodTypeAny>(buttonSchema: B) {
+  const leafNodeSchema = z.union([panelTextSchema, buttonSchema])
+  const divLevel2Schema = z.object({
+    type: z.literal("div"),
+    className: optionalText(200),
+    children: z.array(leafNodeSchema).min(1).max(10),
+  })
+  const divLevel1ChildSchema = z.union([
+    panelTextSchema,
+    buttonSchema,
+    divLevel2Schema,
+  ])
+  const divLevel1Schema = z.object({
+    type: z.literal("div"),
+    className: optionalText(200),
+    children: z.array(divLevel1ChildSchema).min(1).max(10),
+  })
+  const nodeSchema = z.union([panelTextSchema, buttonSchema, divLevel1Schema])
+  const propsSchema = z.object({
+    title: optionalText(120),
+    children: z.array(nodeSchema).min(1).max(12),
+  })
 
-const chatUiDivLevel1Schema = z.object({
-  type: z.literal("div"),
-  className: optionalText(200),
-  children: z.array(chatUiDivLevel1ChildSchema).min(1).max(10),
-})
+  return {
+    buttonSchema,
+    leafNodeSchema,
+    divLevel2Schema,
+    divLevel1ChildSchema,
+    divLevel1Schema,
+    nodeSchema,
+    propsSchema,
+  }
+}
 
-export const chatUiNodeSchema = z.discriminatedUnion("type", [
-  chatUiTextSchema,
-  chatUiButtonSchema,
-  chatUiDivLevel1Schema,
-])
+const panelSchemas = createPanelSchemas(panelButtonSchema)
+const legacyPanelSchemas = createPanelSchemas(legacyPanelButtonSchema)
 
-export const chatUiPropsSchema = z.object({
-  title: optionalText(120),
-  children: z.array(chatUiNodeSchema).min(1).max(12),
-})
+export const panelPropsSchema = panelSchemas.propsSchema
+export const panelNodeSchema = panelSchemas.nodeSchema
 
-export type ChatUiTextNode = z.infer<typeof chatUiTextSchema>
-export type ChatUiButtonNode = z.infer<typeof chatUiButtonSchema>
-export type ChatUiDivNode = z.infer<typeof chatUiDivLevel1Schema>
-export type ChatUiNode = z.infer<typeof chatUiNodeSchema>
-export type ChatUiProps = z.infer<typeof chatUiPropsSchema>
+export type PanelTextNode = z.infer<typeof panelTextSchema>
+export type PanelButtonNode = z.infer<typeof panelButtonSchema>
+export type PanelLeafNode = z.infer<typeof panelSchemas.leafNodeSchema>
+export type PanelDivLevel2Node = z.infer<typeof panelSchemas.divLevel2Schema>
+export type PanelDivChildNode = z.infer<typeof panelSchemas.divLevel1ChildSchema>
+export type PanelDivNode = z.infer<typeof panelSchemas.divLevel1Schema>
+export type PanelNode = z.infer<typeof panelSchemas.nodeSchema>
+export type PanelProps = z.infer<typeof panelSchemas.propsSchema>
+
+type LegacyPanelButtonNode = z.infer<typeof legacyPanelButtonSchema>
+type LegacyPanelLeafNode = z.infer<typeof legacyPanelSchemas.leafNodeSchema>
+type LegacyPanelDivChildNode = z.infer<
+  typeof legacyPanelSchemas.divLevel1ChildSchema
+>
+type LegacyPanelNode = z.infer<typeof legacyPanelSchemas.nodeSchema>
+type LegacyPanelProps = z.infer<typeof legacyPanelSchemas.propsSchema>
 
 export const uiComponentDescriptions: Record<UiComponentName, string> = {
   callout:
@@ -171,15 +200,15 @@ export const uiComponentDescriptions: Record<UiComponentName, string> = {
     "Lista ordenada de etapas com status done, current ou pending. Use para processos, planos e sequências.",
   sourceList:
     "Lista de fontes reais com título, URL http(s) e trecho opcional. Use somente com páginas já consultadas.",
-  chatUi:
-    "Apenas primitivos: text, button, div. Max 2 níveis de divs (div > div). Div interno só pode ter text ou button. Use className para layout (flex, grid).",
+  panel:
+    "Layout customizado com primitivos text, button e div. Máximo 2 níveis de div. Botões devem ter uma ação estruturada.",
 }
 
 export const uiCatalogSummary = uiComponentNames
   .map((name) => `  - \`${name}\`: ${uiComponentDescriptions[name]}`)
   .join("\n")
 
-export const renderUiInputSchema = z.discriminatedUnion("component", [
+const baseRenderUiComponents = [
   z.object({
     component: z.literal("callout"),
     props: calloutPropsSchema,
@@ -204,18 +233,110 @@ export const renderUiInputSchema = z.discriminatedUnion("component", [
     component: z.literal("sourceList"),
     props: sourceListPropsSchema,
   }),
+] as const
+
+export const renderUiInputSchema = z.discriminatedUnion("component", [
+  ...baseRenderUiComponents,
   z.object({
-    component: z.literal("chatUi"),
-    props: chatUiPropsSchema,
+    component: z.literal("panel"),
+    props: panelSchemas.propsSchema,
+  }),
+])
+
+export const renderUiHistorySchema = z.discriminatedUnion("component", [
+  ...baseRenderUiComponents,
+  z.object({
+    component: z.literal("panel"),
+    props: panelSchemas.propsSchema,
+  }),
+  z.object({
+    component: z.literal(LEGACY_CHAT_UI_COMPONENT_NAME),
+    props: legacyPanelSchemas.propsSchema,
   }),
 ])
 
 export const renderUiOutputSchema = z.intersection(
-  renderUiInputSchema,
+  renderUiHistorySchema,
   z.object({
     uiVersion: z.number().int(),
   }),
 )
+
+function normalizeLegacyAction(button: LegacyPanelButtonNode): AppAction | undefined {
+  if (!button.action) {
+    return undefined
+  }
+
+  if (typeof button.action === "string") {
+    return {
+      type: "sendMessage",
+      text: button.label,
+    }
+  }
+
+  return button.action
+}
+
+function normalizeLegacyLeaf(node: LegacyPanelLeafNode): PanelLeafNode {
+  if (node.type === "button") {
+    return {
+      ...node,
+      action: normalizeLegacyAction(node),
+    }
+  }
+
+  return node
+}
+
+function normalizeLegacyChild(node: LegacyPanelDivChildNode): PanelDivChildNode {
+  if (node.type === "div") {
+    return {
+      ...node,
+      children: node.children.map(normalizeLegacyLeaf),
+    }
+  }
+
+  return normalizeLegacyLeaf(node)
+}
+
+function normalizeLegacyNode(node: LegacyPanelNode): PanelNode {
+  if (node.type === "div") {
+    return {
+      ...node,
+      children: node.children.map(normalizeLegacyChild),
+    }
+  }
+
+  return normalizeLegacyLeaf(node)
+}
+
+function normalizeLegacyPanelProps(props: LegacyPanelProps): PanelProps {
+  return {
+    ...props,
+    children: props.children.map(normalizeLegacyNode),
+  }
+}
+
+export function normalizeRenderUiOutput(output: RenderUiOutput): RenderUiInput {
+  if (output.component === LEGACY_CHAT_UI_COMPONENT_NAME) {
+    return {
+      component: "panel",
+      props: normalizeLegacyPanelProps(output.props),
+    }
+  }
+
+  if (output.component === "panel") {
+    return {
+      component: "panel",
+      props: output.props,
+    }
+  }
+
+  return {
+    component: output.component,
+    props: output.props,
+  } as RenderUiInput
+}
 
 export type CalloutProps = z.infer<typeof calloutPropsSchema>
 export type InfoCardProps = z.infer<typeof infoCardPropsSchema>

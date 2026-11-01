@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useChat } from "@ai-sdk/react"
 import {
   DefaultChatTransport,
@@ -9,9 +9,15 @@ import {
   type UIMessage,
 } from "ai"
 import { ArrowUp, Loader2, Paperclip, Square } from "lucide-react"
+import { toast } from "sonner"
+import { ChatActionProvider } from "@/app/app/chat-action-provider"
 import { useChatSession } from "@/app/app/chat-provider"
-import { RenderUiPart } from "@/components/ai-ui"
-import { ExternUiHandler } from "@/components/ai-ui/extern-ui-handler"
+import { AppActionHandler, RenderUiPart } from "@/components/ai-ui"
+import {
+  RUN_ACTION_TOOL_NAME,
+  type ActionResult,
+} from "@/lib/ai/actions/catalog"
+import { LEGACY_EXTERN_UI_TOOL_NAME } from "@/lib/ai/actions/legacy"
 import {
   resolveDefaultModelKey,
   type InstantModelPreference,
@@ -37,6 +43,11 @@ type ChatSessionProps = ChatProps & {
 }
 
 const MAX_TEXTAREA_HEIGHT = 240
+
+const hiddenMessageToolNames = new Set<string>([
+  RUN_ACTION_TOOL_NAME,
+  LEGACY_EXTERN_UI_TOOL_NAME,
+])
 
 function getMessageText(message: UIMessage): string {
   return message.parts
@@ -103,6 +114,10 @@ function ChatSession({
   })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const initialMessageIds = useMemo(
+    () => new Set(initialMessages.map((item) => item.id)),
+    [initialMessages],
+  )
   const transport = useMemo(
     () => new DefaultChatTransport({ api: "/api/chat" }),
     [],
@@ -118,6 +133,39 @@ function ChatSession({
   const isBusy = status === "submitted" || status === "streaming"
   const canSend = message.trim().length > 0 && model.length > 0 && !isBusy
   const hasMessages = messages.length > 0
+
+  const sendText = useCallback(
+    (text: string): ActionResult => {
+      const content = text.trim()
+
+      if (!content) {
+        return { ok: false, error: "empty-message" }
+      }
+
+      if (!model) {
+        toast.error("Selecione um modelo antes de enviar.")
+        return { ok: false, error: "missing-model" }
+      }
+
+      if (isBusy) {
+        toast.info("Aguarde a resposta atual terminar.")
+        return { ok: false, error: "busy" }
+      }
+
+      void sendMessage(
+        { text: content },
+        {
+          body: {
+            chatId,
+            model,
+          },
+        },
+      )
+
+      return { ok: true }
+    },
+    [chatId, isBusy, model, sendMessage],
+  )
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -140,23 +188,12 @@ function ChatSession({
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    const content = message.trim()
+    const result = sendText(message)
 
-    if (!content || !model || isBusy) {
-      return
+    if (result.ok) {
+      setMessage("")
+      textareaRef.current?.focus()
     }
-
-    void sendMessage(
-      { text: content },
-      {
-        body: {
-          chatId,
-          model,
-        },
-      },
-    )
-    setMessage("")
-    textareaRef.current?.focus()
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -167,14 +204,21 @@ function ChatSession({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {hasMessages ? (
+    <ChatActionProvider sendText={sendText}>
+      <AppActionHandler
+        messages={messages}
+        initialMessageIds={initialMessageIds}
+      />
+      <div className="flex h-full min-h-0 flex-col">
+        {hasMessages ? (
         <div className="flex-1 overflow-y-auto px-4 py-8">
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
             {messages.map((item, messageIndex) => {
               const text = getMessageText(item)
-              const hasToolParts = item.parts.some((part) =>
-                isToolUIPart(part),
+              const hasToolParts = item.parts.some(
+                (part) =>
+                  isToolUIPart(part) &&
+                  !hiddenMessageToolNames.has(getToolName(part)),
               )
               const isUser = item.role === "user"
               const isStreaming =
@@ -204,7 +248,6 @@ function ChatSession({
                         parts={item.parts}
                         isStreaming={isStreaming}
                       />
-                      <ExternUiHandler key={`${item.id}-extern`} parts={item.parts} />
                       {item.parts.map((part, index) => {
                         if (part.type === "text" && part.text.trim()) {
                           return (
@@ -305,6 +348,7 @@ function ChatSession({
           )}
         </form>
       </div>
-    </div>
+      </div>
+    </ChatActionProvider>
   )
 }
