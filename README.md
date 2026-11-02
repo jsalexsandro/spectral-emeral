@@ -91,6 +91,13 @@ claro/escuro/sistema é controlado em Configurações → Geral → Aparência.
 - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — login com Google
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` — login com GitHub
 - `AUTH_APPLE_ID` / `AUTH_APPLE_SECRET` — login com Apple (opcional)
+- `DEVICE_PAIRING_SECRET` — segredo HMAC dos códigos de emparelhamento (usa `AUTH_SECRET` como fallback)
+- `SPECTRAL_WS_HOST` / `SPECTRAL_WS_PORT` — bind do backend WebSocket (padrão `0.0.0.0:4001`)
+- `DEVICE_HEARTBEAT_TIMEOUT_MS` — timeout de heartbeat do backend (padrão `45000`)
+- `SPECTRAL_API_URL` / `SPECTRAL_WS_URL` — URLs usadas pelo driver (padrão `localhost:3000` e `ws://localhost:4001`)
+
+O backend e o driver carregam o `.env` da raiz automaticamente; variáveis já
+definidas no ambiente têm prioridade.
 
 Após alterar o schema, gere e aplique a migração:
 
@@ -109,3 +116,23 @@ npm run db:seed
 
 Padrões: `admin@admin.com` / `admin123`. Sobrescreva com
 `SEED_ADMIN_NAME`, `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD`.
+
+## Dispositivos (Passo 11)
+- Seção **Dispositivos** em Configurações: lista, renomeia, emparelha e revoga computadores
+- Emparelhamento por código de 6 caracteres (TTL de 5 min, uso único, hash HMAC-SHA256)
+- Identidade Ed25519 por dispositivo; autenticação por desafio/assinatura no WebSocket
+- Presença por heartbeat de 15s; online quando `lastSeenAt` tem até 45s
+- Revogação lógica (`Device.revokedAt`) com encerramento do socket ativo
+- Pacotes independentes:
+  - `spectral/backend`: servidor WebSocket (`ws`) na porta `4001`
+  - `spectral/driver`: CLI do dispositivo com reconexão e identidade local
+- Rotas: `/api/devices`, `/api/devices/[id]`, `/api/devices/pairing` e
+  `/api/devices/pairing/confirm`
+- Referência técnica em `specs/devices.md`; tabelas em `specs/schema.md`
+
+```bash
+npm run install:services
+npm run dev:backend   # WebSocket em ws://localhost:4001
+npm run dev:driver    # emparelha no primeiro uso
+npm run pair:driver   # força um novo código
+```

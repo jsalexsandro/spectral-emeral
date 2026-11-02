@@ -13,7 +13,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx db/seed.ts",
-    "prompt:print": "tsx scripts/print-system-prompt.ts"
+    "prompt:print": "tsx scripts/print-system-prompt.ts",
+    "install:services": "npm install --prefix spectral/backend && npm install --prefix spectral/driver",
+    "dev:backend": "npm --prefix spectral/backend run dev",
+    "dev:driver": "npm --prefix spectral/driver run dev",
+    "pair:driver": "npm --prefix spectral/driver run pair",
+    "typecheck:backend": "npm --prefix spectral/backend run typecheck",
+    "typecheck:driver": "npm --prefix spectral/driver run typecheck",
+    "typecheck:services": "npm run typecheck:backend && npm run typecheck:driver"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.92",

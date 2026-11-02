@@ -43,6 +43,20 @@
       "when": 1793330743952,
       "tag": "0005_message_prompt_version",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793583803443,
+      "tag": "0006_complex_drax",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793583943659,
+      "tag": "0007_red_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "DevicePairingSession" ADD COLUMN "deviceId" text;--> statement-breakpoint
+ALTER TABLE "DevicePairingSession" ADD CONSTRAINT "DevicePairingSession_deviceId_Device_id_fk" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE set null ON UPDATE no action;

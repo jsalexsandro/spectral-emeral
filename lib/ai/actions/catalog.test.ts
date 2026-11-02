@@ -9,8 +9,8 @@ import {
 } from "./catalog"
 
 describe("action catalog", () => {
-  it("keeps the catalog version at 1", () => {
-    expect(ACTION_CATALOG_VERSION).toBe(1)
+  it("keeps the catalog version at 2", () => {
+    expect(ACTION_CATALOG_VERSION).toBe(2)
   })
 
   it("allows sendMessage only for host actions", () => {
@@ -45,6 +45,13 @@ describe("action catalog", () => {
       appActionSchema.safeParse({
         type: "openSettings",
         section: "byok",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      appActionSchema.safeParse({
+        type: "openSettings",
+        section: "devices",
       }).success,
     ).toBe(true)
 

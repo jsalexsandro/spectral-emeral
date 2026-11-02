@@ -129,6 +129,15 @@ O necessario para o inicio da aplicação.
 
   4. Modelos rapidos (redirect para /providers/select-model )
 
+  5. Gerenciar dispositivos (devices) — seção **Dispositivos** em Configurações
+
+     - [x] Emparelhamento por código temporário (TTL de 5 min, uso único)
+     - [x] Identidade Ed25519 por dispositivo e autenticação por desafio/assinatura
+     - [x] Presença via heartbeat (15s) e janela online de 45s
+     - [x] Revogação com encerramento do socket ativo
+     - [x] Pacotes independentes `spectral/backend` (WSS) e `spectral/driver` (CLI)
+     - [x] Referência técnica em `specs/devices.md`
+
 - [x] O select de models (seleção rapida de modelos para uso): (InstantModel) 
   devemos definir uma rota para isso: /providers/select-model (requer auth)
 
@@ -255,6 +264,7 @@ Implementado:
 - [ ] Fase futura: estado interativo no chat, avaliado sem reintroduzir `chatState`
 
 
+Passo 11 - Device System
 
 ### Passo 40 (futuro): configurações personalizadas de prompt
 

@@ -60,6 +60,39 @@ Preferência do usuário sobre quais modelos aparecem na seleção rápida do ch
 
 > A ausência de registro significa modelo ativo. O `PUT /api/instant-models` grava apenas overrides explícitos; registros de modelos removidos do catálogo são ignorados na leitura.
 
+### Device
+Dispositivo emparelhado a um usuário. A revogação é lógica (`revokedAt`), preservando o histórico de última conexão.
+- `id` (text, PK) - CUID gerado automaticamente
+- `userId` (text, FK -> user.id, cascade delete) - Indexado
+- `name` (text, not null) - Nome exibido; editável em Configurações → Dispositivos
+- `hostname` (text, nullable) - Hostname informado pelo driver
+- `platform` (text, not null) - `process.platform` do driver (`win32`, `darwin`, `linux`...)
+- `architecture` (text, nullable) - `process.arch` do driver
+- `publicKey` (text, not null) - Chave pública Ed25519 em PEM (SPKI)
+- `fingerprint` (text, not null) - SHA-256 (base64url) da chave pública em DER; indexado
+- `lastSeenAt` (timestamp, nullable) - Atualizado a cada heartbeat; online quando ≤ 45s
+- `revokedAt` (timestamp, nullable) - Revogação lógica; dispositivo revogado não autentica
+- `createdAt` (timestamp, not null) - Default: now()
+- `updatedAt` (timestamp, not null) - Default: now(); atualizado ao renomear/revogar
+- Index: (userId), (fingerprint), (userId, revokedAt)
+
+> O servidor nunca recebe a chave privada. A presença não é persistida como enum; o status é derivado de `lastSeenAt`.
+
+### DevicePairingSession
+Sessão temporária de emparelhamento. O código de 6 caracteres nunca é armazenado em texto puro.
+- `id` (text, PK) - CUID gerado automaticamente; usado pelo driver para consultar o estado
+- `codeHash` (text, not null) - HMAC-SHA256 do código normalizado (`DEVICE_PAIRING_SECRET`, fallback `AUTH_SECRET`)
+- `deviceId` (text, FK -> Device.id, set null) - Preenchido na confirmação atômica
+- `publicKey` (text, not null) - Chave pública Ed25519 informada pelo driver
+- `fingerprint` (text, not null) - Fingerprint da chave pública; indexado
+- `hostname`, `architecture` (text, nullable) e `platform` (text, not null)
+- `expiresAt` (timestamp, not null) - TTL de 5 minutos; indexado
+- `consumedAt` (timestamp, nullable) - Uso único; preenchido dentro da transação
+- `createdAt` (timestamp, not null) - Default: now()
+- Unique index: (`codeHash`)
+
+> A confirmação executa `SELECT ... FOR UPDATE` e só consome a sessão se ela não estiver consumida nem expirada. Um dispositivo ativo com o mesmo fingerprint no mesmo usuário retorna `already_paired`.
+
 ### MessageRole
 Enum PostgreSQL com os valores `user`, `assistant` e `system`.
 
@@ -106,6 +139,8 @@ Para verificação de email/magic links.
 - `0003_instant_model` — cria a tabela `InstantModel` (preferências de modelos rápidos por usuário).
 - `0004_chat` — cria o enum `MessageRole` e as tabelas `Chat` e `Message`.
 - `0005_message_prompt_version` — adiciona a coluna `promptVersion` em `Message`.
+- `0006_complex_drax` — cria `Device` e `DevicePairingSession` (emparelhamento e presença).
+- `0007_red_lorna_dane` — adiciona `DevicePairingSession.deviceId` para o driver recuperar o dispositivo confirmado.
 
 Aplicar com:
 

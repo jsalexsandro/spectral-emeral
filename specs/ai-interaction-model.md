@@ -48,13 +48,13 @@ O `AppActionHandler`:
 - revalida o output com `runActionOutputSchema`;
 - executa com `source: "tool"`.
 
-## Catálogo de ações (`ACTION_CATALOG_VERSION = 1`)
+## Catálogo de ações (`ACTION_CATALOG_VERSION = 2`)
 
 | Ação | Campos | Regras |
 | --- | --- | --- |
 | `toast` | `title`, `description?`, `variant?`, `duration?` | Título até 120; descrição até 500; duração 1–10s. |
 | `setTheme` | `theme` | `light`, `dark` ou `system`. |
-| `openSettings` | `section?` | `general`, `account` ou `byok`. |
+| `openSettings` | `section?` | `general`, `account`, `byok` ou `devices`. |
 | `navigate` | `path` | Allowlist: `/app`, `/providers/select-model`, `/provider/{provider}/models`. |
 | `copy` | `text` | Até 4.000 caracteres. |
 | `sendMessage` | `text` | Até 500 caracteres; somente botões. |

@@ -1,5 +1,3 @@
-esqueça isso. vamos criar outras coisas.
-
 minha ideia.
 
 é criar agora uma nova funcionalidade chamada "devices" (dispositivos)
@@ -20,3 +18,642 @@ esse drive se conecta com o spectral tendo a conexão feita a IA, ja vai pode co
 
 no momento quero apenas fazer esse sistema de conexão ok?
 
+
+criar o schema dos devices
+temos que criar um novo backend dedicado apenas ao servidor de socket, colocar em uma pasta como:
+    spectral/backend/
+    spectral/driver/
+
+
+definir o modelo autorização de conecção
+o driver emitir um "id" agente conecta no app e a conexão a validade e estabelecida
+
+# Spectral Devices --- Guia de Implementação
+
+> **Objetivo:** implementar o sistema inicial de emparelhamento entre o
+> Spectral e dispositivos físicos que executam o Spectral Driver.
+>
+> **Escopo desta versão:** cadastro, emparelhamento, autenticação do
+> driver, conexão WebSocket, heartbeat e gerenciamento básico de
+> dispositivos. Não implementar ainda execução de comandos, controle
+> remoto, acesso a arquivos, terminal ou ferramentas de IA.
+
+------------------------------------------------------------------------
+
+## 1. Visão geral
+
+O módulo **Devices** permitirá que uma pessoa vincule um computador ou
+outro dispositivo compatível à sua conta Spectral. Depois do
+emparelhamento, o Spectral reconhecerá o dispositivo e poderá manter uma
+conexão autenticada com ele.
+
+A arquitetura terá três partes:
+
+1.  **Spectral App:** interface web onde o usuário visualiza, adiciona e
+    remove dispositivos.
+2.  **Spectral Backend:** serviço independente responsável pelo
+    protocolo de conexão, emparelhamento e sessões WebSocket.
+3.  **Spectral Driver:** programa instalado e executado no dispositivo
+    físico. Ele inicia o emparelhamento e mantém a conexão com o
+    backend.
+
+### Arquitetura
+
+``` text
+┌──────────────────────────┐
+│       Spectral App       │
+│       Next.js            │
+│                          │
+│  - Listar dispositivos   │
+│  - Inserir código        │
+│  - Remover dispositivo   │
+└────────────┬─────────────┘
+             │ HTTPS
+             ▼
+┌──────────────────────────┐
+│    Spectral Backend      │
+│    Serviço independente  │
+│                          │
+│  - API de pairing        │
+│  - Autenticação          │
+│  - WebSocket (WSS)       │
+│  - Estado das conexões   │
+└────────────┬─────────────┘
+             │ WSS
+             ▼
+┌──────────────────────────┐
+│     Spectral Driver      │
+│     No dispositivo       │
+│                          │
+│  - Identidade local      │
+│  - Código temporário     │
+│  - Autenticação          │
+│  - Heartbeat             │
+└──────────────────────────┘
+```
+
+O driver conecta-se diretamente ao backend. O navegador não precisa
+permanecer aberto para o dispositivo continuar conectado.
+
+------------------------------------------------------------------------
+
+## 2. Estrutura de pastas sugerida
+
+Adapte os nomes à estrutura já existente no repositório. Não duplique
+arquivos ou configurações que o projeto já possua.
+
+``` text
+spectral/
+├── app/                         # Aplicação Next.js existente
+│   └── devices/                 # Página de gerenciamento
+│
+├── lib/                         # Serviços compartilhados do app
+│
+├── prisma/
+│   └── schema.prisma            # Schema do banco, se usar Prisma
+│
+├── backend/
+│   ├── src/
+│   │   ├── server.ts
+│   │   ├── config/
+│   │   ├── auth/
+│   │   ├── devices/
+│   │   │   ├── pairing.service.ts
+│   │   │   ├── device.service.ts
+│   │   │   └── device.repository.ts
+│   │   └── websocket/
+│   │       ├── server.ts
+│   │       ├── connections.ts
+│   │       └── handlers/
+│   └── package.json
+│
+└── driver/
+    ├── src/
+    │   ├── index.ts
+    │   ├── identity/
+    │   ├── pairing/
+    │   ├── connection/
+    │   └── config/
+    └── package.json
+```
+
+O `backend/` deve ser um serviço executável independente do Next.js.
+Pode compartilhar o mesmo banco PostgreSQL, mas deve ter seu próprio
+processo de execução e deploy.
+
+------------------------------------------------------------------------
+
+## 3. Fluxo de emparelhamento
+
+O código `AB4ED9` é apenas um exemplo. O código real deve ser gerado
+aleatoriamente pelo backend sempre que um driver solicitar um novo
+emparelhamento.
+
+### Passo a passo
+
+1.  O usuário inicia o Spectral Driver.
+2.  O driver cria ou carrega sua identidade criptográfica local.
+3.  O driver solicita ao backend uma sessão de emparelhamento e envia
+    sua chave pública, hostname, plataforma e arquitetura.
+4.  O backend gera um código temporário, por exemplo `AB4ED9`.
+5.  O driver exibe o código no terminal e informa que está aguardando
+    aprovação.
+6.  O usuário abre **Spectral → Devices → Adicionar dispositivo** e
+    digita o código.
+7.  O frontend envia o código à API autenticada do Spectral.
+8.  O backend verifica se o código existe, não expirou e ainda não foi
+    utilizado.
+9.  O backend vincula o dispositivo à conta autenticada e consome a
+    sessão de emparelhamento de forma atômica.
+10. O driver recebe a confirmação e autentica uma conexão WebSocket
+    usando sua identidade criptográfica.
+11. O backend valida a identidade, associa o socket ao dispositivo e
+    atualiza o estado de conexão.
+
+### Diagrama de sequência
+
+``` text
+Driver             Backend              Spectral App
+  |                   |                       |
+  |-- pairing start ->|                       |
+  |                   |                       |
+  |<- code AB4ED9 ----|                       |
+  |                   |                       |
+  |   Exibe código    |                       |
+  |                   |                       |
+  |                   |<-- usuário informa ---|
+  |                   |                       |
+  |                   |-- valida e vincula ---|
+  |                   |                       |
+  |<- aprovado -------|                       |
+  |                   |                       |
+  |------ WSS auth --->|                       |
+  |                   |                       |
+  |<-- autenticado ----|                       |
+  |                   |                       |
+  |==== conexão ativa ========================|
+```
+
+**Importante:** não considere o dispositivo conectado apenas porque o
+código foi aceito. O vínculo é uma etapa; a conexão WebSocket
+autenticada é outra. A interface só deve mostrar o dispositivo como
+online depois que o backend confirmar a conexão do driver.
+
+------------------------------------------------------------------------
+
+## 4. Identidade e segurança
+
+O código de emparelhamento não é a senha permanente do dispositivo. Ele
+serve exclusivamente para autorizar o primeiro vínculo.
+
+### Identidade criptográfica
+
+Na primeira execução, o driver deve gerar um par de chaves:
+
+-   Chave privada: permanece no dispositivo e nunca é enviada ao
+    servidor.
+-   Chave pública: é enviada ao backend e associada ao dispositivo.
+
+Uma opção adequada é **Ed25519** para assinaturas digitais. O backend
+pode emitir um desafio aleatório e exigir que o driver o assine com sua
+chave privada. Isso comprova que o driver possui a chave correspondente
+à chave pública cadastrada.
+
+A chave privada deve ser armazenada em local protegido, com permissões
+restritas ao usuário que executa o driver. Não grave segredos em logs
+nem os inclua no repositório.
+
+### Código de emparelhamento
+
+O exemplo `AB4ED9` usa letras e números. Para evitar confusão visual,
+use um alfabeto que exclua caracteres como `O`, `0`, `I` e `1`.
+
+Requisitos:
+
+-   6 caracteres aleatórios.
+-   Validade curta, por exemplo 5 minutos.
+-   Uso único.
+-   Armazenamento somente do hash do código.
+-   Comparação segura e consumo atômico.
+-   Limitação de tentativas por IP, conta e sessão.
+-   Respostas que não revelem se um código específico pertence a outro
+    usuário.
+-   Não registrar o código em logs.
+
+Se forem usados 32 símbolos possíveis, seis caracteres oferecem
+`32^6 = 1.073.741.824` combinações. Como o código é curto, a expiração e
+a limitação de tentativas são indispensáveis.
+
+### Consumo atômico
+
+A confirmação deve impedir que duas requisições utilizem o mesmo código
+simultaneamente. Faça a validação e o consumo em uma transação ou
+operação condicional atômica no banco.
+
+### Separação de autorização
+
+Ser proprietário de um dispositivo não significa que qualquer agente ou
+usuário possa executar comandos nele. Nesta fase, o backend apenas
+autentica e mantém a conexão. Uma futura camada de permissões deverá
+autorizar cada tipo de ação separadamente.
+
+------------------------------------------------------------------------
+
+## 5. Modelo de dados
+
+O modelo exato depende do ORM já utilizado pelo Spectral. Não introduza
+um segundo ORM apenas para o módulo Devices.
+
+### Entidade `Device`
+
+Representa um dispositivo vinculado a uma conta.
+
+  Campo            Tipo sugerido       Finalidade
+  ---------------- ------------------- --------------------------------------------
+  `id`             UUID                Identificador interno gerado pelo servidor
+  `userId`         UUID                Proprietário
+  `name`           String              Nome personalizado pelo usuário
+  `hostname`       String opcional     Nome informado pelo driver
+  `platform`       String              Sistema operacional
+  `architecture`   String opcional     Arquitetura, como x64 ou arm64
+  `publicKey`      String              Chave pública cadastrada
+  `fingerprint`    String              Identificador derivado da chave pública
+  `lastSeenAt`     DateTime opcional   Último contato autenticado
+  `revokedAt`      DateTime opcional   Momento da revogação
+  `createdAt`      DateTime            Criação
+  `updatedAt`      DateTime            Atualização
+
+### Entidade `DevicePairingSession`
+
+Representa uma tentativa temporária de emparelhamento.
+
+  Campo            Tipo sugerido       Finalidade
+  ---------------- ------------------- ---------------------------------------
+  `id`             UUID                Identificador da sessão
+  `codeHash`       String              Hash do código de emparelhamento
+  `publicKey`      String              Chave pública apresentada pelo driver
+  `fingerprint`    String              Fingerprint da identidade
+  `hostname`       String opcional     Nome da máquina
+  `platform`       String              Sistema operacional
+  `architecture`   String opcional     Arquitetura
+  `expiresAt`      DateTime            Expiração
+  `consumedAt`     DateTime opcional   Momento do consumo
+  `createdAt`      DateTime            Criação
+
+A sessão pendente ainda não pertence a um usuário. A associação ao
+usuário acontece quando uma conta autenticada confirma o código.
+
+### Relações
+
+``` text
+User
+  |
+  └── Device (1:N)
+         |
+         └── DevicePairingSession (histórico opcional)
+```
+
+Para a primeira versão, a chave pública pode ficar diretamente em
+`Device`. Não é obrigatório criar uma tabela separada de credenciais
+agora. Uma tabela de credenciais poderá ser adicionada quando houver
+necessidade real de rotação, múltiplas chaves ou histórico de
+credenciais.
+
+### Estado online
+
+Não use um campo booleano `isOnline` como fonte definitiva no banco. O
+estado online é volátil e deve ser calculado pelo serviço de conexões.
+Persista `lastSeenAt` para histórico e exiba o estado com base na
+conexão ativa e no heartbeat.
+
+------------------------------------------------------------------------
+
+## 6. API HTTP
+
+A API de emparelhamento e gerenciamento pode ficar no backend principal
+do Spectral ou no serviço dedicado. Escolha uma única fonte de verdade
+para evitar duplicação de regras. Uma opção é manter o gerenciamento e a
+autorização de usuário no backend principal e fazer o serviço de sockets
+validar as credenciais emitidas por ele.
+
+Rotas sugeridas:
+
+  ----------------------------------------------------------------------------------
+  Método            Rota                         Acesso            Descrição
+  ----------------- ---------------------------- ----------------- -----------------
+  `POST`            `/devices/pairing`           Driver            Solicita código
+                                                                   de emparelhamento
+
+  `GET`             `/devices/pairing/:id`       Driver            Consulta estado
+                                                                   da solicitação
+
+  `POST`            `/devices/pairing/confirm`   Usuário           Confirma código
+                                                 autenticado       
+
+  `GET`             `/devices`                   Usuário           Lista
+                                                 autenticado       dispositivos da
+                                                                   conta
+
+  `GET`             `/devices/:id`               Proprietário      Consulta um
+                                                                   dispositivo
+
+  `DELETE`          `/devices/:id`               Proprietário      Revoga e
+                                                                   desvincula
+                                                                   dispositivo
+  ----------------------------------------------------------------------------------
+
+As rotas são uma proposta de contrato, não uma exigência de que todas
+precisem existir. Por exemplo, o driver pode aguardar a aprovação por
+WebSocket em vez de consultar o endpoint repetidamente.
+
+### Regras obrigatórias
+
+-   Toda rota de gerenciamento exige autenticação.
+-   O backend deve verificar a propriedade do dispositivo em cada
+    operação.
+-   O frontend nunca escolhe livremente o `userId` que será dono do
+    dispositivo.
+-   O usuário associado deve vir da sessão autenticada validada no
+    servidor.
+-   A confirmação deve ser atômica.
+-   O código não deve aparecer em logs ou mensagens de erro.
+-   A remoção deve revogar as credenciais e encerrar sockets ativos.
+
+------------------------------------------------------------------------
+
+## 7. Protocolo WebSocket
+
+Use `wss://` em produção. O serviço deve validar a identidade do driver
+antes de aceitar a conexão como autenticada.
+
+Eventos iniciais sugeridos:
+
+  -----------------------------------------------------------------------------
+  Evento                        Direção                 Finalidade
+  ----------------------------- ----------------------- -----------------------
+  `device:authenticate`         Driver → Backend        Inicia autenticação
+
+  `device:challenge`            Backend → Driver        Envia desafio aleatório
+
+  `device:authenticate:proof`   Driver → Backend        Envia assinatura do
+                                                        desafio
+
+  `device:authenticated`        Backend → Driver        Confirma autenticação
+
+  `device:heartbeat`            Driver → Backend        Sinal de vida
+
+  `device:disconnect`           Driver → Backend        Encerramento voluntário
+
+  `device:status`               Backend → App           Atualização de estado
+  -----------------------------------------------------------------------------
+
+### Heartbeat
+
+O driver deve enviar um heartbeat em intervalo configurável. O backend
+atualiza `lastSeenAt` e considera a conexão perdida quando o heartbeat
+ultrapassa o limite definido.
+
+Não confie somente em um evento de desconexão: computadores podem
+desligar, perder a rede ou encerrar o processo abruptamente.
+
+### Reconexão
+
+O driver deve tentar reconectar com espera progressiva (backoff
+exponencial) e um limite aleatório (jitter). Em cada nova conexão, deve
+autenticar-se novamente com a chave privada local. Nunca reutilize o
+código de emparelhamento para reconectar.
+
+### Gerenciamento de sockets
+
+Uma estrutura em memória como `Map<DeviceId, WebSocket>` pode funcionar
+no primeiro deploy com uma única instância do backend.
+
+Se houver múltiplas instâncias, será necessário um mecanismo
+compartilhado para presença, roteamento e coordenação, como Redis ou uma
+arquitetura equivalente. Não trate um `Map` local como estado global em
+um ambiente distribuído.
+
+------------------------------------------------------------------------
+
+## 8. Spectral Driver
+
+O driver será um programa independente instalado no computador.
+
+Responsabilidades desta versão:
+
+1.  Criar ou carregar a identidade criptográfica local.
+2.  Detectar informações básicas do dispositivo.
+3.  Solicitar um emparelhamento ao backend.
+4.  Exibir o código recebido.
+5.  Aguardar aprovação.
+6.  Autenticar por WebSocket.
+7.  Enviar heartbeat.
+8.  Reconectar após perda de conexão.
+9.  Encerrar a sessão corretamente quando o processo for parado.
+
+### Exemplo de experiência no terminal
+
+``` text
+Spectral Driver
+
+Starting...
+Platform: Windows
+Architecture: x64
+
+Requesting pairing...
+
+Pairing code: AB4ED9
+This code expires in 5 minutes.
+
+Waiting for approval...
+
+Device paired successfully.
+Connecting to Spectral...
+
+Connected.
+Heartbeat active.
+```
+
+O terminal não deve exibir a chave privada, tokens permanentes ou outros
+segredos.
+
+------------------------------------------------------------------------
+
+## 9. Interface do Spectral App
+
+Criar uma página **Devices** para gerenciar os dispositivos da conta.
+
+### Estado vazio
+
+Quando o usuário não tiver dispositivos:
+
+-   Exibir uma mensagem explicando o recurso.
+-   Apresentar o botão **Adicionar dispositivo**.
+-   Mostrar instruções para instalar e executar o driver.
+
+### Modal de emparelhamento
+
+O modal deve conter:
+
+-   Campo para o código de seis caracteres.
+-   Normalização para maiúsculas.
+-   Validação de formato.
+-   Botão para conectar.
+-   Estado de carregamento.
+-   Mensagens claras para código inválido, expirado ou já utilizado.
+-   Confirmação do nome e da plataforma do dispositivo antes de
+    concluir, se essas informações estiverem disponíveis.
+
+### Lista de dispositivos
+
+Cada dispositivo pode exibir:
+
+-   Nome personalizado.
+-   Hostname.
+-   Sistema operacional.
+-   Estado online/offline.
+-   Última conexão.
+-   Ação para remover ou revogar.
+
+Não exiba um dispositivo como online apenas porque está cadastrado.
+Online significa que existe uma sessão autenticada e saudável.
+
+------------------------------------------------------------------------
+
+## 10. Hospedagem e operação
+
+O servidor WebSocket precisa de um ambiente que suporte conexões
+persistentes. Não presuma que funções serverless convencionais manterão
+sockets abertos indefinidamente.
+
+Antes de escolher a hospedagem, verifique:
+
+-   Suporte a WebSocket e conexões persistentes.
+-   Limites de duração e quantidade de conexões.
+-   Política de reinicialização e deploy.
+-   Variáveis de ambiente e gestão de segredos.
+-   TLS/WSS.
+-   Logs sem credenciais.
+-   Monitoramento de conexões e erros.
+-   Estratégia para múltiplas instâncias, se necessária.
+
+O backend pode compartilhar o PostgreSQL do Spectral, mas deve possuir
+processo, configuração e deploy próprios.
+
+------------------------------------------------------------------------
+
+## 11. Plano de implementação
+
+Implemente em etapas pequenas. Não comece pelo controle remoto.
+
+### Etapa 1 --- Banco de dados
+
+-   [ ] Confirmar o ORM já utilizado no Spectral.
+-   [ ] Criar o modelo `Device`.
+-   [ ] Criar o modelo `DevicePairingSession`.
+-   [ ] Definir índices e restrições únicas necessários.
+-   [ ] Relacionar `Device` com `User`.
+-   [ ] Criar e aplicar a migration.
+-   [ ] Testar criação, consulta e revogação.
+
+### Etapa 2 --- Serviço de emparelhamento
+
+-   [ ] Implementar geração aleatória do código.
+-   [ ] Implementar hash do código.
+-   [ ] Criar sessão com expiração.
+-   [ ] Implementar limite de tentativas.
+-   [ ] Implementar confirmação autenticada.
+-   [ ] Garantir consumo atômico e uso único.
+-   [ ] Testar código expirado, inválido e reutilizado.
+
+### Etapa 3 --- Backend dedicado
+
+-   [ ] Criar processo Node.js ou Bun independente.
+-   [ ] Configurar TypeScript e scripts de execução.
+-   [ ] Configurar WebSocket seguro.
+-   [ ] Implementar autenticação criptográfica.
+-   [ ] Implementar registro e remoção de conexões.
+-   [ ] Implementar heartbeat e timeout.
+-   [ ] Implementar encerramento e reconexão.
+-   [ ] Testar queda de rede e reinicialização do backend.
+
+### Etapa 4 --- Driver
+
+-   [ ] Criar projeto independente.
+-   [ ] Implementar geração e armazenamento da chave.
+-   [ ] Implementar solicitação de emparelhamento.
+-   [ ] Exibir o código recebido.
+-   [ ] Aguardar aprovação.
+-   [ ] Autenticar via WSS.
+-   [ ] Implementar heartbeat.
+-   [ ] Implementar reconexão.
+-   [ ] Testar em um computador real.
+
+### Etapa 5 --- Interface
+
+-   [ ] Criar página Devices.
+-   [ ] Criar modal de emparelhamento.
+-   [ ] Conectar formulário à API.
+-   [ ] Exibir estados de conexão.
+-   [ ] Criar ação de revogação.
+-   [ ] Atualizar a interface quando o estado mudar.
+-   [ ] Testar com duas contas diferentes para validar isolamento.
+
+### Etapa 6 --- Testes de segurança
+
+-   [ ] Uma conta não consegue cadastrar código para outra conta sem
+    autorização.
+-   [ ] Código expirado não pode ser utilizado.
+-   [ ] Código consumido não pode ser reutilizado.
+-   [ ] Tentativas repetidas são limitadas.
+-   [ ] Uma chave privada diferente não autentica o dispositivo.
+-   [ ] Dispositivo revogado não consegue reconectar.
+-   [ ] Usuário não consegue remover dispositivo de outra conta.
+-   [ ] Reiniciar o driver não exige novo emparelhamento enquanto sua
+    credencial continuar válida.
+
+------------------------------------------------------------------------
+
+## 12. Critérios de conclusão do MVP
+
+O módulo Devices estará pronto nesta fase quando:
+
+1.  O driver iniciar e solicitar um código temporário.
+2.  O usuário conseguir inserir esse código no Spectral.
+3.  O backend validar e consumir o código uma única vez.
+4.  O dispositivo ficar vinculado à conta correta.
+5.  O driver autenticar-se usando sua identidade criptográfica.
+6.  O backend manter uma conexão WebSocket autenticada.
+7.  A interface mostrar o dispositivo online enquanto a sessão estiver
+    saudável.
+8.  O driver conseguir reconectar sem novo emparelhamento.
+9.  O usuário conseguir revogar o dispositivo e impedir novas conexões.
+
+**Fora do escopo:** executar comandos, controlar mouse e teclado,
+acessar arquivos, executar terminal, tirar capturas de tela, controlar
+aplicativos ou disponibilizar ferramentas para agentes de IA. Esses
+recursos só devem ser planejados depois que a infraestrutura de conexão
+e autorização estiver estável.
+
+------------------------------------------------------------------------
+
+## 13. Decisões que devem ser confirmadas no projeto
+
+Antes de implementar, verifique e registre:
+
+-   ORM e versão já usados pelo Spectral.
+-   Banco de dados e forma de acesso compartilhado pelo backend.
+-   Runtime escolhido para o backend e para o driver.
+-   Estratégia de autenticação entre o app e o backend de sockets.
+-   Endereço de produção do serviço WebSocket.
+-   Como o driver armazenará sua chave privada em cada sistema
+    operacional.
+
+Não invente uma segunda infraestrutura de usuários ou autenticação. O
+módulo Devices deve aproveitar a identidade de usuário que o Spectral já
+possui.
+
+**Princípio central:** o código temporário autoriza o primeiro
+emparelhamento; a identidade criptográfica autentica as conexões
+seguintes; e uma camada futura de permissões decidirá o que cada agente
+poderá fazer no dispositivo.

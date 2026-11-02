@@ -10,6 +10,7 @@ import {
   Loader2,
   LogOut,
   Monitor,
+  MonitorSmartphone,
   Moon,
   Settings,
   SlidersHorizontal,
@@ -41,6 +42,7 @@ import { useTheme, type Theme } from "@/components/theme-provider"
 import type { ConfigSection } from "@/lib/config-sections"
 import { cn } from "@/lib/utils"
 import { ByokSection } from "./byok-section"
+import { DevicesSection } from "./devices-section"
 
 export type ConfigUser = {
   name?: string | null
@@ -67,6 +69,7 @@ const sections: {
   { id: "general", label: "Geral", icon: Settings },
   { id: "account", label: "Conta", icon: User },
   { id: "byok", label: "BYOK", icon: KeyRound },
+  { id: "devices", label: "Dispositivos", icon: MonitorSmartphone },
 ]
 
 const navItemClassName =
@@ -108,7 +111,7 @@ export function ConfigComponent({
       >
         <DialogTitle className="sr-only">Configurações</DialogTitle>
         <DialogDescription className="sr-only">
-          Aparência, conta e provedores de IA.
+          Aparência, conta, provedores de IA e dispositivos.
         </DialogDescription>
 
         <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[200px_minmax(0,1fr)] sm:grid-rows-1">
@@ -151,6 +154,7 @@ export function ConfigComponent({
             {section === "general" && <GeneralSection />}
             {section === "account" && <AccountSection user={user} />}
             {section === "byok" && <ByokSection />}
+            {section === "devices" && <DevicesSection />}
           </section>
         </div>
       </DialogContent>

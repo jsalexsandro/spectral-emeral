@@ -2,7 +2,7 @@ import { z } from "zod"
 import { configSectionSchema } from "@/lib/config-sections"
 import { isProviderId } from "@/lib/ai/providers"
 
-export const ACTION_CATALOG_VERSION = 1
+export const ACTION_CATALOG_VERSION = 2
 
 export const RUN_ACTION_TOOL_NAME = "runAction" as const
 
