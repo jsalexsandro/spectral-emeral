@@ -1,8 +1,14 @@
 import { createPublicKey, randomBytes, verify } from "node:crypto"
-import type { IncomingMessage } from "node:http"
+import { createServer, type IncomingMessage, type Server } from "node:http"
 import { WebSocket, WebSocketServer, type RawData } from "ws"
 import { config } from "../config.js"
 import { findDeviceById, touchDevice } from "../devices/repository.js"
+import { handleInternalRequest } from "../http/internal.js"
+import {
+  registerConnection,
+  resolveCommandResult,
+  unregisterConnection,
+} from "./command-bus.js"
 import {
   clientMessageSchema,
   closeCodes,
@@ -94,6 +100,7 @@ function cleanupSocket(ws: WebSocket, state: ConnectionState | undefined) {
 
   if (state.deviceId && activeConnections.get(state.deviceId) === ws) {
     activeConnections.delete(state.deviceId)
+    unregisterConnection(state.deviceId, ws)
   }
 }
 
@@ -215,6 +222,7 @@ async function handleProof(
 
   state.deviceId = device.id
   activeConnections.set(device.id, ws)
+  registerConnection(device.id, ws)
 
   send(ws, {
     type: "device:authenticated",
@@ -292,6 +300,13 @@ async function handleMessage(
     return
   }
 
+  if (message.type === "device:command:result") {
+    if (state.deviceId) {
+      resolveCommandResult(state.deviceId, message.id, message.result)
+    }
+    return
+  }
+
   if (message.type === "device:disconnect") {
     cleanupSocket(ws, state)
     ws.close(1000, "disconnect")
@@ -333,14 +348,34 @@ function handleConnection(ws: WebSocket, request: IncomingMessage) {
   })
 }
 
-export function createSocketServer(): WebSocketServer {
+export type SocketServer = {
+  httpServer: Server
+  wss: WebSocketServer
+}
+
+export function createSocketServer(): SocketServer {
+  const httpServer = createServer((request, response) => {
+    void handleInternalRequest(request, response).catch((error) => {
+      console.error("[spectral-backend] Falha no HTTP interno", error)
+
+      if (response.headersSent) {
+        response.destroy()
+        return
+      }
+
+      response.writeHead(500, { "content-type": "application/json" })
+      response.end(
+        JSON.stringify({ ok: false, code: "internal_error" }),
+      )
+    })
+  })
+
   const wss = new WebSocketServer({
-    host: config.host,
-    port: config.port,
+    server: httpServer,
     maxPayload: config.maxPayloadBytes,
   })
 
   wss.on("connection", handleConnection)
 
-  return wss
+  return { httpServer, wss }
 }

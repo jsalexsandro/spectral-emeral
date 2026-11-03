@@ -3,16 +3,16 @@ import { closeDatabase } from "./db/index.js"
 import { closeCodes } from "./websocket/messages.js"
 import { createSocketServer } from "./websocket/server.js"
 
-const server = createSocketServer()
+const { httpServer, wss } = createSocketServer()
 
-server.on("listening", () => {
+httpServer.listen(config.port, config.host, () => {
   console.log(
-    `[spectral-backend] WebSocket ouvindo em ws://${config.host}:${config.port}`,
+    `[spectral-backend] WebSocket e HTTP interno ouvindo em http://${config.host}:${config.port}`,
   )
 })
 
-server.on("error", (error) => {
-  console.error("[spectral-backend] Erro no servidor WebSocket", error)
+httpServer.on("error", (error) => {
+  console.error("[spectral-backend] Erro no servidor", error)
   process.exitCode = 1
 })
 
@@ -26,11 +26,12 @@ async function shutdown(signal: string) {
   shuttingDown = true
   console.log(`[spectral-backend] Encerrando (${signal})`)
 
-  for (const client of server.clients) {
+  for (const client of wss.clients) {
     client.close(closeCodes.shuttingDown, "server_shutdown")
   }
 
-  server.close()
+  wss.close()
+  httpServer.close()
   await closeDatabase().catch(() => undefined)
   process.exit(0)
 }

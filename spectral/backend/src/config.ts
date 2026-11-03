@@ -44,4 +44,7 @@ export const config = {
   challengeTtlMs: 30_000,
   authTimeoutMs: 10_000,
   maxPayloadBytes: 16 * 1024,
+  internalSecret:
+    process.env.SPECTRAL_INTERNAL_SECRET ?? process.env.AUTH_SECRET ?? "",
+  commandTimeoutMs: readInteger("DEVICE_COMMAND_TIMEOUT_MS", 15_000),
 }

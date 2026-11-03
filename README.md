@@ -92,8 +92,11 @@ claro/escuro/sistema é controlado em Configurações → Geral → Aparência.
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` — login com GitHub
 - `AUTH_APPLE_ID` / `AUTH_APPLE_SECRET` — login com Apple (opcional)
 - `DEVICE_PAIRING_SECRET` — segredo HMAC dos códigos de emparelhamento (usa `AUTH_SECRET` como fallback)
-- `SPECTRAL_WS_HOST` / `SPECTRAL_WS_PORT` — bind do backend WebSocket (padrão `0.0.0.0:4001`)
+- `SPECTRAL_WS_HOST` / `SPECTRAL_WS_PORT` — bind do backend WebSocket e HTTP interno (padrão `0.0.0.0:4001`)
 - `DEVICE_HEARTBEAT_TIMEOUT_MS` — timeout de heartbeat do backend (padrão `45000`)
+- `DEVICE_COMMAND_TIMEOUT_MS` — timeout de comandos remotos (padrão `15000`, máximo `60000`)
+- `SPECTRAL_INTERNAL_SECRET` — segredo do endpoint interno de comandos (usa `AUTH_SECRET` como fallback)
+- `SPECTRAL_BACKEND_URL` — URL do backend usada pelo app Next.js (padrão `http://localhost:4001`)
 - `SPECTRAL_API_URL` / `SPECTRAL_WS_URL` — URLs usadas pelo driver (padrão `localhost:3000` e `ws://localhost:4001`)
 
 O backend e o driver carregam o `.env` da raiz automaticamente; variáveis já
@@ -123,12 +126,24 @@ Padrões: `admin@admin.com` / `admin123`. Sobrescreva com
 - Identidade Ed25519 por dispositivo; autenticação por desafio/assinatura no WebSocket
 - Presença por heartbeat de 15s; online quando `lastSeenAt` tem até 45s
 - Revogação lógica (`Device.revokedAt`) com encerramento do socket ativo
+- Canal de comando backend → driver com `correlation id`, timeout e um comando em voo por dispositivo
+- O chat consulta dispositivos com `device-list` / `device-online-list`, obtém o
+  sistema operacional com `device-get-os` e controla com `device-open-url`,
+  `device-open-app`, `device-list-apps`, `device-type-text` e `device-press-key`
+- Leitura de arquivos nos dispositivos (somente leitura, sandbox da pasta do usuário):
+  `device-list-files`, `device-read-file`, `device-glob` e `device-grep`
+- Allowlist de apps no driver; URLs apenas `http`/`https`; combinações `alt+F4` e
+  `ctrl+alt+delete` bloqueadas
+- `type-text` e `press-key` agem na janela em foco do dispositivo (o driver não escolhe a janela)
+- O driver deve ser iniciado com privilégios de administrador (PowerShell como Administrador
+  ou `sudo`); o console exibe se o modo elevado está ativo (`device-get-os` retorna `elevated`)
 - Pacotes independentes:
-  - `spectral/backend`: servidor WebSocket (`ws`) na porta `4001`
-  - `spectral/driver`: CLI do dispositivo com reconexão e identidade local
+  - `spectral/backend`: servidor WebSocket (`ws`) e HTTP interno na porta `4001`
+  - `spectral/driver`: CLI do dispositivo com reconexão, identidade local e executor de comandos
 - Rotas: `/api/devices`, `/api/devices/[id]`, `/api/devices/pairing` e
   `/api/devices/pairing/confirm`
-- Referência técnica em `specs/devices.md`; tabelas em `specs/schema.md`
+- Referência técnica em `specs/devices-connect.md`; tools de PC em `specs/chat-device.md`;
+  tabelas em `specs/schema.md`
 
 ```bash
 npm run install:services

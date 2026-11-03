@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 7
+export const SYSTEM_PROMPT_VERSION = 11
 
 export type SystemPromptChange = {
   version: number
@@ -48,5 +48,29 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-01",
     summary:
       "Separa UI de ações: renderUi para conteúdo, runAction para efeitos, panel no lugar de chatUi e ações tipadas em botões.",
+  },
+  {
+    version: 8,
+    date: "2026-11-03",
+    summary:
+      "Adiciona a seção de dispositivos e anuncia as tools device-list e device-online-list, restritas à consulta.",
+  },
+  {
+    version: 9,
+    date: "2026-11-03",
+    summary:
+      "Anuncia o canal de comando e as tools de controle de dispositivos (abrir URL/app, listar apps, digitar e pressionar teclas), com regras de confirmação e allowlist.",
+  },
+  {
+    version: 10,
+    date: "2026-11-03",
+    summary:
+      "Adiciona a tool device-get-os para consultar plataforma, release, versão e arquitetura do dispositivo.",
+  },
+  {
+    version: 11,
+    date: "2026-11-03",
+    summary:
+      "Adiciona tools de leitura de arquivos nos dispositivos (device-list-files, device-read-file, device-glob e device-grep), restritas à pasta de usuário com sandbox e denylist.",
   },
 ]

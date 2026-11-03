@@ -1,5 +1,11 @@
 import { createPrivateKey, sign } from "node:crypto"
 import { WebSocket, type RawData } from "ws"
+import {
+  DeviceCommandValidationError,
+  parseDeviceCommand,
+  type DeviceCommandResult,
+} from "../../shared/device-commands.js"
+import { executeDeviceCommand } from "./commands/executor.js"
 import type { DriverConfig } from "./config.js"
 import type { DeviceIdentity } from "./identity.js"
 
@@ -26,6 +32,12 @@ type ServerMessage =
       heartbeatTimeoutMs?: number
     }
   | { type: "device:heartbeat:ack"; serverTime?: string }
+  | {
+      type: "device:command"
+      id?: string
+      command?: string
+      input?: unknown
+    }
   | { type: "device:error"; code: string; message?: string }
 
 export type ConnectionOutcome = {
@@ -130,6 +142,55 @@ export function connectDevice(
     }, heartbeatIntervalMs)
   }
 
+  let commandChain: Promise<void> = Promise.resolve()
+
+  function enqueueCommand(message: {
+    id?: string
+    command?: string
+    input?: unknown
+  }) {
+    if (!message.id || message.id.length > 128) {
+      return
+    }
+
+    if (typeof message.command !== "string") {
+      return
+    }
+
+    const id = message.id
+    const rawCommand = message.command
+    const input = message.input
+
+    commandChain = commandChain
+      .then(async () => {
+        let result: DeviceCommandResult
+
+        try {
+          const command = parseDeviceCommand(rawCommand, input)
+          result = await executeDeviceCommand(command)
+        } catch (error) {
+          result =
+            error instanceof DeviceCommandValidationError
+              ? {
+                  ok: false,
+                  code: error.code,
+                  error: error.message.slice(0, 900),
+                }
+              : {
+                  ok: false,
+                  code: "command_failed",
+                  error:
+                    error instanceof Error
+                      ? error.message.slice(0, 900)
+                      : "Falha ao executar o comando.",
+                }
+        }
+
+        send({ type: "device:command:result", id, result })
+      })
+      .catch(() => undefined)
+  }
+
   socket.on("open", () => {
     if (!identity.deviceId) {
       fatal = true
@@ -176,6 +237,13 @@ export function connectDevice(
 
     if (message.type === "device:heartbeat:ack") {
       lastAckAt = Date.now()
+      return
+    }
+
+    if (message.type === "device:command") {
+      if (authenticated) {
+        enqueueCommand(message)
+      }
       return
     }
 

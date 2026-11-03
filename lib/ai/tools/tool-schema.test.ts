@@ -32,7 +32,7 @@ function collectForbiddenKeys(
 
 describe("chat tool schemas", () => {
   it("does not emit refs in the JSON schema sent to providers", async () => {
-    const tools = getChatTools()
+    const tools = getChatTools({ userId: "test-user" })
 
     for (const [name, chatTool] of Object.entries(tools)) {
       const schema = await asSchema(chatTool.inputSchema).jsonSchema

@@ -48,7 +48,7 @@ export function createSpectralAgent({
     id: "spectral",
     model,
     instructions,
-    tools: getChatTools(),
+    tools: getChatTools({ userId: runtimeContext.userId }),
     stopWhen: [isStepCount(MAX_AGENT_STEPS), budgetExceeded],
     runtimeContext,
     prepareStep: ({ messages }) => {

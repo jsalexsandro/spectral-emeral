@@ -265,6 +265,45 @@ Implementado:
 
 
 Passo 11 - Device System
+  Device system é uma maneira de controlar dispositivos externos via chat ui
+  Exemplo apos a integração final:  
+    Abra o navegador no youtube no dispositivo "casa-pc"
+
+  A comunicação funcionará via sockets, um backend externo
+  No dispositivo que será conectado, deverá  ser instaldo o drive de comunicação e pareado no app do spectral
+
+  o sistema completo está em ./devices-connect.md
+  
+  --- Até aqui está feito
+
+  Integração com o chat via tools
+  A api de tools `device-tools` permite ao chat consultar os dispositivos, e o driver controla a máquina.
+  No driver foram definidas as APIs necessárias para controlar o dispositivo (PC agora; celular e TV Android no futuro).
+
+  Fase 1 — somente consulta (implementada)
+  - [x] `device-tools.device-list`: lista todos os dispositivos
+  - [x] `device-tools.device-online-list`: lista apenas os dispositivos online
+  - [x] Tools em `lib/ai/tools/device-tools.ts`, restritas aos dispositivos do usuário autenticado
+  - [x] Sem exposição de chaves públicas ou fingerprints
+  - [x] Seção `devices` no system prompt (`SYSTEM_PROMPT_VERSION = 8`)
+  - [x] Testes em `lib/ai/tools/device-tools.test.ts`
+
+  Fase 2 — controle remoto (implementada)
+  - [x] Canal de comando backend → driver via WebSocket (request/response com correlation id)
+  - [x] Endpoint HTTP interno no backend autenticado por segredo compartilhado
+  - [x] Tools de controle `device-open-url`, `device-open-app`, `device-list-apps`, `device-get-os`, `device-type-text` e `device-press-key`
+  - [x] Tools de leitura de arquivos `device-list-files`, `device-read-file`, `device-glob` e `device-grep` (somente leitura, sandbox da pasta do usuário)
+  - [x] Executor no driver com allowlist de apps, URLs http/https e bloqueio de combinações perigosas
+  - [x] Seção `devices` atualizada no system prompt (`SYSTEM_PROMPT_VERSION = 11`)
+  - [x] Tools de PC documentadas em `specs/chat-device.md`
+
+  Próximas fases
+  - [ ] Confirmação explícita na UI para ações sensíveis
+  - [ ] Captura de tela (`device-screenshot`)
+  - [ ] Suporte a celular e TV Android
+    
+  
+    
 
 ### Passo 40 (futuro): configurações personalizadas de prompt
 
