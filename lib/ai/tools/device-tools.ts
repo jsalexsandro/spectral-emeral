@@ -418,101 +418,233 @@ export function createDeviceTools(userId: string) {
     [DEVICE_OPEN_URL_TOOL_NAME]: tool({
       description: openUrlDescription,
       inputSchema: deviceOpenUrlInputSchema,
-      execute: async ({ deviceId, url }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "open-url",
-          input: { url },
-        }),
+      execute: async ({ deviceId, url }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "open-url",
+            input: { url },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-open-url.",
+          }
+        }
+      },
     }),
     [DEVICE_OPEN_APP_TOOL_NAME]: tool({
       description: openAppDescription,
       inputSchema: deviceOpenAppInputSchema,
-      execute: async ({ deviceId, appId }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "open-app",
-          input: { appId },
-        }),
+      execute: async ({ deviceId, appId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "open-app",
+            input: { appId },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-open-app.",
+          }
+        }
+      },
     }),
     [DEVICE_LIST_APPS_TOOL_NAME]: tool({
       description: listAppsDescription,
       inputSchema: deviceListAppsInputSchema,
-      execute: async ({ deviceId }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "list-apps",
-          input: {},
-        }),
+      execute: async ({ deviceId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "list-apps",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-list-apps.",
+          }
+        }
+      },
     }),
     [DEVICE_GET_OS_TOOL_NAME]: tool({
       description: getOsDescription,
       inputSchema: deviceGetOsInputSchema,
-      execute: async ({ deviceId }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "get-os",
-          input: {},
-        }),
+      execute: async ({ deviceId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "get-os",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-get-os.",
+          }
+        }
+      },
     }),
     [DEVICE_TYPE_TEXT_TOOL_NAME]: tool({
       description: typeTextDescription,
       inputSchema: deviceTypeTextInputSchema,
-      execute: async ({ deviceId, text }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "type-text",
-          input: { text },
-        }),
+      execute: async ({ deviceId, text }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "type-text",
+            input: { text },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-type-text.",
+          }
+        }
+      },
     }),
     [DEVICE_PRESS_KEY_TOOL_NAME]: tool({
       description: pressKeyDescription,
       inputSchema: devicePressKeyInputSchema,
-      execute: async ({ deviceId, key, modifiers }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "press-key",
-          input: { key, modifiers: modifiers ?? [] },
-        }),
+      execute: async ({ deviceId, key, modifiers }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "press-key",
+            input: { key, modifiers: modifiers ?? [] },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-press-key.",
+          }
+        }
+      },
     }),
     [DEVICE_LIST_FILES_TOOL_NAME]: tool({
       description: listFilesDescription,
       inputSchema: deviceListFilesInputSchema,
-      execute: async ({ deviceId, ...input }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "list-files",
-          input,
-        }),
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "list-files",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-list-files.",
+          }
+        }
+      },
     }),
     [DEVICE_READ_FILE_TOOL_NAME]: tool({
       description: readFileDescription,
       inputSchema: deviceReadFileInputSchema,
-      execute: async ({ deviceId, ...input }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "read-file",
-          input,
-        }),
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "read-file",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-read-file.",
+          }
+        }
+      },
     }),
     [DEVICE_GLOB_TOOL_NAME]: tool({
       description: globDescription,
       inputSchema: deviceGlobInputSchema,
-      execute: async ({ deviceId, ...input }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "glob",
-          input,
-        }),
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "glob",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-glob.",
+          }
+        }
+      },
     }),
     [DEVICE_GREP_TOOL_NAME]: tool({
       description: grepDescription,
       inputSchema: deviceGrepInputSchema,
-      execute: async ({ deviceId, ...input }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "grep",
-          input,
-        }),
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "grep",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-grep.",
+          }
+        }
+      },
     }),
     [DEVICE_CHECK_ADMIN_TOOL_NAME]: tool({
       description: checkAdminDescription,
       inputSchema: deviceCheckAdminInputSchema,
-      execute: async ({ deviceId }) =>
-        runDeviceCommand(userId, deviceId, {
-          command: "check-admin",
-          input: {},
-        }),
+      execute: async ({ deviceId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "check-admin",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-check-admin.",
+          }
+        }
+      },
     }),
   }
 }

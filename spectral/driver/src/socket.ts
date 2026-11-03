@@ -190,8 +190,10 @@ export function connectDevice(
                 }
         }
 
+        const code = "ok" in result && result.ok === false ? result.code : "-"
+        const errorMsg = "ok" in result && result.ok === false ? result.error : "-"
         console.log(
-          `[driver] sending device result id=${id} ok=${result.ok} code=${result.code ?? "-"} error=${result.error ?? "-"}`,
+          `[driver] sending device result id=${id} ok=${result.ok} code=${code} error=${errorMsg}`,
         )
 
         send({ type: "device:command:result", id, result })

@@ -71,29 +71,36 @@ export async function sendDeviceCommand(
     timeoutMs + REQUEST_GRACE_MS,
   )
 
+  const url = `${getBackendUrl()}/internal/devices/${encodeURIComponent(
+    input.deviceId,
+  )}/commands`
+
+  console.log(
+    `[command-client] sending HTTP command id=${input.command.command} deviceId=${input.deviceId} url=${url}`,
+  )
+
   try {
-    const response = await fetch(
-      `${getBackendUrl()}/internal/devices/${encodeURIComponent(
-        input.deviceId,
-      )}/commands`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-internal-secret": secret,
-        },
-        body: JSON.stringify({
-          userId: input.userId,
-          command: input.command.command,
-          input: input.command.input,
-          timeoutMs,
-        }),
-        cache: "no-store",
-        signal: controller.signal,
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-secret": secret,
       },
-    )
+      body: JSON.stringify({
+        userId: input.userId,
+        command: input.command.command,
+        input: input.command.input,
+        timeoutMs,
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    })
 
     const payload: unknown = await response.json().catch(() => null)
+
+    console.log(
+      `[command-client] HTTP response id=${input.command.command} deviceId=${input.deviceId} status=${response.status} payload=${JSON.stringify(payload).slice(0, 200)}`,
+    )
 
     if (!response.ok) {
       if (isRecord(payload)) {
@@ -134,6 +141,11 @@ export async function sendDeviceCommand(
         error: "Resposta inválida do backend.",
       }
     }
+
+    const isFailure = "ok" in result && result.ok === false
+    console.log(
+      `[command-client] OK id=${input.command.command} deviceId=${input.deviceId} ok=true code=${isFailure ? result.code : "-"} error=${isFailure ? result.error : "-"}`,
+    )
 
     return { ok: true, result }
   } catch (error) {
