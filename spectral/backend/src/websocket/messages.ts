@@ -100,6 +100,15 @@ export const commandResultMessageSchema = z.object({
           newTextLength: z.number().int().nonnegative(),
         })
         .optional(),
+      run: z
+        .object({
+          command: z.string().min(1).max(256),
+          exitCode: z.number().int().nullable(),
+          stdout: z.string().max(80_000),
+          stderr: z.string().max(80_000),
+          durationMs: z.number().int().nonnegative(),
+        })
+        .optional(),
     }),
     z.object({
       ok: z.literal(false),

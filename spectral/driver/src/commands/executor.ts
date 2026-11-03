@@ -439,6 +439,9 @@ export async function executeDeviceCommand(
 
       case "edit-file":
         return { ...(await files.editFile(command.input)), ok: true }
+
+      case "run-command":
+        return { ...(await files.runCommand(command.input)), ok: true }
     }
   } catch (error) {
     if (error instanceof DeviceFileError) {

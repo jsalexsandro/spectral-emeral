@@ -32,6 +32,9 @@ import {
   DEVICE_FILE_WRITE_MAX_BYTES,
   DEVICE_FILE_EDIT_MAX_OLD_TEXT,
   DEVICE_FILE_EDIT_MAX_NEW_TEXT,
+  DEVICE_RUN_TIMEOUT_DEFAULT_MS,
+  DEVICE_RUN_TIMEOUT_MAX_MS,
+  DEVICE_RUN_ARGS_MAX_LENGTH,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   type DeviceCommand,
@@ -55,6 +58,7 @@ export const DEVICE_GREP_TOOL_NAME = "device-grep"
 export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
 export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
 export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
+export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 
 const deviceIdSchema = z
   .string()
@@ -198,6 +202,19 @@ export const deviceEditFileInputSchema = z.object({
   newText: z.string().max(DEVICE_FILE_EDIT_MAX_NEW_TEXT),
 })
 
+export const deviceRunCommandInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  command: z.string().min(1).max(256),
+  args: z.array(z.string().max(DEVICE_RUN_ARGS_MAX_LENGTH)).optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1_000)
+    .max(DEVICE_RUN_TIMEOUT_MAX_MS)
+    .default(DEVICE_RUN_TIMEOUT_DEFAULT_MS),
+  cwd: z.string().max(DEVICE_PATH_MAX_LENGTH).optional(),
+})
+
 type DeviceRow = {
   id: string
   name: string
@@ -299,6 +316,7 @@ function toCommandToolResult(
       : {}),
     ...(output.result.write ? { write: output.result.write } : {}),
     ...(output.result.edit ? { edit: output.result.edit } : {}),
+    ...(output.result.run ? { run: output.result.run } : {}),
   }
 }
 
@@ -411,6 +429,14 @@ const editFileDescription = [
   "O texto antigo deve aparecer exatamente uma vez no arquivo.",
   "Use `device-read-file` para ler o conteúdo antes de editar.",
   "O arquivo resultante não pode exceder 1 MB.",
+].join("\n")
+
+const runCommandDescription = [
+  "Executa um comando no dispositivo (somente leitura/consulta).",
+  "Apenas comandos da allowlist são permitidos (ex.: ls, dir, echo, ps, whoami, ping, etc.).",
+  "Comandos destrutivos (rm, del, shutdown, sudo, etc.) são bloqueados.",
+  "Saída limitada a 64 KB. Timeout configurável (padrão 15s, máximo 60s).",
+  "Use com cuidado: qualquer comando pode afetar o sistema do dispositivo.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -718,6 +744,27 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-edit-file.",
+          }
+        }
+      },
+    }),
+    [DEVICE_RUN_COMMAND_TOOL_NAME]: tool({
+      description: runCommandDescription,
+      inputSchema: deviceRunCommandInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "run-command",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-run-command.",
           }
         }
       },

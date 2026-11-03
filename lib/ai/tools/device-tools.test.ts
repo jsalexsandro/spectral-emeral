@@ -15,6 +15,7 @@ import {
   DEVICE_CHECK_ADMIN_TOOL_NAME,
   DEVICE_WRITE_FILE_TOOL_NAME,
   DEVICE_EDIT_FILE_TOOL_NAME,
+  DEVICE_RUN_COMMAND_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
   deviceOpenAppInputSchema,
@@ -99,6 +100,7 @@ describe("device tools", () => {
         DEVICE_CHECK_ADMIN_TOOL_NAME,
         DEVICE_WRITE_FILE_TOOL_NAME,
         DEVICE_EDIT_FILE_TOOL_NAME,
+        DEVICE_RUN_COMMAND_TOOL_NAME,
       ].sort(),
     )
 

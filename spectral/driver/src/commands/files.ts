@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs"
+import { execFile } from "node:child_process"
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import {
@@ -14,12 +15,19 @@ import { minimatch } from "minimatch"
 import type {
   DeviceCommandInputMap,
   DeviceCommandSuccess,
+  DeviceCommandRunResult,
   DeviceFileContent,
   DeviceFileEntry,
   DeviceFileEntryType,
   DeviceFileEditResult,
   DeviceFileWriteResult,
   DeviceGrepMatch,
+} from "../../../shared/device-commands.js"
+import {
+  DEVICE_RUN_TIMEOUT_DEFAULT_MS,
+  DEVICE_RUN_TIMEOUT_MAX_MS,
+  DEVICE_RUN_ARGS_MAX_LENGTH,
+  DEVICE_RUN_OUTPUT_MAX_BYTES,
 } from "../../../shared/device-commands.js"
 
 const MAX_READ_FILE_BYTES = 1024 * 1024
@@ -30,6 +38,93 @@ const MAX_GREP_LINE_LENGTH = 2000
 const MAX_GREP_MATCH_TEXT = 300
 const MAX_WALK_DEPTH = 12
 const MAX_WRITE_FILE_BYTES = 1024 * 1024
+
+const RUN_COMMAND_ALLOWLIST_WINDOWS = new Set([
+  "dir",
+  "type",
+  "echo",
+  "tasklist",
+  "systeminfo",
+  "ipconfig",
+  "ping",
+  "netstat",
+  "whoami",
+  "hostname",
+  "date",
+  "ver",
+  "cd",
+  "cls",
+  "find",
+  "findstr",
+  "tree",
+  "vol",
+])
+
+const RUN_COMMAND_ALLOWLIST_UNIX = new Set([
+  "ls",
+  "pwd",
+  "echo",
+  "cat",
+  "ps",
+  "df",
+  "free",
+  "whoami",
+  "hostname",
+  "date",
+  "uname",
+  "ping",
+  "netstat",
+  "ifconfig",
+  "find",
+  "grep",
+  "head",
+  "tail",
+  "wc",
+  "uptime",
+  "w",
+])
+
+const RUN_COMMAND_ALLOWLIST: Record<string, Set<string>> = {
+  win32: RUN_COMMAND_ALLOWLIST_WINDOWS,
+  darwin: RUN_COMMAND_ALLOWLIST_UNIX,
+  linux: RUN_COMMAND_ALLOWLIST_UNIX,
+}
+
+const RUN_COMMAND_DENYLIST_PATTERNS = [
+  /sudo/,
+  /su /,
+  /runas/,
+  /rm -rf/,
+  /del /,
+  /format/,
+  /shutdown/,
+  /reboot/,
+  /poweroff/,
+  /halt/,
+  /mkfs/,
+  /fdisk/,
+  /reg delete/,
+  /sc delete/,
+  /net stop/,
+  /net start/,
+  /taskkill/,
+  /xcopy/,
+  /robocopy/,
+  /cscript/,
+  /wscript/,
+  /powershell/,
+  /pwsh/,
+  /cmd/,
+  /bash/,
+  /sh /,
+  /zsh/,
+  /curl/,
+  /wget/,
+  /chmod/,
+  /chown/,
+]
+
+const IS_WINDOWS = process.platform === "win32"
 
 const IGNORED_DIRECTORIES = new Set([
   "node_modules",
@@ -91,8 +186,6 @@ const DEFAULT_DENY_PATTERNS = [
   "**/hiberfil.sys",
   "**/swapfile.sys",
 ] as const
-
-const IS_WINDOWS = process.platform === "win32"
 
 export class DeviceFileError extends Error {
   readonly code: string
@@ -827,6 +920,99 @@ export class FileSandbox {
         newTextLength: Buffer.byteLength(newText, "utf8"),
       },
     }
+  }
+
+  async runCommand(
+    input: DeviceCommandInputMap["run-command"],
+  ): Promise<DeviceCommandSuccess> {
+    const { command: rawCommand, args = [], timeoutMs = DEVICE_RUN_TIMEOUT_DEFAULT_MS, cwd } = input
+
+    // Valida o comando base contra a allowlist
+    const allowlist = RUN_COMMAND_ALLOWLIST[process.platform]
+
+    if (!allowlist || !allowlist.has(rawCommand)) {
+      throw new DeviceFileError(
+        "command_not_allowed",
+        `O comando '${rawCommand}' não está na allowlist de comandos permitidos.`,
+      )
+    }
+
+    // Verifica se nenhum argumento bate com padrões perigosos
+    const fullCommandLine = [rawCommand, ...args].join(" ")
+
+    for (const pattern of RUN_COMMAND_DENYLIST_PATTERNS) {
+      if (pattern.test(fullCommandLine)) {
+        throw new DeviceFileError(
+          "command_blocked",
+          `O comando '${rawCommand}' contém um padrão bloqueado por segurança.`,
+        )
+      }
+    }
+
+    // Resolve o diretório de trabalho
+    let runCwd: string | undefined
+    if (cwd) {
+      const resolved = await this.resolvePath(cwd)
+      const stats = await lstat(resolved.absolute)
+
+      if (!stats.isDirectory()) {
+        throw new DeviceFileError(
+          "not_a_directory",
+          "O caminho cwd não é um diretório.",
+        )
+      }
+
+      runCwd = resolved.absolute
+    }
+
+    const startTime = Date.now()
+
+    return new Promise<DeviceCommandSuccess>((resolve, reject) => {
+      execFile(
+        rawCommand,
+        args,
+        {
+          cwd: runCwd,
+          timeout: timeoutMs,
+          maxBuffer: DEVICE_RUN_OUTPUT_MAX_BYTES,
+          windowsHide: true,
+        },
+        (error, stdout, stderr) => {
+          const durationMs = Date.now() - startTime
+
+          if (error) {
+            const code = error.code === "ETIMEDOUT"
+              ? "command_timeout"
+              : "command_failed"
+
+            resolve({
+              ok: true,
+              run: {
+                command: rawCommand,
+                exitCode: error.code === "ETIMEDOUT" ? -1 : (error as NodeJS.ErrnoException).code === "ENOENT" ? 127 : 1,
+                stdout: stdout ?? "",
+                stderr: stderr ?? (error.message ?? "Erro desconhecido"),
+                durationMs,
+              },
+            })
+            return
+          }
+
+          const exitCode = 0
+
+          resolve({
+            ok: true,
+            run: {
+              command: rawCommand,
+              exitCode,
+              stdout: stdout ?? "",
+              stderr: stderr ?? "",
+              durationMs,
+            },
+          })
+        },
+      )
+    })
   }
 }
 

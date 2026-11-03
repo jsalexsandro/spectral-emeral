@@ -12,6 +12,7 @@ export const DEVICE_COMMAND_NAMES = [
   "check-admin",
   "write-file",
   "edit-file",
+  "run-command",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -129,6 +130,10 @@ export const DEVICE_FILE_WRITE_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_OLD_TEXT = 10 * 1024
 export const DEVICE_FILE_EDIT_MAX_NEW_TEXT = 10 * 1024
+export const DEVICE_RUN_TIMEOUT_DEFAULT_MS = 15_000
+export const DEVICE_RUN_TIMEOUT_MAX_MS = 60_000
+export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
+export const DEVICE_RUN_ARGS_MAX_LENGTH = 1024
 
 export type DeviceAppInfo = {
   id: string
@@ -181,6 +186,14 @@ export type DeviceFileEditResult = {
   newTextLength: number
 }
 
+export type DeviceCommandRunResult = {
+  command: string
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+
 export type DeviceGrepMatch = {
   path: string
   line: number
@@ -225,6 +238,12 @@ export type DeviceCommandInputMap = {
     oldText: string
     newText: string
   }
+  "run-command": {
+    command: string
+    args?: string[]
+    timeoutMs?: number
+    cwd?: string
+  }
 }
 
 export type DeviceCommand = {
@@ -239,16 +258,17 @@ export type DeviceCommandSuccess = {
   output?: string
   apps?: DeviceAppInfo[]
   os?: DeviceOsInfo
-  entries?: DeviceFileEntry[]
-  file?: DeviceFileContent
-  paths?: string[]
-  matches?: DeviceGrepMatch[]
+      entries?: DeviceFileEntry[]
+      file?: DeviceFileContent
+      paths?: string[]
+      matches?: DeviceGrepMatch[]
       truncated?: boolean
       total?: number
       filesScanned?: number
       admin?: boolean
       write?: DeviceFileWriteResult
       edit?: DeviceFileEditResult
+      run?: DeviceCommandRunResult
 }
 
 export type DeviceCommandFailure = {
@@ -746,6 +766,96 @@ function parseEditFile(input: unknown): DeviceCommand {
   return { command: "edit-file", input: { path, oldText, newText } }
 }
 
+function parseRunCommand(input: unknown): DeviceCommand {
+  const command = readString(input, "command", "invalid_command_arg")
+
+  if (command.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_command_arg",
+      "O campo 'command' não pode estar vazio.",
+    )
+  }
+
+  if (command.length > 256) {
+    throw new DeviceCommandValidationError(
+      "invalid_command_arg",
+      "O comando excede o limite de 256 caracteres.",
+    )
+  }
+
+  // Bloqueia caracteres de shell perigosos
+  if (/[;&|`$<>(){}\[\]\\]/.test(command)) {
+    throw new DeviceCommandValidationError(
+      "invalid_command_arg",
+      "O comando contém caracteres não permitidos.",
+    )
+  }
+
+  const args: string[] = []
+  let rawArgs: unknown
+
+  if (typeof input === "object" && input !== null) {
+    rawArgs = (input as Record<string, unknown>).args
+  }
+
+  if (rawArgs !== undefined && rawArgs !== null) {
+    if (!Array.isArray(rawArgs)) {
+      throw new DeviceCommandValidationError(
+        "invalid_args",
+        "O campo 'args' deve ser uma lista de strings.",
+      )
+    }
+
+    for (let i = 0; i < rawArgs.length; i += 1) {
+      const arg = rawArgs[i]
+
+      if (typeof arg !== "string") {
+        throw new DeviceCommandValidationError(
+          "invalid_args",
+          `O argumento ${i} deve ser uma string.`,
+        )
+      }
+
+      if (arg.length > DEVICE_RUN_ARGS_MAX_LENGTH) {
+        throw new DeviceCommandValidationError(
+          "invalid_args",
+          `O argumento ${i} excede o limite de ${DEVICE_RUN_ARGS_MAX_LENGTH} caracteres.`,
+        )
+      }
+
+      // Bloqueia caracteres de shell perigosos nos argumentos
+      if (/[;&|`$<>(){}\[\]\\]/.test(arg)) {
+        throw new DeviceCommandValidationError(
+          "invalid_args",
+          `O argumento ${i} contém caracteres não permitidos.`,
+        )
+      }
+
+      args.push(arg)
+    }
+  }
+
+  const timeoutMs = readInteger(
+    input,
+    "timeoutMs",
+    DEVICE_RUN_TIMEOUT_DEFAULT_MS,
+    1_000,
+    DEVICE_RUN_TIMEOUT_MAX_MS,
+  )
+
+  const cwd = readOptionalPath(input)
+
+  return {
+    command: "run-command",
+    input: {
+      command,
+      ...(args.length > 0 ? { args } : {}),
+      ...(timeoutMs !== DEVICE_RUN_TIMEOUT_DEFAULT_MS ? { timeoutMs } : {}),
+      ...(cwd ? { cwd } : {}),
+    },
+  }
+}
+
 export function parseDeviceCommand(
   command: unknown,
   input: unknown,
@@ -784,5 +894,7 @@ export function parseDeviceCommand(
       return parseWriteFile(input)
     case "edit-file":
       return parseEditFile(input)
+    case "run-command":
+      return parseRunCommand(input)
   }
 }
