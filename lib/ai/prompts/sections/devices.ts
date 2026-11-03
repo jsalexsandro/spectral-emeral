@@ -12,6 +12,7 @@ export const devicesSection: PromptSection = {
       "- Tools de controle: `device-open-url` (abre URL http/https), `device-open-app` (abre app da allowlist), `device-list-apps` (lista appIds), `device-get-os` (plataforma, release, versão e arquitetura), `device-type-text` (digita na janela em foco) e `device-press-key` (tecla ou combinação).",
       "- Tools de leitura de arquivos (somente leitura): `device-list-files` (lista pastas/arquivos), `device-read-file` (lê conteúdo de texto), `device-glob` (busca por padrão) e `device-grep` (busca texto dentro de arquivos). Todas operam na pasta de usuário do dispositivo, com sandbox e denylist de caminhos sensíveis.",
       "- Use `device-check-admin` para saber se o dispositivo está com privilégios de administrador (`admin: true/false`).",
+      "- `device-type-text` e `device-press-key` exigem confirmação no chat antes de executar. Apenas digite ou pressione teclas após o usuário aprovar. Nunca digite senhas.",
       "- Nunca tente ler ou contornar caminhos bloqueados (credenciais, perfis de navegador, sistema). Se o driver negar o caminho, explique e não tente alternativas.",
       "- Sempre use o `deviceId` retornado por `device-list` ou `device-online-list`; nunca invente um id.",
       "- Execute um comando por vez no mesmo dispositivo e espere o resultado antes de enviar outro.",

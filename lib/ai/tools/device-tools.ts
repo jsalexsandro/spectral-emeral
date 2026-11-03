@@ -454,6 +454,7 @@ export function createDeviceTools(userId: string) {
     [DEVICE_TYPE_TEXT_TOOL_NAME]: tool({
       description: typeTextDescription,
       inputSchema: deviceTypeTextInputSchema,
+      needsApproval: true,
       execute: async ({ deviceId, text }) =>
         runDeviceCommand(userId, deviceId, {
           command: "type-text",
@@ -463,6 +464,7 @@ export function createDeviceTools(userId: string) {
     [DEVICE_PRESS_KEY_TOOL_NAME]: tool({
       description: pressKeyDescription,
       inputSchema: devicePressKeyInputSchema,
+      needsApproval: true,
       execute: async ({ deviceId, key, modifiers }) =>
         runDeviceCommand(userId, deviceId, {
           command: "press-key",

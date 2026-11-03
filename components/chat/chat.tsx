@@ -123,12 +123,13 @@ function ChatSession({
     [],
   )
 
-  const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
-    id: chatId,
-    messages: initialMessages,
-    transport,
-    onFinish: onChatPersisted,
-  })
+  const { messages, sendMessage, status, error, stop, addToolApprovalResponse } =
+    useChat<UIMessage>({
+      id: chatId,
+      messages: initialMessages,
+      transport,
+      onFinish: onChatPersisted,
+    })
 
   const isBusy = status === "submitted" || status === "streaming"
   const canSend = message.trim().length > 0 && model.length > 0 && !isBusy
@@ -247,6 +248,12 @@ function ChatSession({
                         key={`${item.id}-activity`}
                         parts={item.parts}
                         isStreaming={isStreaming}
+                        onApprove={(approvalId, approved) =>
+                          addToolApprovalResponse({
+                            id: approvalId,
+                            approved,
+                          })
+                        }
                       />
                       {item.parts.map((part, index) => {
                         if (part.type === "text" && part.text.trim()) {
