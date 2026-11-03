@@ -330,8 +330,14 @@ async function openApp(appId: string): Promise<string> {
 }
 
 async function typeText(text: string): Promise<void> {
+  const safe = escapeSendKeys(text)
+
+  console.log(
+    `[driver] typeText: length=${text.length} platform=${process.platform}`,
+  )
+
   if (process.platform === "win32") {
-    await sendKeysWindows(escapeSendKeys(text))
+    await sendKeysWindows(safe)
     return
   }
 
@@ -356,12 +362,20 @@ async function pressKey(
   key: DeviceKey,
   modifiers: readonly DeviceKeyModifier[],
 ): Promise<void> {
+  const combo = sendKeysPrefix(modifiers) + sendKeysToken(key)
+
+  console.log(
+    `[driver] pressKey: key="${key}" modifiers=${JSON.stringify(
+      modifiers,
+    )} combo="${combo}" platform=${process.platform}`,
+  )
+
   if (process.platform === "win32") {
     if (modifiers.includes("meta")) {
       throw unsupported("A tecla Windows não é suportada no Windows.")
     }
 
-    await sendKeysWindows(sendKeysPrefix(modifiers) + sendKeysToken(key))
+    await sendKeysWindows(combo)
     return
   }
 
