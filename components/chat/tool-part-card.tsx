@@ -67,13 +67,19 @@ export function ToolPartCard({
             </p>
             <div className="flex gap-1 mt-1">
               <button
-                onClick={() => onApprove(approvalId, true)}
+                onClick={() => {
+                  console.log("[tool-part-card] approve:", toolName, approvalId)
+                  onApprove(approvalId, true)
+                }}
                 className="px-2 py-0.5 text-xs bg-success text-success-foreground rounded hover:bg-success/80"
               >
                 Aprovar
               </button>
               <button
-                onClick={() => onApprove(approvalId, false)}
+                onClick={() => {
+                  console.log("[tool-part-card] deny:", toolName, approvalId)
+                  onApprove(approvalId, false)
+                }}
                 className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded hover:bg-destructive/80"
               >
                 Recusar
