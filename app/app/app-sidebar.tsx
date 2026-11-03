@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
+  Menu,
   PanelLeft,
   Settings,
   Info,
@@ -66,6 +67,8 @@ function getInitials(user: SidebarUser) {
 
 export function AppSidebar({ user }: { user: SidebarUser }) {
   const [open, setOpen] = useState(true)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -73,9 +76,22 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
   const { openSettings } = useAppActions()
   const router = useRouter()
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    setIsMobile(mediaQuery.matches)
+    const handler = (event: MediaQueryListEvent) => setIsMobile(event.matches)
+    mediaQuery.addEventListener("change", handler)
+    return () => mediaQuery.removeEventListener("change", handler)
+  }, [])
+
   function handleNewChat() {
     startNewChat()
     router.push("/app")
+  }
+
+  function handleMobileToggle() {
+    setMobileOpen((v) => !v)
   }
 
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase("pt-BR")
@@ -95,188 +111,244 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
   const displayName = user.name?.trim() || user.email || "Usuário"
 
   return (
-    <aside
-      className={cn(
-        "flex h-full shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200 ease-out",
-        open ? "w-64" : "w-16",
-      )}
-    >
-      <header className="flex h-14 items-center gap-3 border-b border-border px-3">
-        <Tooltip>
-          <TooltipTrigger
-            type="button"
-            aria-label={open ? "Fechar sidebar" : "Abrir sidebar"}
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <PanelLeft className="size-5" />
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            {open ? "Fechar sidebar" : "Abrir sidebar"}
-          </TooltipContent>
-        </Tooltip>
-
-        <span
-          className={cn(
-            "font-heading text-lg font-semibold tracking-tight whitespace-nowrap transition-opacity duration-200",
-            open ? "opacity-100" : "pointer-events-none w-0 opacity-0",
-          )}
+    <>
+      {/* Botão hamburger móvel - fica FORA do aside para ser visível quando fechado */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={handleMobileToggle}
+          aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={mobileOpen}
+          className="md:hidden fixed left-4 top-4 z-60 flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring z-[100]"
         >
-          Spectral
-        </span>
-      </header>
-
-      <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
-        <OptionComponent
-          icon={MessageSquarePlus}
-          label="Novo Chat"
-          active={isDraft}
-          collapsed={!open}
-          onClick={handleNewChat}
-        />
-        <OptionComponent
-          icon={Search}
-          label="Pesquisar"
-          collapsed={!open}
-          onClick={() => setSearchOpen(true)}
-        />
-        <MyChats collapsed={!open} />
-      </div>
-
-      <footer className="border-t border-border p-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Menu do usuário"
-            className={cn(
-              "flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
-              !open && "justify-center px-0",
-            )}
-          >
-            <Avatar className="shrink-0">
-              {user.image && <AvatarImage src={user.image} alt="" />}
-              <AvatarFallback>{getInitials(user)}</AvatarFallback>
-            </Avatar>
-            <span
-              className={cn(
-                "min-w-0 flex-1 overflow-hidden transition-opacity duration-200",
-                open ? "opacity-100" : "pointer-events-none w-0 opacity-0",
-              )}
-            >
-              <span className="block truncate text-sm font-medium">
-                {displayName}
-              </span>
-              {user.email && (
-                <span className="block truncate text-xs text-muted-foreground">
-                  {user.email}
-                </span>
-              )}
-            </span>
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent
-            align="start"
-            side="top"
-            sideOffset={8}
-            className={cn(!open && "ml-4")}
-          >
-            <DropdownMenuItem onClick={() => openSettings("general")}>
-              <Settings />
-              Configurações
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Info />
-              Saiba Mais
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => setSignOutOpen(true)}
-            >
-              <LogOut />
-              Sair
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </footer>
-
-      <Dialog open={searchOpen} onOpenChange={handleSearchOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Pesquisar chat</DialogTitle>
-            <DialogDescription>
-              Digite o nome do chat que você procura.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Nome do chat..."
-              aria-label="Nome do chat"
-              autoFocus
-              className="h-11 pl-9"
-            />
-          </div>
-          {normalizedQuery && (
-            <div className="max-h-72 overflow-y-auto">
-              {chatsLoading && chats.length === 0 ? (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  Carregando chats...
-                </p>
-              ) : searchResults.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Nenhum chat encontrado para “{searchQuery.trim()}”.
-                </p>
-              ) : (
-                <ul className="space-y-1">
-                  {searchResults.map((chat) => (
-                    <li key={chat.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          router.push(`/chat/${chat.id}`)
-                          handleSearchOpenChange(false)
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                      >
-                        <MessageSquare className="size-4 shrink-0" />
-                        <span className="truncate">{chat.title}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          {mobileOpen ? (
+            <PanelLeft className="size-5" />
+          ) : (
+            <Menu className="size-5" />
           )}
-        </DialogContent>
-      </Dialog>
+        </button>
+      )}
 
-      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sair da conta?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Você precisará entrar novamente para acessar o painel.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                void signOut({ redirectTo: "/login" })
-              }}
+      {/* Overlay de fundo quando o drawer móvel está aberto */}
+      {isMobile && mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={handleMobileToggle}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "flex h-full shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200 ease-out",
+          isMobile
+            ? mobileOpen
+              ? "fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] shadow-soft"
+              : "hidden"
+            : open ? "w-64" : "w-16",
+        )}
+      >
+        <header className="flex h-14 items-center gap-2 border-b border-border px-3">
+          {isMobile ? (
+            <div className="flex items-center gap-2 w-full">
+              {mobileOpen ? (
+                <button
+                  type="button"
+                  onClick={handleMobileToggle}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <PanelLeft className="size-5" />
+                </button>
+              ) : null}
+              <span
+                className={cn(
+                  "font-heading text-lg font-semibold tracking-tight whitespace-nowrap flex-1",
+                  mobileOpen ? "opacity-100" : "opacity-0",
+                )}
+              >
+                Spectral
+              </span>
+            </div>
+          ) : (
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  aria-label={open ? "Fechar sidebar" : "Abrir sidebar"}
+                  aria-expanded={open}
+                  onClick={() => setOpen((v) => !v)}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <PanelLeft className="size-5" />
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  {open ? "Fechar sidebar" : "Abrir sidebar"}
+                </TooltipContent>
+              </Tooltip>
+
+              <span
+                className={cn(
+                  "font-heading text-lg font-semibold tracking-tight whitespace-nowrap transition-opacity duration-200",
+                  open ? "opacity-100" : "pointer-events-none w-0 opacity-0",
+                )}
+              >
+                Spectral
+              </span>
+            </>
+          )}
+        </header>
+
+        <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
+          <OptionComponent
+            icon={MessageSquarePlus}
+            label="Novo Chat"
+            active={isDraft}
+            collapsed={!open}
+            onClick={handleNewChat}
+          />
+          <OptionComponent
+            icon={Search}
+            label="Pesquisar"
+            collapsed={!open}
+            onClick={() => setSearchOpen(true)}
+          />
+          <MyChats collapsed={!open} />
+        </div>
+
+        <footer className="border-t border-border p-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Menu do usuário"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
+                !open && "justify-center px-0",
+              )}
             >
-              Sair
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </aside>
+              <Avatar className="shrink-0">
+                {user.image && <AvatarImage src={user.image} alt="" />}
+                <AvatarFallback>{getInitials(user)}</AvatarFallback>
+              </Avatar>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 overflow-hidden transition-opacity duration-200",
+                  open ? "opacity-100" : "pointer-events-none w-0 opacity-0",
+                )}
+              >
+                <span className="block truncate text-sm font-medium">
+                  {displayName}
+                </span>
+                {user.email && (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {user.email}
+                  </span>
+                )}
+              </span>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent
+              align="start"
+              side="top"
+              sideOffset={8}
+              className={cn(!open && "ml-4")}
+            >
+              <DropdownMenuItem onClick={() => openSettings("general")}>
+                <Settings />
+                Configurações
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Info />
+                Saiba Mais
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setSignOutOpen(true)}
+              >
+                <LogOut />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </footer>
+
+        <Dialog open={searchOpen} onOpenChange={handleSearchOpenChange}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Pesquisar chat</DialogTitle>
+              <DialogDescription>
+                Digite o nome do chat que você procura.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Nome do chat..."
+                aria-label="Nome do chat"
+                autoFocus
+                className="h-11 pl-9"
+              />
+            </div>
+            {normalizedQuery && (
+              <div className="max-h-72 overflow-y-auto">
+                {chatsLoading && chats.length === 0 ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Carregando chats...
+                  </p>
+                ) : searchResults.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum chat encontrado para “{searchQuery.trim()}”.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {searchResults.map((chat) => (
+                      <li key={chat.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            router.push(`/chat/${chat.id}`)
+                            handleSearchOpenChange(false)
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                        >
+                          <MessageSquare className="size-4 shrink-0" />
+                          <span className="truncate">{chat.title}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Sair da conta?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Você precisará entrar novamente para acessar o painel.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  void signOut({ redirectTo: "/login" })
+                }}
+              >
+                Sair
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </aside>
+    </>
   )
 }
