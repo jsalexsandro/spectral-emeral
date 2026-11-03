@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Globe, Loader2, X } from "lucide-react"
+import { Globe, Loader2, X } from "lucide-react"
 import {
   getToolName,
   type DynamicToolUIPart,
@@ -27,90 +27,18 @@ function getDisplayHost(url: string): string {
 
 type ToolPartCardProps = {
   part: ToolUIPart | DynamicToolUIPart
-  onApprove?: (approvalId: string, approved: boolean) => void
 }
 
-export function ToolPartCard({
-  part,
-  onApprove,
-}: ToolPartCardProps) {
+export function ToolPartCard({ part }: ToolPartCardProps) {
   const toolName = getToolName(part)
-  const isApprovalRequested = part.state === "approval-requested"
-  const isApprovalResponded = part.state === "approval-responded"
-  const isApproval = isApprovalRequested || isApprovalResponded
-  const isError = part.state === "output-error"
   const state = part.state as string
+  const isError = part.state === "output-error"
   const isPending =
     state === "input-streaming" ||
     state === "input-available" ||
     state === "approval-requested" ||
     state === "approval-responded"
 
-  // --- Aprovação (qualquer tool) ---
-  if (isApproval) {
-    const approvalId =
-      "approval" in part && part.approval
-        ? (part.approval as { id?: string }).id
-        : undefined
-    const isApproved =
-      "approval" in part && part.approval
-        ? (part.approval as { approved?: boolean }).approved === true
-        : false
-
-    if (isApprovalRequested && onApprove && approvalId) {
-      return (
-        <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-warning/50 px-2.5 py-2 text-xs">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
-          <div className="min-w-0">
-            <p className="font-medium text-warning-foreground">
-              O assistente quer executar &quot;{toolName}&quot;. Aprovar?
-            </p>
-            <div className="flex gap-1 mt-1">
-              <button
-                onClick={() => {
-                  console.log("[tool-part-card] approve:", toolName, approvalId)
-                  onApprove(approvalId, true)
-                }}
-                className="px-2 py-0.5 text-xs bg-success text-success-foreground rounded hover:bg-success/80"
-              >
-                Aprovar
-              </button>
-              <button
-                onClick={() => {
-                  console.log("[tool-part-card] deny:", toolName, approvalId)
-                  onApprove(approvalId, false)
-                }}
-                className="px-2 py-0.5 text-xs bg-destructive text-destructive-foreground rounded hover:bg-destructive/80"
-              >
-                Recusar
-              </button>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    if (isApprovalResponded) {
-      return (
-        <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-2 text-xs">
-          {isApproved ? (
-            <Check className="mt-0.5 size-3.5 shrink-0 text-success-foreground" />
-          ) : (
-            <X className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-          )}
-          <div className="min-w-0">
-            <p className="font-medium">
-              {isApproved ? "Aprovado" : "Recusado"}:
-              {" "}
-              {toolName}
-            </p>
-          </div>
-        </div>
-      )
-    }
-  }
-
-  // --- Resultado da execução (qualquer tool) ---
   if (isPending || isError) {
     return (
       <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-2 text-xs">

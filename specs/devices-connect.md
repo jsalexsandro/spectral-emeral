@@ -178,11 +178,8 @@ Backend --HTTP 200 { ok, result }--> Tool
 - O driver usa `execFile`/`spawn` com argumentos separados (sem shell
   interpolado), `windowsHide` e timeout de execução de 10s.
 - `type-text` e `press-key` agem sobre a janela em foco; o driver não escolhe
-  nem valida qual janela está ativa. Por isso o prompt exige confirmação antes
-  de conteúdo sensível e proíbe senhas.
-- No nível do chat, `type-text` e `press-key` são marcados com `needsApproval`.
-  Quando o modelo tenta executá-los, o chat exibe botões "Aprovar" / "Recusar"
-  e o comando só é enviado ao driver após aprovação explícita do usuário.
+  nem valida qual janela está ativa. Por isso o prompt exige confirmação em texto
+  antes de conteúdo sensível e proíbe senhas.
 
 ## Driver
 

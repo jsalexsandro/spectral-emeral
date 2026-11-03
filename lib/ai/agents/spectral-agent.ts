@@ -8,10 +8,6 @@ import {
   type ToolSet,
 } from "ai"
 import { getChatTools } from "@/lib/ai/tools"
-import {
-  DEVICE_PRESS_KEY_TOOL_NAME,
-  DEVICE_TYPE_TEXT_TOOL_NAME,
-} from "@/lib/ai/tools/device-tools"
 
 export const MAX_AGENT_STEPS = 12
 export const MAX_AGENT_TOKENS = 150_000
@@ -55,10 +51,6 @@ export function createSpectralAgent({
     tools: getChatTools({ userId: runtimeContext.userId }),
     stopWhen: [isStepCount(MAX_AGENT_STEPS), budgetExceeded],
     runtimeContext,
-    toolApproval: {
-      [DEVICE_TYPE_TEXT_TOOL_NAME]: "user-approval",
-      [DEVICE_PRESS_KEY_TOOL_NAME]: "user-approval",
-    },
     prepareStep: ({ messages }) => {
       if (messages.length <= MAX_CONTEXT_MESSAGES) {
         return {}

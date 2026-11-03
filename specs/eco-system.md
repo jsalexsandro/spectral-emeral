@@ -300,9 +300,9 @@ Passo 11 - Device System
   Fase 3 - Adicionar mais força ao agente:
 
   Opções para a Fase 3 (definir ordem com o programador):
-  - [x] Confirmação explícita na UI para ações sensíveis (`device-type-text` e `device-press-key` com `needsApproval`, botões Aprovar/Recusar no chat)
-  - [ ] `device-write-file` e `device-edit-file` (escrita/edição de arquivos no PC, sandbox da pasta do usuário, requer aprovação)
-  - [ ] `device-run-command` (execução de comandos shell no PC, allowlist/denylist, requer aprovação, timeout)
+  - [ ] Confirmação explícita no chat para ações sensíveis (`device-type-text` e `device-press-key`, confirmação em texto antes de executar)
+  - [ ] `device-write-file` e `device-edit-file` (escrita/edição de arquivos no PC, sandbox da pasta do usuário, requer confirmação)
+  - [ ] `device-run-command` (execução de comandos shell no PC, allowlist/denylist, requer confirmação, timeout)
   - [ ] `device-screenshot` + loop de visão (feedback de tela do dispositivo para o modelo)
   - [ ] Modo autônomo (`requireApproval: false`) para desativar confirmações
 

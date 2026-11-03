@@ -60,13 +60,11 @@ function groupActivity(parts: UIMessage["parts"]): ActivityGroup[] {
 type AgentActivityProps = {
   parts: UIMessage["parts"]
   isStreaming?: boolean
-  onApprove?: (approvalId: string, approved: boolean) => void
 }
 
 export function AgentActivity({
   parts,
   isStreaming = false,
-  onApprove,
 }: AgentActivityProps) {
   const [open, setOpen] = useState(false)
   const groups = groupActivity(parts)
@@ -115,7 +113,7 @@ export function AgentActivity({
                 return <AgentPlanPart key={key} part={part} />
               }
 
-              return <ToolPartCard key={key} part={part} onApprove={onApprove} />
+              return <ToolPartCard key={key} part={part} />
             })}
           </div>
         ))}

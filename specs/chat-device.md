@@ -32,8 +32,8 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-list-apps` | Lista os aplicativos que o PC permite abrir | `{ deviceId }` | `apps[]` com `id` e `name` |
 | `device-open-url` | Abre uma URL no navegador padrão do PC | `{ deviceId, url }` | `ok` |
 | `device-open-app` | Abre um aplicativo da allowlist no PC | `{ deviceId, appId }` | `ok` + `output` |
-| `device-type-text` | Digita texto na janela em foco do PC | `{ deviceId, text }` | `ok` (requer aprovação) |
-| `device-press-key` | Pressiona uma tecla ou combinação no PC | `{ deviceId, key, modifiers? }` | `ok` (requer aprovação) |
+| `device-type-text` | Digita texto na janela em foco do PC | `{ deviceId, text }` | `ok` (requer confirmação em texto antes de executar) |
+| `device-press-key` | Pressiona uma tecla ou combinação no PC | `{ deviceId, key, modifiers? }` | `ok` (requer confirmação em texto antes de executar) |
 | `device-list-files` | Lista arquivos e pastas do PC (somente leitura) | `{ deviceId, path?, depth?, showHidden?, maxEntries? }` | `entries[]` com nome, caminho, tipo, tamanho e modificação |
 | `device-read-file` | Lê conteúdo de texto de um arquivo (somente leitura) | `{ deviceId, path, offset?, limit? }` | `file` com `content`, linhas e `truncated` |
 | `device-glob` | Busca arquivos por padrão glob (somente leitura) | `{ deviceId, pattern, path?, showHidden?, maxResults? }` | `paths[]` de arquivos |
@@ -87,12 +87,12 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   Administrador ou `sudo`) para que comandos futuros possam ser elevados. Isso é
   refletido em `device-get-os` (`elevated`).
 
-## Aprovação no chat
+## Confirmação no chat
 
-- `device-type-text` e `device-press-key` exigem aprovação explícita antes de
-  executar. Quando o assistente tenta usá-las, o chat exibe botões "Aprovar" e
-  "Recusar". O comando só é enviado ao dispositivo após o usuário aprovar.
-- Se o usuário recusar, o comando não é executado e o assistente é informado.
+- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco.
+  Antes de executá-las, o assistente pede confirmação em texto (sim/não).
+  O comando só é enviado ao dispositivo após o usuário confirmar.
+- Se o usuário não confirmar, o comando não é executado.
 - No futuro, haverá um modo/opção `requireApproval: false` (autônomo) para
   desativar confirmações.
 
