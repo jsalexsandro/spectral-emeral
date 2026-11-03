@@ -297,9 +297,16 @@ Passo 11 - Device System
   - [x] Seção `devices` atualizada no system prompt (`SYSTEM_PROMPT_VERSION = 11`)
   - [x] Tools de PC documentadas em `specs/chat-device.md`
 
-  Próximas fases
-  - [ ] Confirmação explícita na UI para ações sensíveis
-  - [ ] Captura de tela (`device-screenshot`)
+  Fase 3 - Adicionar mais força ao agente:
+
+  Opções para a Fase 3 (definir ordem com o programador):
+  - [x] Confirmação explícita na UI para ações sensíveis (`device-type-text` e `device-press-key` com `needsApproval`, botões Aprovar/Recusar no chat)
+  - [ ] `device-write-file` e `device-edit-file` (escrita/edição de arquivos no PC, sandbox da pasta do usuário, requer aprovação)
+  - [ ] `device-run-command` (execução de comandos shell no PC, allowlist/denylist, requer aprovação, timeout)
+  - [ ] `device-screenshot` + loop de visão (feedback de tela do dispositivo para o modelo)
+  - [ ] Modo autônomo (`requireApproval: false`) para desativar confirmações
+
+  Próximas fases (após Fase 3)
   - [ ] Suporte a celular e TV Android
     
   
