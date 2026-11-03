@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs"
-import { lstat, readdir, readFile, realpath } from "node:fs/promises"
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import {
   basename,
@@ -17,6 +17,8 @@ import type {
   DeviceFileContent,
   DeviceFileEntry,
   DeviceFileEntryType,
+  DeviceFileEditResult,
+  DeviceFileWriteResult,
   DeviceGrepMatch,
 } from "../../../shared/device-commands.js"
 
@@ -27,6 +29,7 @@ const MAX_GREP_BYTES = 50 * 1024 * 1024
 const MAX_GREP_LINE_LENGTH = 2000
 const MAX_GREP_MATCH_TEXT = 300
 const MAX_WALK_DEPTH = 12
+const MAX_WRITE_FILE_BYTES = 1024 * 1024
 
 const IGNORED_DIRECTORIES = new Set([
   "node_modules",
@@ -696,6 +699,133 @@ export class FileSandbox {
       total: matches.length,
       filesScanned,
       truncated,
+    }
+  }
+
+  async writeFile(
+    input: DeviceCommandInputMap["write-file"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolvePath(input.path, false)
+    const stats = await lstat(target.absolute).catch(() => null)
+
+    if (stats?.isSymbolicLink()) {
+      throw new DeviceFileError(
+        "symlink_not_allowed",
+        "Links simbólicos não são permitidos.",
+      )
+    }
+
+    if (stats?.isDirectory()) {
+      throw new DeviceFileError(
+        "not_a_file",
+        "O caminho informado é um diretório.",
+      )
+    }
+
+    const contentBuffer = Buffer.from(input.content, "utf8")
+
+    if (contentBuffer.length > MAX_WRITE_FILE_BYTES) {
+      throw new DeviceFileError(
+        "file_too_large",
+        `O conteúdo excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
+      )
+    }
+
+    // Garante que o diretório pai existe
+    await mkdir(dirname(target.absolute), { recursive: true })
+
+    const created = !stats
+
+    await writeFile(target.absolute, contentBuffer)
+
+    return {
+      ok: true,
+      write: {
+        path: target.absolute,
+        size: contentBuffer.length,
+        created,
+      },
+    }
+  }
+
+  async editFile(
+    input: DeviceCommandInputMap["edit-file"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolvePath(input.path)
+    const stats = await lstat(target.absolute)
+
+    if (stats.isSymbolicLink()) {
+      throw new DeviceFileError(
+        "symlink_not_allowed",
+        "Links simbólicos não são permitidos.",
+      )
+    }
+
+    if (!stats.isFile()) {
+      throw new DeviceFileError(
+        "not_a_file",
+        "O caminho informado não é um arquivo.",
+      )
+    }
+
+    if (stats.size > MAX_WRITE_FILE_BYTES) {
+      throw new DeviceFileError(
+        "file_too_large",
+        `O arquivo tem ${stats.size} bytes e excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
+      )
+    }
+
+    const buffer = await readFile(target.absolute)
+
+    if (isBinaryBuffer(buffer)) {
+      throw new DeviceFileError(
+        "binary_file",
+        "O arquivo parece ser binário e não pode ser editado como texto.",
+      )
+    }
+
+    const text = buffer.toString("utf8")
+    const oldText = input.oldText
+
+    if (!text.includes(oldText)) {
+      throw new DeviceFileError(
+        "text_not_found",
+        "O texto antigo não foi encontrado no arquivo.",
+      )
+    }
+
+    const matches = text.split(oldText).length - 1
+
+    if (matches > 1) {
+      throw new DeviceFileError(
+        "multiple_matches",
+        `O texto antigo foi encontrado ${matches} vezes. Especifique um trecho maior para edição única.`,
+      )
+    }
+
+    const newText = input.newText
+    const newContentBuffer = Buffer.from(
+      text.replace(oldText, newText),
+      "utf8",
+    )
+
+    if (newContentBuffer.length > MAX_WRITE_FILE_BYTES) {
+      throw new DeviceFileError(
+        "file_too_large",
+        `O conteúdo resultante excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
+      )
+    }
+
+    await writeFile(target.absolute, newContentBuffer)
+
+    return {
+      ok: true,
+      edit: {
+        path: target.absolute,
+        replacements: 1,
+        oldTextLength: Buffer.byteLength(oldText, "utf8"),
+        newTextLength: Buffer.byteLength(newText, "utf8"),
+      },
     }
   }
 }

@@ -10,6 +10,8 @@ export const DEVICE_COMMAND_NAMES = [
   "glob",
   "grep",
   "check-admin",
+  "write-file",
+  "edit-file",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -123,6 +125,10 @@ export const DEVICE_FILE_READ_OFFSET_DEFAULT = 1
 export const DEVICE_FILE_READ_LINES_MIN = 1
 export const DEVICE_FILE_READ_LINES_MAX = 2000
 export const DEVICE_FILE_READ_LINES_DEFAULT = 2000
+export const DEVICE_FILE_WRITE_MAX_BYTES = 1024 * 1024
+export const DEVICE_FILE_EDIT_MAX_BYTES = 1024 * 1024
+export const DEVICE_FILE_EDIT_MAX_OLD_TEXT = 10 * 1024
+export const DEVICE_FILE_EDIT_MAX_NEW_TEXT = 10 * 1024
 
 export type DeviceAppInfo = {
   id: string
@@ -162,6 +168,19 @@ export type DeviceFileContent = {
   size: number
 }
 
+export type DeviceFileWriteResult = {
+  path: string
+  size: number
+  created: boolean
+}
+
+export type DeviceFileEditResult = {
+  path: string
+  replacements: number
+  oldTextLength: number
+  newTextLength: number
+}
+
 export type DeviceGrepMatch = {
   path: string
   line: number
@@ -197,6 +216,15 @@ export type DeviceCommandInputMap = {
     maxResults: number
   }
   "check-admin": Record<string, never>
+  "write-file": {
+    path: string
+    content: string
+  }
+  "edit-file": {
+    path: string
+    oldText: string
+    newText: string
+  }
 }
 
 export type DeviceCommand = {
@@ -215,10 +243,12 @@ export type DeviceCommandSuccess = {
   file?: DeviceFileContent
   paths?: string[]
   matches?: DeviceGrepMatch[]
-  truncated?: boolean
-  total?: number
-  filesScanned?: number
-  admin?: boolean
+      truncated?: boolean
+      total?: number
+      filesScanned?: number
+      admin?: boolean
+      write?: DeviceFileWriteResult
+      edit?: DeviceFileEditResult
 }
 
 export type DeviceCommandFailure = {
@@ -666,6 +696,56 @@ function parseGrep(input: unknown): DeviceCommand {
   }
 }
 
+function parseWriteFile(input: unknown): DeviceCommand {
+  const path = readRequiredPath(input)
+  const content = readString(input, "content", "invalid_content")
+
+  if (content.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_content",
+      `O conteúdo deve ter entre 1 e ${DEVICE_FILE_WRITE_MAX_BYTES} bytes.`,
+    )
+  }
+
+  if (Buffer.byteLength(content, "utf8") > DEVICE_FILE_WRITE_MAX_BYTES) {
+    throw new DeviceCommandValidationError(
+      "invalid_content",
+      `O conteúdo excede o limite de ${DEVICE_FILE_WRITE_MAX_BYTES} bytes.`,
+    )
+  }
+
+  return { command: "write-file", input: { path, content } }
+}
+
+function parseEditFile(input: unknown): DeviceCommand {
+  const path = readRequiredPath(input)
+  const oldText = readString(input, "oldText", "invalid_oldText")
+  const newText = readString(input, "newText", "invalid_newText")
+
+  if (oldText.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_oldText",
+      "O texto antigo não pode estar vazio.",
+    )
+  }
+
+  if (Buffer.byteLength(oldText, "utf8") > DEVICE_FILE_EDIT_MAX_OLD_TEXT) {
+    throw new DeviceCommandValidationError(
+      "invalid_oldText",
+      `O texto antigo excede o limite de ${DEVICE_FILE_EDIT_MAX_OLD_TEXT} bytes.`,
+    )
+  }
+
+  if (Buffer.byteLength(newText, "utf8") > DEVICE_FILE_EDIT_MAX_NEW_TEXT) {
+    throw new DeviceCommandValidationError(
+      "invalid_newText",
+      `O texto novo excede o limite de ${DEVICE_FILE_EDIT_MAX_NEW_TEXT} bytes.`,
+    )
+  }
+
+  return { command: "edit-file", input: { path, oldText, newText } }
+}
+
 export function parseDeviceCommand(
   command: unknown,
   input: unknown,
@@ -700,5 +780,9 @@ export function parseDeviceCommand(
       return parseGrep(input)
     case "check-admin":
       return { command, input: {} }
+    case "write-file":
+      return parseWriteFile(input)
+    case "edit-file":
+      return parseEditFile(input)
   }
 }

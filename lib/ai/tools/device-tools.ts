@@ -29,6 +29,9 @@ import {
   DEVICE_FILE_READ_OFFSET_DEFAULT,
   DEVICE_FILE_READ_OFFSET_MAX,
   DEVICE_FILE_READ_OFFSET_MIN,
+  DEVICE_FILE_WRITE_MAX_BYTES,
+  DEVICE_FILE_EDIT_MAX_OLD_TEXT,
+  DEVICE_FILE_EDIT_MAX_NEW_TEXT,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   type DeviceCommand,
@@ -50,6 +53,8 @@ export const DEVICE_READ_FILE_TOOL_NAME = "device-read-file"
 export const DEVICE_GLOB_TOOL_NAME = "device-glob"
 export const DEVICE_GREP_TOOL_NAME = "device-grep"
 export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
+export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
+export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
 
 const deviceIdSchema = z
   .string()
@@ -180,6 +185,19 @@ export const deviceCheckAdminInputSchema = z.object({
   deviceId: deviceIdSchema,
 })
 
+export const deviceWriteFileInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().max(DEVICE_PATH_MAX_LENGTH),
+  content: z.string().max(DEVICE_FILE_WRITE_MAX_BYTES),
+})
+
+export const deviceEditFileInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().max(DEVICE_PATH_MAX_LENGTH),
+  oldText: z.string().max(DEVICE_FILE_EDIT_MAX_OLD_TEXT),
+  newText: z.string().max(DEVICE_FILE_EDIT_MAX_NEW_TEXT),
+})
+
 type DeviceRow = {
   id: string
   name: string
@@ -279,6 +297,8 @@ function toCommandToolResult(
     ...(output.result.admin !== undefined
       ? { admin: output.result.admin }
       : {}),
+    ...(output.result.write ? { write: output.result.write } : {}),
+    ...(output.result.edit ? { edit: output.result.edit } : {}),
   }
 }
 
@@ -377,6 +397,20 @@ const checkAdminDescription = [
   "Verifica se o dispositivo está rodando com privilégios de administrador.",
   "Use quando o usuário perguntar se o PC tem privilégios de adm.",
   "Retorna `admin: true/false`.",
+].join("\n")
+
+const writeFileDescription = [
+  "Escreve conteúdo de texto em um arquivo do dispositivo (somente gravação).",
+  "Cria o arquivo se não existir, sobrescreve se já existir.",
+  "Use `device-list-files` ou `device-glob` para descobrir caminhos válidos.",
+  "O arquivo não pode exceder 1 MB.",
+].join("\n")
+
+const editFileDescription = [
+  "Substitui uma ocorrência exata de texto dentro de um arquivo do dispositivo.",
+  "O texto antigo deve aparecer exatamente uma vez no arquivo.",
+  "Use `device-read-file` para ler o conteúdo antes de editar.",
+  "O arquivo resultante não pode exceder 1 MB.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -642,6 +676,48 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-check-admin.",
+          }
+        }
+      },
+    }),
+    [DEVICE_WRITE_FILE_TOOL_NAME]: tool({
+      description: writeFileDescription,
+      inputSchema: deviceWriteFileInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "write-file",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-write-file.",
+          }
+        }
+      },
+    }),
+    [DEVICE_EDIT_FILE_TOOL_NAME]: tool({
+      description: editFileDescription,
+      inputSchema: deviceEditFileInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "edit-file",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-edit-file.",
           }
         }
       },

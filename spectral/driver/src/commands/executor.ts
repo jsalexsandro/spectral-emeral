@@ -433,6 +433,12 @@ export async function executeDeviceCommand(
         const admin = getOsInfo().elevated
         return { ok: true, admin }
       }
+
+      case "write-file":
+        return { ...(await files.writeFile(command.input)), ok: true }
+
+      case "edit-file":
+        return { ...(await files.editFile(command.input)), ok: true }
     }
   } catch (error) {
     if (error instanceof DeviceFileError) {

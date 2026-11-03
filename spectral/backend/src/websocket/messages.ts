@@ -85,6 +85,21 @@ export const commandResultMessageSchema = z.object({
       total: z.number().int().nonnegative().optional(),
       filesScanned: z.number().int().nonnegative().optional(),
       admin: z.boolean().optional(),
+      write: z
+        .object({
+          path: z.string().min(1).max(1024),
+          size: z.number().int().nonnegative(),
+          created: z.boolean(),
+        })
+        .optional(),
+      edit: z
+        .object({
+          path: z.string().min(1).max(1024),
+          replacements: z.number().int().nonnegative(),
+          oldTextLength: z.number().int().nonnegative(),
+          newTextLength: z.number().int().nonnegative(),
+        })
+        .optional(),
     }),
     z.object({
       ok: z.literal(false),

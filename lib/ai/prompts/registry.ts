@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 11
+export const SYSTEM_PROMPT_VERSION = 12
 
 export type SystemPromptChange = {
   version: number
@@ -72,5 +72,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-03",
     summary:
       "Adiciona tools de leitura de arquivos nos dispositivos (device-list-files, device-read-file, device-glob e device-grep), restritas à pasta de usuário com sandbox e denylist.",
+  },
+  {
+    version: 12,
+    date: "2026-11-03",
+    summary:
+      "Adiciona tools de gravação e edição de arquivos (device-write-file e device-edit-file) com sandbox e denylist.",
   },
 ]

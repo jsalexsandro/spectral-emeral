@@ -39,6 +39,8 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-glob` | Busca arquivos por padrão glob (somente leitura) | `{ deviceId, pattern, path?, showHidden?, maxResults? }` | `paths[]` de arquivos |
 | `device-grep` | Busca texto dentro de arquivos (somente leitura) | `{ deviceId, pattern, path?, glob?, caseSensitive?, maxResults? }` | `matches[]` com arquivo, linha, coluna e trecho |
 | `device-check-admin` | Verifica se o dispositivo está com privilégios de administrador | `{ deviceId }` | `admin: true/false` |
+| `device-write-file` | Escreve/sobrescreve conteúdo de texto em um arquivo (gravação) | `{ deviceId, path, content }` | `write` com `path`, `size`, `created` |
+| `device-edit-file` | Substitui uma ocorrência exata de texto dentro de um arquivo (edição) | `{ deviceId, path, oldText, newText }` | `edit` com `path`, `replacements`, `oldTextLength`, `newTextLength` |
 
 ### Detalhes
 
@@ -68,6 +70,13 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 - `device-check-admin` retorna `admin: true` quando o driver está elevado
   (PowerShell como Administrador ou `sudo`). Use para responder se o PC tem
   privilégios de adm.
+- `device-write-file` escreve ou sobrescreve um arquivo de texto no dispositivo.
+  Cria o arquivo se não existir. Máximo de 1 MB de conteúdo. O caminho deve
+  estar dentro da pasta do usuário e não pode ser um caminho bloqueado.
+- `device-edit-file` substitui uma ocorrência exata de `oldText` por `newText`
+  dentro de um arquivo. O texto antigo deve aparecer exatamente uma vez no
+  arquivo; se aparecer mais de uma vez, a edição é rejeitada. Máximo de 1 MB
+  no arquivo resultante.
 - `device-screenshot` ainda **não** está implementada.
 
 ## Regras de segurança
