@@ -102,6 +102,10 @@ export function resolveCommandResult(
   }
 
   removePending(id, entry)
+  const isFailure = "ok" in result && result.ok === false
+  console.log(
+    `[backend] received device result id=${id} deviceId=${deviceId} ok=${result.ok} code=${isFailure ? result.code : "-"} error=${isFailure ? result.error : "-"}`,
+  )
   entry.resolve(result)
   return true
 }
@@ -163,6 +167,10 @@ export function sendDeviceCommand(
       command: command.command,
       input: command.input,
     }
+
+    console.log(
+      `[backend] sending device command id=${id} deviceId=${deviceId} command=${command.command} input=${JSON.stringify(command.input)}`,
+    )
 
     try {
       socket.send(JSON.stringify(message))

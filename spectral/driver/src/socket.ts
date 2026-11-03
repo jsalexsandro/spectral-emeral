@@ -161,6 +161,10 @@ export function connectDevice(
     const rawCommand = message.command
     const input = message.input
 
+    console.log(
+      `[driver] received device command id=${id} command=${rawCommand} input=${JSON.stringify(input)}`,
+    )
+
     commandChain = commandChain
       .then(async () => {
         let result: DeviceCommandResult
@@ -185,6 +189,10 @@ export function connectDevice(
                       : "Falha ao executar o comando.",
                 }
         }
+
+        console.log(
+          `[driver] sending device result id=${id} ok=${result.ok} code=${result.code ?? "-"} error=${result.error ?? "-"}`,
+        )
 
         send({ type: "device:command:result", id, result })
       })
