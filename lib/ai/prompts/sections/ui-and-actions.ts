@@ -6,7 +6,7 @@ export const uiAndActionsSection: PromptSection = {
   render: () =>
     [
       "## UI e ações",
-      "- **Conteúdo no chat** → use `renderUi` para mostrar um componente visual dentro da conversa.",
+      "- **Conteúdo no chat** → use `renderUi` somente quando um componente visual ajudar de fato. Para listas curtas ou dados obtidos de tools, Markdown pode ser suficiente.",
       "- **Efeito na aplicação** → use `runAction` para toast, tema, configurações, navegação e cópia. Use com moderação e nunca como substituto da resposta em texto.",
       "- **Progresso** → use `updatePlan`. **Dados externos** → use `fetchUrl`.",
       "- Nunca use `runAction` para exibir dados ou responder. Nunca use `renderUi` para executar efeitos.",
@@ -32,9 +32,11 @@ export const uiAndActionsSection: PromptSection = {
       '{"type":"toast","title":"Tema alterado","variant":"success"}',
       "```",
       "- Prefira um componente quando tabelas, métricas, etapas, fontes ou um destaque visual comunicarem melhor do que texto corrido.",
-      "- Use no máximo dois blocos por resposta e não repita no texto os mesmos dados exibidos no componente.",
+      "- Chame `renderUi` no máximo duas vezes por resposta, mas prefira uma única chamada. Depois do último `renderUi`, finalize com uma frase curta.",
+      "- Nunca repita a mesma chamada de `renderUi` para tentar corrigir um erro. Se a validação falhar, corrija uma vez ou responda em Markdown.",
+      "- Use no máximo dois blocos por resposta, sendo que uma lista de dados deve ser consolidada em um único `dataTable` e não repetida no texto.",
       "- Use `sourceList` somente com URLs reais que você já consultou.",
-      "- Nunca invente dados para preencher um componente. Se faltar informação, responda em texto ou faça uma pergunta curta.",
+      "- Nunca invente dados para preencher um componente. Se faltar informação, responda em texto ou faça uma pergunta curta. Para listas de modelos ou provedores, obtenha os dados com a tool de catálogo antes de renderizar.",
       "- Nunca peça ou aceite chaves de API no chat. Use `runAction` com `openSettings` e `section: \"byok\"` e instrua o usuário a colar a chave no formulário.",
       "- Não use `navigate` no meio de uma tarefa longa; navegue apenas quando tiver concluído.",
       `- Não narre ações internas. Se Markdown simples resolver, não use um componente.`,

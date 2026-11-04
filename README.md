@@ -47,7 +47,7 @@ O tema **Spectral Emerald** usa branco e off-whites esverdeados como base, com e
 ## BYOK (Passo 3)
 
 - Seção **BYOK** em Configurações → BYOK (substitui a antiga "Chave de API")
-- Provedores: OpenAI, Anthropic, Google Gemini e OpenRouter (`lib/ai/providers.ts`)
+- Provedores: OpenAI, Anthropic, Google Gemini, OpenRouter e Groq (`lib/ai/providers.ts`)
 - Chaves salvas por usuário na tabela `AIKey`, criptografadas com AES-256-GCM
 - Rotas: `GET /api/byok`, `PUT /api/byok/[provider]`, `DELETE /api/byok/[provider]`
 - A API nunca retorna a chave; apenas o status e os 4 últimos caracteres
@@ -58,7 +58,7 @@ O tema **Spectral Emerald** usa branco e off-whites esverdeados como base, com e
 - Catálogo estático e tipado em `lib/ai/models.ts`, validado com Zod na inicialização
 - Página pública `/provider/[provider]/models` com metadados de cada modelo
 - Rotas: `GET /api/models` (todos os provedores) e `GET /api/models/[provider]`
-- Provedores disponíveis: `openai`, `anthropic`, `google` e `openrouter`
+- Provedores disponíveis: `openai`, `anthropic`, `google`, `openrouter` e `groq`
 - Para adicionar ou atualizar um modelo, edite `modelCatalog` em `lib/ai/models.ts` e mantenha o par `(provider, id)` único
 
 ## InstantModel (Passo 3)

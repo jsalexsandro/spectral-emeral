@@ -1,5 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createGoogle } from "@ai-sdk/google"
+import { createGroq } from "@ai-sdk/groq"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import type { LanguageModel } from "ai"
@@ -94,6 +95,13 @@ export async function resolveChatModel(
         provider,
         modelId,
         model: createOpenRouter({ apiKey }).chat(modelId),
+      }
+    case "groq":
+      return {
+        ok: true,
+        provider,
+        modelId,
+        model: createGroq({ apiKey })(modelId),
       }
   }
 }

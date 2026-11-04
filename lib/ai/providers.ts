@@ -1,4 +1,9 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "openrouter"
+export type ProviderId =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "openrouter"
+  | "groq"
 
 export type AIProvider = {
   id: ProviderId
@@ -42,6 +47,13 @@ export const aiProviders = [
     description: "Acesso unificado a modelos de diversos provedores.",
     docsUrl: "https://openrouter.ai/keys",
     placeholder: "sk-or-...",
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    description: "Modelos abertos de alta velocidade, como o GPT-OSS 20B.",
+    docsUrl: "https://console.groq.com/keys",
+    placeholder: "gsk_...",
   },
 ] as const satisfies readonly AIProvider[]
 

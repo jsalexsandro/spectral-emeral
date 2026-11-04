@@ -216,6 +216,19 @@ function ModelCard({ model }: { model: AIModel }) {
             </dd>
           </div>
         </dl>
+        {model.rateLimits && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Limites de referência
+            </span>
+            <span>
+              {formatTokenCount(model.rateLimits.requestsPerMinute)} RPM
+            </span>
+            <span>{formatTokenCount(model.rateLimits.requestsPerDay)} RPD</span>
+            <span>{formatTokenCount(model.rateLimits.tokensPerMinute)} TPM</span>
+            <span>{formatTokenCount(model.rateLimits.tokensPerDay)} TPD</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

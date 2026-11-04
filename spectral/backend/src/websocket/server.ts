@@ -2,7 +2,11 @@ import { createPublicKey, randomBytes, verify } from "node:crypto"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { WebSocket, WebSocketServer, type RawData } from "ws"
 import { config } from "../config.js"
-import { findDeviceById, touchDevice } from "../devices/repository.js"
+import {
+  findDeviceById,
+  touchDevice,
+  updateDeviceDefaultFolder,
+} from "../devices/repository.js"
 import { handleInternalRequest } from "../http/internal.js"
 import {
   registerConnection,
@@ -124,7 +128,7 @@ function startHeartbeatTimeout(ws: WebSocket, state: ConnectionState) {
 async function handleAuthenticate(
   ws: WebSocket,
   state: ConnectionState,
-  message: { deviceId: string; fingerprint: string },
+  message: { deviceId: string; fingerprint: string; defaultFolder?: string },
   ip: string,
 ) {
   if (!consume(`auth:${ip}`, 20, 60_000)) {
@@ -147,6 +151,10 @@ async function handleAuthenticate(
   if (device.fingerprint !== message.fingerprint) {
     reject(ws, "auth_failed", closeCodes.authFailed)
     return
+  }
+
+  if (message.defaultFolder) {
+    await updateDeviceDefaultFolder(message.deviceId, message.defaultFolder)
   }
 
   const challenge = randomBytes(32).toString("base64url")
@@ -230,6 +238,7 @@ async function handleProof(
     serverTime: new Date().toISOString(),
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     heartbeatTimeoutMs: config.heartbeatTimeoutMs,
+    defaultFolder: device.defaultWorkingDirectory ?? null,
   })
 
   startHeartbeatTimeout(ws, state)

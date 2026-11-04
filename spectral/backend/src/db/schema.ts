@@ -13,6 +13,7 @@ export const devices = pgTable(
     fingerprint: text("fingerprint").notNull(),
     lastSeenAt: timestamp("lastSeenAt", { mode: "date" }),
     revokedAt: timestamp("revokedAt", { mode: "date" }),
+    defaultWorkingDirectory: text("defaultWorkingDirectory"),
     createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
   },

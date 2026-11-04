@@ -25,6 +25,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.92",
     "@ai-sdk/google": "^4.0.108",
+    "@ai-sdk/groq": "^4.0.76",
     "@ai-sdk/openai": "^4.0.105",
     "@ai-sdk/react": "^4.0.161",
     "@auth/drizzle-adapter": "^1.7.4",

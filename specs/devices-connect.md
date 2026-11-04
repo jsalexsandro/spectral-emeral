@@ -74,7 +74,7 @@ Transporte `ws://` em desenvolvimento e `wss://` atrás de TLS em produção.
 | `device:authenticate` | Driver → Backend | Envia `deviceId` e `fingerprint` |
 | `device:challenge` | Backend → Driver | Desafio aleatório de 32 bytes (30s) |
 | `device:authenticate:proof` | Driver → Backend | Assinatura Ed25519 do desafio |
-| `device:authenticated` | Backend → Driver | Confirmação + parâmetros de heartbeat |
+  | `device:authenticated` | Backend → Driver | Confirmação + parâmetros de heartbeat e `defaultFolder` (pasta padrão do dispositivo) |
 | `device:heartbeat` | Driver → Backend | Sinal de vida |
 | `device:heartbeat:ack` | Backend → Driver | Confirmação do heartbeat |
 | `device:command` | Backend → Driver | Comando com `id`, `command` e `input` |

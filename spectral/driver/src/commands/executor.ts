@@ -399,6 +399,7 @@ async function pressKey(
 
 export async function executeDeviceCommand(
   command: DeviceCommand,
+  options?: { defaultFolder?: string },
 ): Promise<DeviceCommandResult> {
   try {
     switch (command.command) {
@@ -441,7 +442,10 @@ export async function executeDeviceCommand(
         return { ...(await files.editFile(command.input)), ok: true }
 
       case "run-command":
-        return { ...(await files.runCommand(command.input)), ok: true }
+        return {
+          ...(await files.runCommand(command.input, options?.defaultFolder)),
+          ok: true,
+        }
     }
   } catch (error) {
     if (error instanceof DeviceFileError) {

@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 12
+export const SYSTEM_PROMPT_VERSION = 15
 
 export type SystemPromptChange = {
   version: number
@@ -78,5 +78,23 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-03",
     summary:
       "Adiciona tools de gravação e edição de arquivos (device-write-file e device-edit-file) com sandbox e denylist.",
+  },
+  {
+    version: 13,
+    date: "2026-11-04",
+    summary:
+      "Adiciona tools de consulta de provedores e modelos (provider-list-all, provider-list-configured, model-list-by-provider e model-list-enabled), sem exposição de chaves.",
+  },
+  {
+    version: 14,
+    date: "2026-11-04",
+    summary:
+      "Reforça o roteamento para tools de catálogo antes de renderUi e limita a repetição de renderUi por resposta.",
+  },
+  {
+    version: 15,
+    date: "2026-11-04",
+    summary:
+      "Adiciona a tool model-set-enabled para ativar/desativar modelos na seleção rápida, com validação de provedor configurado.",
   },
 ]

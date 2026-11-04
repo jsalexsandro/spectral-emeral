@@ -12,6 +12,7 @@ export type DeviceSummary = {
   status: DeviceStatus
   lastSeenAt: string | null
   createdAt: string
+  defaultWorkingDirectory: string | null
 }
 
 export type PairingStatus = "pending" | "paired" | "expired"

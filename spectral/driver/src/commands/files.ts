@@ -924,6 +924,7 @@ export class FileSandbox {
 
   async runCommand(
     input: DeviceCommandInputMap["run-command"],
+    defaultFolder?: string,
   ): Promise<DeviceCommandSuccess> {
     const { command: rawCommand, args = [], timeoutMs = DEVICE_RUN_TIMEOUT_DEFAULT_MS, cwd } = input
 
@@ -963,6 +964,8 @@ export class FileSandbox {
       }
 
       runCwd = resolved.absolute
+    } else if (defaultFolder) {
+      runCwd = defaultFolder
     }
 
     const startTime = Date.now()

@@ -39,7 +39,7 @@ Armazena contas vinculadas para login social (Google, GitHub, Apple, etc.).
 Chaves de API dos provedores de IA por usuário (BYOK). O valor em `apiKey` é armazenado criptografado (AES-256-GCM).
 - `id` (text, PK) - CUID gerado automaticamente
 - `userId` (text, FK -> user.id, cascade delete) - Indexado
-- `provider` (text) - Identificador do provedor: `openai`, `anthropic`, `google` ou `openrouter`
+- `provider` (text) - Identificador do provedor: `openai`, `anthropic`, `google`, `openrouter` ou `groq`
 - `apiKey` (text, not null) - Chave criptografada no formato `v1:<iv>:<tag>:<ciphertext>` (base64)
 - `createdAt` (timestamp, not null) - Default: now()
 - `updatedAt` (timestamp, not null) - Default: now(); atualizado em cada upsert
@@ -51,7 +51,7 @@ Chaves de API dos provedores de IA por usuário (BYOK). O valor em `apiKey` é a
 Preferência do usuário sobre quais modelos aparecem na seleção rápida do chat.
 - `id` (text, PK) - CUID gerado automaticamente
 - `userId` (text, FK -> user.id, cascade delete) - Indexado
-- `provider` (text) - Identificador do provedor: `openai`, `anthropic`, `google` ou `openrouter`
+- `provider` (text) - Identificador do provedor: `openai`, `anthropic`, `google`, `openrouter` ou `groq`
 - `modelId` (text) - ID do modelo no catálogo (`lib/ai/models.ts`)
 - `enabled` (boolean, not null) - Default: `true`; `false` remove o modelo da seleção rápida
 - `createdAt` (timestamp, not null) - Default: now()

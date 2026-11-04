@@ -153,7 +153,10 @@ export async function POST(request: Request) {
       generateMessageId: () => createId(),
       abortSignal: request.signal,
       timeout: { totalMs: AGENT_TIMEOUT_MS },
-      onError: () => "Não foi possível gerar a resposta.",
+      onError: (error) => {
+        console.error("agent_error", { chatId, error })
+        return "Não foi possível gerar a resposta."
+      },
       onStepEnd: (step) => {
         stepCount += 1
         inputTokens += step.usage.inputTokens ?? 0
@@ -201,7 +204,8 @@ export async function POST(request: Request) {
         }
       },
     })
-  } catch {
+  } catch (error) {
+    console.error("chat_route_error", { chatId, error })
     return Response.json({ error: "internal_error" }, { status: 500 })
   }
 }

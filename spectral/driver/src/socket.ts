@@ -1,4 +1,5 @@
 import { createPrivateKey, sign } from "node:crypto"
+import { homedir } from "node:os"
 import { WebSocket, type RawData } from "ws"
 import {
   DeviceCommandValidationError,
@@ -30,6 +31,7 @@ type ServerMessage =
       type: "device:authenticated"
       heartbeatIntervalMs?: number
       heartbeatTimeoutMs?: number
+      defaultFolder?: string | null
     }
   | { type: "device:heartbeat:ack"; serverTime?: string }
   | {
@@ -93,6 +95,7 @@ export function connectDevice(
   let heartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS
   let heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS
   let settled = false
+  let defaultFolder: string | null = null
 
   let resolveOutcome: (outcome: ConnectionOutcome) => void = () => undefined
 
@@ -171,7 +174,9 @@ export function connectDevice(
 
         try {
           const command = parseDeviceCommand(rawCommand, input)
-          result = await executeDeviceCommand(command)
+          result = await executeDeviceCommand(command, {
+            defaultFolder: defaultFolder ?? undefined,
+          })
         } catch (error) {
           result =
             error instanceof DeviceCommandValidationError
@@ -213,6 +218,7 @@ export function connectDevice(
       type: "device:authenticate",
       deviceId: identity.deviceId,
       fingerprint: identity.fingerprint,
+      defaultFolder: homedir(),
     })
   })
 
@@ -240,6 +246,7 @@ export function connectDevice(
         message.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS
       heartbeatTimeoutMs =
         message.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS
+      defaultFolder = message.defaultFolder ?? null
       startHeartbeat()
       console.log("Dispositivo autenticado. Presença ativa.")
       return

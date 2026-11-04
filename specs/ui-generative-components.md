@@ -90,6 +90,10 @@ Entrada (`renderUiInputSchema`):
 }
 ```
 
+Por tolerância a modelos menores, a tool também aceita `props` como string
+JSON e normaliza para objeto antes da validação. A saída e o input validado
+usam objeto; a parte bruta do tool call pode manter a string original.
+
 Saída (`renderUiOutputSchema`):
 
 ```ts

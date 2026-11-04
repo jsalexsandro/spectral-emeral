@@ -8,6 +8,7 @@ export type DeviceRecord = {
   publicKey: string
   fingerprint: string
   revokedAt: Date | null
+  defaultWorkingDirectory: string | null
 }
 
 export async function findDeviceById(
@@ -20,6 +21,7 @@ export async function findDeviceById(
       publicKey: devices.publicKey,
       fingerprint: devices.fingerprint,
       revokedAt: devices.revokedAt,
+      defaultWorkingDirectory: devices.defaultWorkingDirectory,
     })
     .from(devices)
     .where(eq(devices.id, id))
@@ -35,6 +37,21 @@ export async function touchDevice(id: string): Promise<boolean> {
     .update(devices)
     .set({ lastSeenAt: now })
     .where(and(eq(devices.id, id), isNull(devices.revokedAt)))
+    .returning({ id: devices.id })
+
+  return Boolean(updated)
+}
+
+export async function updateDeviceDefaultFolder(
+  deviceId: string,
+  defaultFolder: string,
+): Promise<boolean> {
+  const now = new Date()
+
+  const [updated] = await db
+    .update(devices)
+    .set({ defaultWorkingDirectory: defaultFolder, updatedAt: now })
+    .where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)))
     .returning({ id: devices.id })
 
   return Boolean(updated)

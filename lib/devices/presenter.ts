@@ -10,6 +10,7 @@ type DeviceRow = {
   fingerprint: string
   lastSeenAt: Date | null
   createdAt: Date
+  defaultWorkingDirectory: string | null
 }
 
 export function toDeviceSummary(device: DeviceRow): DeviceSummary {
@@ -23,5 +24,6 @@ export function toDeviceSummary(device: DeviceRow): DeviceSummary {
     status: isDeviceOnline(device.lastSeenAt) ? "online" : "offline",
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
     createdAt: device.createdAt.toISOString(),
+    defaultWorkingDirectory: device.defaultWorkingDirectory ?? null,
   }
 }

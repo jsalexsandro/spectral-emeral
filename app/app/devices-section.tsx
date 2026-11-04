@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Settings,
   Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -107,6 +108,13 @@ export function DevicesSection() {
 
   const [revoking, setRevoking] = useState<DeviceSummary | null>(null)
   const [isRevoking, setIsRevoking] = useState(false)
+
+  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false)
+  const [deviceSettingsDevice, setDeviceSettingsDevice] = useState<
+    DeviceSummary | null
+  >(null)
+  const [folderValue, setFolderValue] = useState("")
+  const [isSavingFolder, setIsSavingFolder] = useState(false)
 
   const requestId = useRef(0)
   const isMounted = useRef(true)
@@ -288,6 +296,56 @@ export function DevicesSection() {
     }
   }
 
+  function openDeviceSettings(device: DeviceSummary) {
+    setDeviceSettingsDevice(device)
+    setFolderValue(device.defaultWorkingDirectory ?? "")
+    setDeviceSettingsOpen(true)
+  }
+
+  async function handleSaveFolder(event: React.FormEvent) {
+    event.preventDefault()
+
+    if (!deviceSettingsDevice || isSavingFolder) {
+      return
+    }
+
+    const value = folderValue.trim() || null
+
+    setIsSavingFolder(true)
+
+    try {
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(deviceSettingsDevice.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ defaultWorkingDirectory: value }),
+        },
+      )
+
+      const data = (await response.json().catch(() => null)) as
+        | { device?: DeviceSummary }
+        | null
+
+      if (!response.ok || !data?.device) {
+        throw new Error("Falha ao salvar pasta padrão")
+      }
+
+      setDevices((current) =>
+        current.map((device) =>
+          device.id === data.device?.id ? data.device : device,
+        ),
+      )
+      toast.success("Pasta padrão atualizada.")
+      setDeviceSettingsDevice(data.device)
+      setFolderValue(data.device.defaultWorkingDirectory ?? "")
+    } catch {
+      toast.error("Não foi possível salvar a pasta padrão.")
+    } finally {
+      setIsSavingFolder(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <header className="space-y-1">
@@ -352,68 +410,87 @@ export function DevicesSection() {
                 <Laptop className="size-4" />
               </div>
 
-              <div className="min-w-0 flex-1 basis-40">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium">{device.name}</p>
-                  <Badge
-                    variant="outline"
-                    className="gap-1.5"
-                    aria-label={`Status: ${device.status === "online" ? "online" : "offline"}`}
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        device.status === "online"
-                          ? "bg-emerald-500"
-                          : "bg-muted-foreground/50",
-                      )}
-                    />
-                    {device.status === "online" ? "Online" : "Offline"}
-                  </Badge>
+                <div className="min-w-0 flex-1 basis-40">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium">{device.name}</p>
+                    <Badge
+                      variant="outline"
+                      className="gap-1.5"
+                      aria-label={`Status: ${device.status === "online" ? "online" : "offline"}`}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-1.5 rounded-full",
+                          device.status === "online"
+                            ? "bg-emerald-500"
+                            : "bg-muted-foreground/50",
+                        )}
+                      />
+                      {device.status === "online" ? "Online" : "Offline"}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {[
+                      device.hostname,
+                      getPlatformLabel(device.platform),
+                      device.architecture,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {formatLastSeen(device.lastSeenAt)} ·{" "}
+                    <span className="font-mono">
+                      {device.fingerprint.slice(0, 12)}…
+                    </span>
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <span className="font-semibold">Criado em:</span>{" "}
+                    {formatLastSeen(device.createdAt)}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <span className="font-semibold">Pasta padrão:</span>{" "}
+                    <span className="font-mono">
+                      {device.defaultWorkingDirectory ?? "não definida"}
+                    </span>
+                  </p>
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {[
-                    device.hostname,
-                    getPlatformLabel(device.platform),
-                    device.architecture,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {formatLastSeen(device.lastSeenAt)} ·{" "}
-                  <span className="font-mono">
-                    {device.fingerprint.slice(0, 12)}…
-                  </span>
-                </p>
-              </div>
 
-              <div className="ml-auto flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Renomear ${device.name}`}
-                  onClick={() => openRename(device)}
-                >
-                  <Pencil />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Revogar ${device.name}`}
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => setRevoking(device)}
-                >
-                  <Trash2 />
-                </Button>
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Configurações de ${device.name}`}
+                    onClick={() => openDeviceSettings(device)}
+                  >
+                    <Settings className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Renomear ${device.name}`}
+                    onClick={() => openRename(device)}
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Revogar ${device.name}`}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setRevoking(device)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
       <Dialog
         open={pairingOpen}
@@ -569,6 +646,104 @@ export function DevicesSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={deviceSettingsOpen}
+        onOpenChange={(open) => {
+          setDeviceSettingsOpen(open)
+          if (!open) {
+            setDeviceSettingsDevice(null)
+            setFolderValue("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurações do dispositivo</DialogTitle>
+            <DialogDescription>
+              Informações básicas e preferências de {deviceSettingsDevice?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {deviceSettingsDevice && (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="settings-device-name">Nome</Label>
+                  <p className="text-sm font-medium truncate" id="settings-device-name">
+                    {deviceSettingsDevice.name}
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="settings-device-status">Status</Label>
+                  <Badge
+                    id="settings-device-status"
+                    variant={deviceSettingsDevice.status === "online" ? "default" : "secondary"}
+                    className="gap-1.5"
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        deviceSettingsDevice.status === "online"
+                          ? "bg-emerald-500"
+                          : "bg-muted-foreground/50",
+                      )}
+                    />
+                    {deviceSettingsDevice.status === "online" ? "Online" : "Offline"}
+                  </Badge>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="settings-device-os">Sistema operacional</Label>
+                  <p className="text-sm" id="settings-device-os">
+                    {[
+                      deviceSettingsDevice.hostname,
+                      getPlatformLabel(deviceSettingsDevice.platform),
+                      deviceSettingsDevice.architecture,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="settings-device-created">Criado em</Label>
+                  <p className="text-sm font-mono" id="settings-device-created">
+                    {formatLastSeen(deviceSettingsDevice.createdAt)}
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveFolder} className="space-y-2">
+                  <Label htmlFor="settings-device-folder">Pasta padrão</Label>
+                  <Input
+                    id="settings-device-folder"
+                    value={folderValue}
+                    onChange={(event) => setFolderValue(event.target.value)}
+                    placeholder="Ex: C:\Users\SeuUsuario\SpectralScripts"
+                    maxLength={1024}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Usada como diretório padrão para executar comandos quando
+                    nenhum caminho for informado. Deixe em branco para remover.
+                  </p>
+                </form>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeviceSettingsOpen(false)}>
+              Fechar
+            </Button>
+            <Button type="submit" form="settings-folder-form" disabled={isSavingFolder}>
+              {isSavingFolder && <Loader2 className="animate-spin" />}
+              Salvar pasta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

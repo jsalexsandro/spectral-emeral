@@ -5,6 +5,7 @@ export const authenticateMessageSchema = z.object({
   type: z.literal("device:authenticate"),
   deviceId: z.string().min(1).max(128),
   fingerprint: z.string().min(1).max(128),
+  defaultFolder: z.string().min(1).max(1024).optional(),
 })
 
 export const proofMessageSchema = z.object({
@@ -136,6 +137,7 @@ export type ServerMessage =
       serverTime: string
       heartbeatIntervalMs: number
       heartbeatTimeoutMs: number
+      defaultFolder?: string | null
     }
   | { type: "device:heartbeat:ack"; serverTime: string }
   | {

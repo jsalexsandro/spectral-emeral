@@ -6,7 +6,7 @@ import {
   type ProviderId,
 } from "./providers"
 
-export const MODEL_CATALOG_VERSION = 5
+export const MODEL_CATALOG_VERSION = 6
 
 export const modelStatuses = ["available", "preview", "deprecated"] as const
 export type ModelStatus = (typeof modelStatuses)[number]
@@ -17,7 +17,7 @@ export const modelStatusLabels: Record<ModelStatus, string> = {
   deprecated: "Descontinuado",
 }
 
-const providerIdSchema = z.custom<ProviderId>(
+export const providerIdSchema = z.custom<ProviderId>(
   (value) => typeof value === "string" && isProviderId(value),
   { message: "Provedor desconhecido" },
 )
@@ -26,6 +26,13 @@ const modelPricingSchema = z.object({
   currency: z.literal("USD"),
   inputPerMillion: z.number().nonnegative(),
   outputPerMillion: z.number().nonnegative(),
+})
+
+const modelRateLimitsSchema = z.object({
+  requestsPerMinute: z.number().int().positive(),
+  requestsPerDay: z.number().int().positive(),
+  tokensPerMinute: z.number().int().positive(),
+  tokensPerDay: z.number().int().positive(),
 })
 
 const modelSchema = z.object({
@@ -43,11 +50,13 @@ const modelSchema = z.object({
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive().optional(),
   pricing: modelPricingSchema,
+  rateLimits: modelRateLimitsSchema.optional(),
   status: z.enum(modelStatuses),
 })
 
 export type AIModel = z.infer<typeof modelSchema>
 export type ModelPricing = AIModel["pricing"]
+export type ModelRateLimits = NonNullable<AIModel["rateLimits"]>
 
 const modelCatalogSchema = z.array(modelSchema)
 
@@ -239,6 +248,28 @@ const modelCatalog = [
       currency: "USD",
       inputPerMillion: 0,
       outputPerMillion: 0,
+    },
+    status: "available",
+  },
+  {
+    id: "openai/gpt-oss-20b",
+    provider: "groq",
+    name: "GPT-OSS 20B",
+    description:
+      "Modelo aberto da OpenAI via Groq, rápido e econômico, com suporte a ferramentas.",
+    releasedAt: "2025-08-05",
+    contextWindow: 131_072,
+    maxOutputTokens: 65_536,
+    pricing: {
+      currency: "USD",
+      inputPerMillion: 0.075,
+      outputPerMillion: 0.3,
+    },
+    rateLimits: {
+      requestsPerMinute: 30,
+      requestsPerDay: 1_000,
+      tokensPerMinute: 8_000,
+      tokensPerDay: 200_000,
     },
     status: "available",
   },

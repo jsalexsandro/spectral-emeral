@@ -14,7 +14,7 @@ async function main() {
   if (!resolved.ok) { console.log("resolve failed", resolved); process.exit(1) }
   const messages: UIMessage[] = [{ id: "u1", role: "user", parts: [{ type: "text", text: "crie um aviso de sucesso dizendo que deu certo" }] }]
   const systemPrompt = buildSystemPrompt({ user: { name: chat.name, nickname: chat.nickname }, now: new Date(), model: { provider: chat.provider, modelId: chat.model } })
-  const result = streamText({ model: resolved.model, system: systemPrompt.prompt, tools: getChatTools(), stopWhen: isStepCount(4), messages: [{ role: "user", content: "crie um aviso de sucesso dizendo que deu certo" }] })
+  const result = streamText({ model: resolved.model, system: systemPrompt.prompt, tools: getChatTools({ userId: chat.userId }), stopWhen: isStepCount(4), messages: [{ role: "user", content: "crie um aviso de sucesso dizendo que deu certo" }] })
   const stream = toUIMessageStream({ stream: result.stream, originalMessages: messages })
   let last: UIMessage | undefined
   for await (const message of readUIMessageStream({ stream })) last = message

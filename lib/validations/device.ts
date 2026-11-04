@@ -19,6 +19,21 @@ const architectureSchema = z
   .max(40, "Arquitetura muito longa")
   .optional()
 
+const devicePathSchema = z
+  .string()
+  .trim()
+  .max(1024, "Caminho muito longo")
+  .optional()
+  .refine(
+    (value) => {
+      if (!value) {
+        return true
+      }
+      return !/[\u0000-\u001f\u007f]/.test(value)
+    },
+    "O caminho contém caracteres inválidos.",
+  )
+
 export const createPairingSchema = z.object({
   publicKey: z
     .string()
@@ -43,8 +58,18 @@ export const renameDeviceSchema = z.object({
     .string()
     .trim()
     .min(1, "Informe um nome")
-    .max(DEVICE_NAME_MAX_LENGTH, "Nome muito longo"),
-})
+    .max(DEVICE_NAME_MAX_LENGTH, "Nome muito longo")
+    .optional(),
+  defaultWorkingDirectory: devicePathSchema.describe(
+    "Pasta padrão do dispositivo para execução de comandos.",
+  ),
+}).refine(
+  (data) => data.name !== undefined || data.defaultWorkingDirectory !== undefined,
+  {
+    message: "Informe ao menos um campo para atualizar.",
+    path: ["name"],
+  },
+)
 
 export type CreatePairingInput = z.infer<typeof createPairingSchema>
 export type ConfirmPairingInput = z.infer<typeof confirmPairingSchema>

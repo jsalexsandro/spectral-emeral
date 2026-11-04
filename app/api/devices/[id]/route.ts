@@ -68,7 +68,13 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   try {
     const [updated] = await db
       .update(devices)
-      .set({ name: parsed.data.name, updatedAt: new Date() })
+      .set({
+        ...(parsed.data.name !== undefined && { name: parsed.data.name }),
+        ...(parsed.data.defaultWorkingDirectory !== undefined && {
+          defaultWorkingDirectory: parsed.data.defaultWorkingDirectory,
+        }),
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(devices.id, id),

@@ -116,7 +116,8 @@ O necessario para o inicio da aplicação.
      - [x] Definir o schema do BYOK no DB (tabela `AIKey`)
      - [x] Salvar/remover chave por provedor (`PUT`/`DELETE /api/byok/[provider]`)
      - [x] Criptografia das chaves com `BYOK_ENCRYPTION_KEY`
-     - [x] Provedores iniciais: OpenAI, Anthropic, Google Gemini e OpenRouter
+     - [x] Provedores iniciais: OpenAI, Anthropic, Google Gemini, OpenRouter e Groq
+     - [x] Groq com `openai/gpt-oss-20b` (limites de referência: 30 RPM, 1.000 RPD, 8.000 TPM, 200.000 TPD)
 
      A criação de "/provider/[provider]/models
      Será um tela basisca e simples, onde fica listado os modelos dos provedores suportados
@@ -180,7 +181,7 @@ O prompt é composto por seções independentes e versionado para permitir evolu
 
 - [x] Composição em `lib/ai/prompts/build.ts` (`buildSystemPrompt`)
 - [x] Seções em `lib/ai/prompts/sections/` (identidade, estilo, capacidades, loop agêntico, UI e ações, segurança, contexto do usuário)
-- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 7`)
+- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 15`)
 - [x] Injeção em `app/api/chat/route.ts`
 - [x] Persistência da versão em `Message.promptVersion`
 - [x] Revisão do prompt composto com `npm run prompt:print`
@@ -263,8 +264,27 @@ Implementado:
 - [x] Fase 2: confirmação explícita para ações sensíveis (ex.: `navigate` iniciado pela IA)
 - [ ] Fase futura: estado interativo no chat, avaliado sem reintroduzir `chatState`
 
+Passo 11, tools de informações sobre modelo e providers.
+  Iremos definir tools de controle para providers e models
+  Para que a gente tenha mais dinamismos.
+  exemplos de tools:
+    Provider.list-all-providers, prompt: Qual são os provedores de IA que estão disponiveis para configurar?
+    Provider.list-all-providers-configured, prompt: Qual são os provedores de IA que estão configurados?
 
-Passo 11 - Device System
+  Implementado:
+  - [x] `provider-list-all`: lista todos os provedores suportados com `configured`, `modelCount` e `updatedAt`
+  - [x] `provider-list-configured`: lista apenas os provedores com chave BYOK configurada
+  - [x] `model-list-by-provider`: lista o catálogo de um provedor com metadados e `quickEnabled`; funciona sem chave (`configured=false`)
+  - [x] `model-list-enabled`: lista modelos ativados para uso rápido, com filtro opcional por provedor
+  - [x] `model-set-enabled`: ativa/desativa modelo na seleção rápida com `{ provider, modelId, enabled }`, só para provedores com chave BYOK configurada
+  - [x] Regra de ativação igual à UI: modelo sem preferência salva conta como ativado; `enabled=false` fica de fora
+  - [x] Tools nunca retornam `apiKey`, `maskedKey` ou material de chave
+  - [x] Registro em `getChatTools()` (`lib/ai/tools/provider-tools.ts` e `lib/ai/tools/model-tools.ts`)
+  - [x] Seção `providers-and-models` no system prompt (`SYSTEM_PROMPT_VERSION = 15`)
+  - [x] Testes em `lib/ai/tools/provider-tools.test.ts` e `lib/ai/tools/model-tools.test.ts`
+  - [x] Documentação das tools em `specs/providers.md`
+
+Passo 12 - Device System
   Device system é uma maneira de controlar dispositivos externos via chat ui
   Exemplo apos a integração final:  
     Abra o navegador no youtube no dispositivo "casa-pc"
@@ -299,10 +319,11 @@ Passo 11 - Device System
 
   Fase 3 - Adicionar mais força ao agente:
 
+  - [x] `device-write-file` e `device-edit-file` (escrita/edição de arquivos no PC, sandbox da pasta do usuário)
+  - [x] `device-run-command` (execução de comandos shell no PC, allowlist/denylist, timeout)
   Opções para a Fase 3 (definir ordem com o programador):
-  - [ ] Confirmação explícita no chat para ações sensíveis (`device-type-text` e `device-press-key`, confirmação em texto antes de executar)
-  - [ ] `device-write-file` e `device-edit-file` (escrita/edição de arquivos no PC, sandbox da pasta do usuário, requer confirmação)
-  - [ ] `device-run-command` (execução de comandos shell no PC, allowlist/denylist, requer confirmação, timeout)
+  - [ ] Confirmação explícita no chat para ações sensíveis (`device-type-text`, `device-press-key`, `device-write-file`, `device-edit-file` e `device-run-command`)
+        - A tentativa anterior (`toolApproval`/confirmação em texto) foi removida em `60055bf`; hoje as tools executam direto.
   - [ ] `device-screenshot` + loop de visão (feedback de tela do dispositivo para o modelo)
   - [ ] Modo autônomo (`requireApproval: false`) para desativar confirmações
 
