@@ -275,6 +275,10 @@ function ChatSession({
                             <MarkdownMessage
                               key={`${item.id}-text-${index}`}
                               content={part.text}
+                              timestamp={
+                                (item as { createdAt?: string | Date })
+                                  .createdAt
+                              }
                             />
                           )
                         }
