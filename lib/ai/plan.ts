@@ -2,7 +2,12 @@ import { z } from "zod"
 
 export const UPDATE_PLAN_TOOL_NAME = "updatePlan"
 
-export const planStepStatusSchema = z.enum(["done", "current", "pending"])
+export const planStepStatusSchema = z.enum([
+  "done",
+  "current",
+  "pending",
+  "failed",
+])
 
 export const updatePlanInputSchema = z.object({
   title: z
@@ -29,7 +34,7 @@ export const updatePlanInputSchema = z.object({
           .optional()
           .describe("Detalhe opcional sobre o que será feito na etapa."),
         status: planStepStatusSchema.describe(
-          "done para concluída, current para a etapa em execução e pending para as próximas.",
+          "done para concluída, current para a etapa em execução, pending para as próximas e failed para etapas que falharam.",
         ),
       }),
     )

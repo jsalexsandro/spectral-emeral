@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDot } from "lucide-react"
+import { Check, Circle, CircleDot, XCircle } from "lucide-react"
 import type { PlanStepStatus } from "@/lib/ai/plan"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +17,11 @@ const statusStyles = {
     icon: Circle,
     marker: "border-border bg-background text-muted-foreground",
     title: "text-muted-foreground",
+  },
+  failed: {
+    icon: XCircle,
+    marker: "border-destructive bg-destructive/10 text-destructive",
+    title: "text-destructive",
   },
 } as const
 

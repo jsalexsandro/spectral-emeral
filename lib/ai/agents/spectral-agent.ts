@@ -22,6 +22,10 @@ export type AgentRuntimeContext = {
   startedAt: number
   theme?: string | null
   resolvedTheme?: string | null
+  lastPlan?: {
+    title?: string
+    steps: Array<{ title: string; status: string }>
+  }
 }
 
 type CreateSpectralAgentInput = {
@@ -61,6 +65,35 @@ const renderHtmlLimitReached: StopCondition<ToolSet, AgentRuntimeContext> = ({
   steps,
 }) => countRenderHtmlCalls(steps) >= MAX_RENDER_HTML_CALLS
 
+const MAX_CONSECUTIVE_FAILED_PLANS = 3
+
+// Stop condition auxiliada pelo contexto de runtime: para quando há muitas
+// falhas de plano sem progresso. Desabilitada por padrão pois o StopCondition
+// do SDK não expõe runtimeContext; reativar quando o cliente enviar lastPlan
+// no corpo de /api/chat.
+const repeatedPlanFailures = ({
+  steps,
+  runtimeContext,
+}: {
+  steps: StepResult<ToolSet, AgentRuntimeContext>[]
+  runtimeContext?: AgentRuntimeContext
+}) => {
+  const rc = runtimeContext
+  if (!rc?.lastPlan) {
+    return false
+  }
+
+  const failedSteps = rc.lastPlan.steps.filter(
+    (step) => step.status === "failed",
+  ).length
+
+  const hasProgress = rc.lastPlan.steps.some(
+    (step) => step.status === "done" || step.status === "current",
+  )
+
+  return !hasProgress && failedSteps >= MAX_CONSECUTIVE_FAILED_PLANS
+}
+
 export function createSpectralAgent({
   model,
   instructions,
@@ -79,6 +112,7 @@ export function createSpectralAgent({
       isStepCount(MAX_AGENT_STEPS),
       budgetExceeded,
       renderHtmlLimitReached,
+      repeatedPlanFailures as StopCondition<ToolSet, AgentRuntimeContext>,
     ],
     runtimeContext,
     prepareStep: ({ messages }) => {

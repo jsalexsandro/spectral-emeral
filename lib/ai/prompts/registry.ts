@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 19
+export const SYSTEM_PROMPT_VERSION = 20
 
 export type SystemPromptChange = {
   version: number
@@ -120,5 +120,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-06",
     summary:
       "Adiciona a tool get-theme para consultar o tema atual (light, dark ou system) antes de usar setTheme, evitando trocar para um tema já ativo. O tema chega do cliente no corpo de /api/chat e também é injetado no system prompt.",
+  },
+  {
+    version: 20,
+    date: "2026-11-06",
+    summary:
+      "Melhora o planejamento multi-passo com o status failed para etapas, validação de no máximo uma etapa current no updatePlan e stop condition para falhas repetidas do plano.",
   },
 ]
