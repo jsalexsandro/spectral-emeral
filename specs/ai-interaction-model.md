@@ -48,7 +48,7 @@ O `AppActionHandler`:
 - revalida o output com `runActionOutputSchema`;
 - executa com `source: "tool"`.
 
-## Catálogo de ações (`ACTION_CATALOG_VERSION = 2`)
+## Catálogo de ações (`ACTION_CATALOG_VERSION = 3`)
 
 | Ação | Campos | Regras |
 | --- | --- | --- |
@@ -58,10 +58,16 @@ O `AppActionHandler`:
 | `navigate` | `path` | Allowlist: `/app`, `/providers/select-model`, `/provider/{provider}/models`. |
 | `copy` | `text` | Até 4.000 caracteres. |
 | `sendMessage` | `text` | Até 500 caracteres; somente botões. |
+| `openDeviceApp` | `deviceId`, `appId` | Abre um app da allowlist em um PC pareado; exige gesto e ownership. |
 
-`aiActionSchema` exclui `sendMessage`. `appActionSchema` inclui. O
-`runActionOutputSchema` usa `aiActionSchema`, então um output forjado com
-`sendMessage` é rejeitado.
+`aiActionSchema` exclui `sendMessage` e `openDeviceApp`. `appActionSchema`
+inclui. O `runActionOutputSchema` usa `aiActionSchema`, então um output forjado
+com qualquer uma dessas ações é rejeitado. A IA só abre apps por um clique no
+HTML/widget gerado.
+
+`openDeviceApp` é executada por `POST /api/devices/{id}/open-app`, que valida
+sessão, ownership e `revokedAt`, aplica rate limit e encaminha `open-app` ao
+backend/driver. O driver mantém a allowlist real de aplicativos.
 
 ## Botões de HTML
 
@@ -92,8 +98,9 @@ O script não acessa o DOM do app. Ele só pode:
 
 Regras:
 
-- ações que mudam a conversa ou a rota (`sendMessage`, `navigate`) só são
-  aceitas com gesto do usuário (`navigator.userActivation`);
+- ações que mudam a conversa, a rota ou o PC (`sendMessage`, `navigate`,
+  `openDeviceApp`) só são aceitas com gesto do usuário
+  (`navigator.userActivation`);
 - há limite de 40 ações por widget e 12 por janela de 10s;
 - `widget:ready` é obrigatório; sem ele em 4s o renderer mostra erro;
 - `data-*` e `id` funcionam como ganchos locais dentro do iframe; scripts

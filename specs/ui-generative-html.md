@@ -94,6 +94,9 @@ Atributos permitidos:
 `rows`, `cols`, `multiple`, `readonly`, `required`, `maxlength`, `minlength`,
 `inputmode`, `open`, `data-spectral-action`.
 
+Em widgets com `script`, `id`, `for` e `name` também são permitidos para
+ganchos de JavaScript, labels e grupos de inputs.
+
 Tags perigosas são removidas explicitamente: `script`, `style`, `iframe`, `form`,
 `svg`, `math`, `canvas`, `video`, `audio`, `object`, `embed`, `link`, `meta`,
 `base`, `source`, `track`.
@@ -176,7 +179,10 @@ Ações aceitas por `appActionSchema`:
 - `toast`;
 - `setTheme`;
 - `navigate` — allowlist de rotas;
-- `copy`.
+- `copy`;
+- `openDeviceApp` — `{ deviceId, appId }` para abrir um app da allowlist em um
+  PC pareado. Fica fora de `aiActionSchema`: a IA não consegue executá-la via
+  `runAction`, só um clique no HTML/widget.
 
 O clique é delegado no container do renderer. A ação é revalidada no cliente e
 executada com `source: "user"`. `navigate` pede confirmação. O
@@ -185,6 +191,23 @@ executada com `source: "user"`. `navigate` pede confirmação. O
 No HTML estático, todo botão que dispara ação deve ter `type="button"` e
 `data-spectral-action`. Em widgets v2, botões que só alteram estado local não
 precisam de ação; o script pode consultá-los por `data-*` ou `id`.
+
+### Abrir apps no PC
+
+O fluxo de um widget que abre apps é:
+
+1. a IA chama `device-online-list`;
+2. se houver mais de um PC online, pergunta qual usar antes de gerar o widget;
+3. chama `device-list-apps` com o `deviceId` escolhido;
+4. renderiza um `<select>` com os `apps` retornados;
+5. no clique, chama
+   `spectral.action({ type: "openDeviceApp", deviceId, appId })`.
+
+O app envia `POST /api/devices/{id}/open-app` com `{ appId }`. A rota valida
+sessão, ownership e `revokedAt`, aplica rate limit e chama
+`sendDeviceCommand({ command: "open-app", input: { appId } })`. O backend e o
+driver continuam validando a allowlist. O comando só é aceito com gesto do
+usuário e nunca é disparado na carga do widget.
 
 ## Widgets dinâmicos (v2)
 
@@ -251,9 +274,9 @@ Dentro do iframe o modelo só tem `window.spectral`:
 - CSP `default-src 'none'` bloqueia `fetch`, WebSocket, imagens e fontes
   externas.
 - Sem `allow-top-navigation`, `allow-popups` ou `allow-forms`.
-- Ações mudam a conversa/rota apenas com gesto do usuário
-  (`navigator.userActivation`); `sendMessage` e `navigate` são recusadas sem
-  gesto.
+- Ações mudam a conversa, a rota ou o PC apenas com gesto do usuário
+  (`navigator.userActivation`); `sendMessage`, `navigate` e `openDeviceApp` são
+  recusadas sem gesto.
 - Limites por widget: 40 ações por sessão e 12 ações a cada 10 segundos.
 - Se o iframe não enviar `widget:ready` em 4 segundos, o renderer mostra erro.
 

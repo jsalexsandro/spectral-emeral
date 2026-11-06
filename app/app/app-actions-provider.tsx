@@ -47,6 +47,41 @@ function showToast(action: Extract<AppAction, { type: "toast" }>) {
   }
 }
 
+function deviceAppErrorMessage(code: string | undefined, fallback?: string) {
+  switch (code) {
+    case "device_offline":
+      return "O PC está offline. Verifique se o driver está conectado."
+    case "device_busy":
+      return "O PC ainda está executando outro comando."
+    case "device_disconnected":
+      return "O PC desconectou antes de concluir o comando."
+    case "command_timeout":
+      return "O PC demorou para responder. Tente novamente."
+    case "device_not_found":
+      return "Dispositivo não encontrado ou removido."
+    case "invalid_app":
+    case "app_not_allowed":
+      return "Esse aplicativo não está na lista permitida."
+    case "rate_limited":
+      return "Muitas tentativas. Aguarde um instante."
+    default:
+      return fallback ?? "Não foi possível abrir o aplicativo."
+  }
+}
+
+function readErrorPayload(payload: unknown) {
+  if (typeof payload !== "object" || payload === null) {
+    return {}
+  }
+
+  const record = payload as Record<string, unknown>
+
+  return {
+    code: typeof record.error === "string" ? record.error : undefined,
+    message: typeof record.message === "string" ? record.message : undefined,
+  }
+}
+
 export function AppActionsProvider({
   user,
   children,
@@ -108,6 +143,32 @@ export function AppActionsProvider({
             ok: false,
             error: "sendMessage deve ser executado pelo chat.",
           }
+        }
+        case "openDeviceApp": {
+          const response = await fetch(
+            `/api/devices/${encodeURIComponent(action.deviceId)}/open-app`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ appId: action.appId }),
+            },
+          )
+
+          const payload: unknown = await response.json().catch(() => null)
+
+          if (!response.ok) {
+            const { code, message: serverMessage } = readErrorPayload(payload)
+            const message = deviceAppErrorMessage(code, serverMessage)
+
+            toast.error("Não foi possível abrir o aplicativo", {
+              description: message,
+            })
+
+            return { ok: false, error: message }
+          }
+
+          toast.success("Aplicativo aberto no PC")
+          return { ok: true }
         }
       }
     } catch {

@@ -240,7 +240,9 @@ Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-h
   - [x] Bridge `postMessage` versionada com nonce por instância
   - [x] API `spectral`: `action`, `open`, `theme`, `onThemeChange`, `onReady`
   - [x] Ações revalidam `appActionSchema` no pai antes de executar
-  - [x] `sendMessage`/`navigate` exigem gesto do usuário
+  - [x] `sendMessage`/`navigate`/`openDeviceApp` exigem gesto do usuário
+  - [x] Ação `openDeviceApp` abre apps da allowlist em PCs pareados
+  - [x] Rota `POST /api/devices/[id]/open-app` com auth, ownership e rate limit
   - [x] Limites: 40 ações por widget e 12 por janela de 10s
   - [x] CSS do app e tema injetados no iframe (`WidgetFrame`)
   - [x] Altura automática via `widget:resize`

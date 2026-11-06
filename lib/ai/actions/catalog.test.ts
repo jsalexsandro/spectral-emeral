@@ -9,8 +9,8 @@ import {
 } from "./catalog"
 
 describe("action catalog", () => {
-  it("keeps the catalog version at 2", () => {
-    expect(ACTION_CATALOG_VERSION).toBe(2)
+  it("keeps the catalog version at 3", () => {
+    expect(ACTION_CATALOG_VERSION).toBe(3)
   })
 
   it("allows sendMessage only for host actions", () => {
@@ -18,6 +18,46 @@ describe("action catalog", () => {
 
     expect(appActionSchema.safeParse(action).success).toBe(true)
     expect(aiActionSchema.safeParse(action).success).toBe(false)
+  })
+
+  it("allows openDeviceApp only for host actions", () => {
+    const action = {
+      type: "openDeviceApp",
+      deviceId: "device-1",
+      appId: "chrome",
+    }
+
+    expect(appActionSchema.safeParse(action).success).toBe(true)
+    expect(aiActionSchema.safeParse(action).success).toBe(false)
+  })
+
+  it("normalizes and validates device app ids", () => {
+    expect(
+      appActionSchema.safeParse({
+        type: "openDeviceApp",
+        deviceId: "device-1",
+        appId: "  Chrome  ",
+      }),
+    ).toMatchObject({
+      success: true,
+      data: { appId: "chrome" },
+    })
+
+    expect(
+      appActionSchema.safeParse({
+        type: "openDeviceApp",
+        deviceId: "device-1",
+        appId: "chrome --remote-debugging-port=9222",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      appActionSchema.safeParse({
+        type: "openDeviceApp",
+        deviceId: "",
+        appId: "chrome",
+      }).success,
+    ).toBe(false)
   })
 
   it("applies the default toast variant", () => {

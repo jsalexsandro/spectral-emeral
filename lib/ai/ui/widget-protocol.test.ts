@@ -72,6 +72,22 @@ describe("widget message schema", () => {
     ).toBe(false)
   })
 
+  it("accepts openDeviceApp as a widget action", () => {
+    expect(
+      widgetMessageSchema.safeParse({
+        ...envelope,
+        type: "widget:action",
+        requestId: "req-1",
+        action: {
+          type: "openDeviceApp",
+          deviceId: "device-1",
+          appId: "chrome",
+        },
+        userInitiated: true,
+      }).success,
+    ).toBe(true)
+  })
+
   it("rejects invalid actions", () => {
     expect(
       widgetMessageSchema.safeParse({
@@ -150,9 +166,10 @@ describe("widget protocol helpers", () => {
     expect(clampWidgetHeight(Number.POSITIVE_INFINITY)).toBe(WIDGET_MIN_HEIGHT)
   })
 
-  it("requires a user gesture only for conversation and route changes", () => {
+  it("requires a user gesture for conversation, route and device changes", () => {
     expect(requiresUserGesture("sendMessage")).toBe(true)
     expect(requiresUserGesture("navigate")).toBe(true)
+    expect(requiresUserGesture("openDeviceApp")).toBe(true)
     expect(requiresUserGesture("toast")).toBe(false)
     expect(requiresUserGesture("setTheme")).toBe(false)
     expect(requiresUserGesture("openSettings")).toBe(false)

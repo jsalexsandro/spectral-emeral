@@ -85,6 +85,7 @@ O tema **Spectral Emerald** usa branco e off-whites esverdeados como base, com e
 - Tags, atributos e classes Tailwind são allowlisted; scripts, estilos inline, iframes e formulários são removidos do HTML
 - Widgets interativos usam `script` opcional em iframe `sandbox="allow-scripts"` (sem `allow-same-origin`), com CSP `default-src 'none'`
 - Scripts acessam apenas `spectral.action/open/theme/onThemeChange/onReady`; ações são revalidadas no pai
+- Widgets podem abrir apps da allowlist no PC com a ação `openDeviceApp` (auth + ownership + gesto do usuário)
 - Botões usam ações tipadas em `data-spectral-action`; links externos usam `http(s)`/`mailto`
 - O servidor sanitiza no `execute` e o cliente revalida antes de renderizar
 - As interfaces são recuperadas do histórico via `Message.parts` (jsonb), sem migração adicional

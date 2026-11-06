@@ -80,6 +80,21 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   no arquivo resultante.
 - `device-screenshot` ainda **não** está implementada.
 
+## Widget de abrir apps
+
+Quando o usuário pede um seletor ou botão em vez de uma abertura imediata:
+
+1. a IA chama `device-online-list`;
+2. se houver mais de um PC online, pergunta qual usar antes de gerar o widget;
+3. chama `device-list-apps` e embute `apps[]` no `<select>` do widget;
+4. o clique envia `openDeviceApp` (`deviceId`, `appId`) pela bridge do widget;
+5. o app executa `POST /api/devices/{id}/open-app`, que valida sessão e
+   ownership, aplica rate limit e chama o mesmo comando `open-app` do driver.
+
+A action `openDeviceApp` fica fora de `aiActionSchema`, então a IA não consegue
+executá-la via `runAction`. Ela exige gesto do usuário e nunca é disparada na
+carga do widget.
+
 ## Regras de segurança
 
 - Só dispositivos online e pertencentes ao usuário autenticado aceitam comandos.

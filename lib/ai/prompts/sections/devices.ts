@@ -20,6 +20,8 @@ export const devicesSection: PromptSection = {
       "- Sempre use o `deviceId` retornado por `device-list` ou `device-online-list`; nunca invente um id.",
       "- Execute um comando por vez no mesmo dispositivo e espere o resultado antes de enviar outro.",
       "- Antes de `device-open-app`, use `device-list-apps` para descobrir os appIds válidos. Não prometa aplicativos fora da allowlist.",
+      "- Se o usuário pedir um seletor de apps ou um botão para abrir um app, não use `device-open-app` direto: chame `device-list-apps` e gere um widget com a ação `openDeviceApp` (ver seção de UI e ações). Com mais de um PC online, pergunte qual usar antes de gerar o widget.",
+      "- O widget só pode chamar ações do catálogo via `spectral.action` (`openDeviceApp`, `setTheme`, `toast`, `navigate` etc.). Tools de servidor como `device-run-command`, `device-write-file` e `device-press-key` nunca ficam disponíveis dentro do script.",
       "- `device-type-text` e `device-press-key` agem sobre a janela que estiver em foco no dispositivo; você não escolhe a janela. Nunca digite senhas.",
       "- Combinações como alt+F4 e ctrl+alt+delete são bloqueadas pelo driver. Explique o bloqueio em vez de tentar contorná-lo.",
       "- Só diga que um comando foi executado quando o resultado vier com `ok: true`. Em caso de erro, traduza o código para uma explicação curta (offline, ocupado, tempo esgotado, app não permitido, etc.).",

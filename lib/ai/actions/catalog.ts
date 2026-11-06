@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { configSectionSchema } from "@/lib/config-sections"
 import { isProviderId } from "@/lib/ai/providers"
+import { DEVICE_APP_ID_PATTERN } from "@/spectral/shared/device-commands"
 
-export const ACTION_CATALOG_VERSION = 2
+export const ACTION_CATALOG_VERSION = 3
 
 export const RUN_ACTION_TOOL_NAME = "runAction" as const
 
@@ -61,6 +62,17 @@ export const sendMessageActionSchema = z.object({
   text: boundedText(500),
 })
 
+/**
+ * Abre um app da allowlist em um PC pareado. Fica fora de `aiActionSchema`
+ * para que a IA não consiga executar a abertura por conta própria via
+ * `runAction`: o comando só sai do app a partir de um clique no HTML/widget.
+ */
+export const openDeviceAppActionSchema = z.object({
+  type: z.literal("openDeviceApp"),
+  deviceId: z.string().trim().min(1).max(128),
+  appId: z.string().trim().toLowerCase().regex(DEVICE_APP_ID_PATTERN),
+})
+
 export const appActionSchema = z.discriminatedUnion("type", [
   toastActionSchema,
   setThemeActionSchema,
@@ -68,6 +80,7 @@ export const appActionSchema = z.discriminatedUnion("type", [
   navigateActionSchema,
   copyActionSchema,
   sendMessageActionSchema,
+  openDeviceAppActionSchema,
 ])
 
 export const aiActionSchema = z.discriminatedUnion("type", [
@@ -89,6 +102,7 @@ export type OpenSettingsAction = z.infer<typeof openSettingsActionSchema>
 export type NavigateAction = z.infer<typeof navigateActionSchema>
 export type CopyAction = z.infer<typeof copyActionSchema>
 export type SendMessageAction = z.infer<typeof sendMessageActionSchema>
+export type OpenDeviceAppAction = z.infer<typeof openDeviceAppActionSchema>
 export type AppAction = z.infer<typeof appActionSchema>
 export type AiAction = z.infer<typeof aiActionSchema>
 export type RunActionOutput = z.infer<typeof runActionOutputSchema>

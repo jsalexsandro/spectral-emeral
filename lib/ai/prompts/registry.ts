@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 17
+export const SYSTEM_PROMPT_VERSION = 18
 
 export type SystemPromptChange = {
   version: number
@@ -108,5 +108,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-06",
     summary:
       "Adiciona widgets dinâmicos ao renderHtml: script opcional em iframe sandbox, API spectral (action, theme, onThemeChange) e tags interativas com regra de ação apenas por gesto do usuário.",
+  },
+  {
+    version: 18,
+    date: "2026-11-06",
+    summary:
+      "Adiciona a ação openDeviceApp para abrir apps da allowlist em PCs pareados a partir de widgets, com device-list-apps antes da geração e pergunta ao usuário quando há mais de um dispositivo online.",
   },
 ]

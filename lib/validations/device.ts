@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { DEVICE_APP_ID_PATTERN } from "@/lib/devices/commands"
 import { DEVICE_NAME_MAX_LENGTH } from "@/lib/devices/constants"
 
 const hostnameSchema = z
@@ -70,6 +71,14 @@ export const renameDeviceSchema = z.object({
     path: ["name"],
   },
 )
+
+export const openDeviceAppSchema = z.object({
+  appId: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(DEVICE_APP_ID_PATTERN, "Identificador de aplicativo inválido."),
+})
 
 export type CreatePairingInput = z.infer<typeof createPairingSchema>
 export type ConfirmPairingInput = z.infer<typeof confirmPairingSchema>

@@ -79,11 +79,16 @@ export function clampWidgetHeight(height: number): number {
 }
 
 /**
- * Ações que mudam a conversa ou a rota exigem gesto do usuário. Sem isso um
- * script gerado pelo modelo poderia disparar `sendMessage` em loop na carga.
+ * Ações que mudam a conversa, a rota ou o PC exigem gesto do usuário. Sem isso
+ * um script gerado pelo modelo poderia disparar `sendMessage` ou abrir apps em
+ * loop na carga.
  */
 export function requiresUserGesture(actionType: string): boolean {
-  return actionType === "sendMessage" || actionType === "navigate"
+  return (
+    actionType === "sendMessage" ||
+    actionType === "navigate" ||
+    actionType === "openDeviceApp"
+  )
 }
 
 export function buildWidgetThemeMessage(
