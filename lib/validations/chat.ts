@@ -21,6 +21,8 @@ export const sendChatMessageSchema = z.object({
   chatId: chatIdSchema,
   model: chatModelSchema,
   messages: z.array(z.unknown()).min(1, "Envie ao menos uma mensagem"),
+  theme: z.enum(["light", "dark", "system"]).optional(),
+  resolvedTheme: z.enum(["light", "dark"]).optional(),
 })
 
 export type SendChatMessageInput = z.infer<typeof sendChatMessageSchema>

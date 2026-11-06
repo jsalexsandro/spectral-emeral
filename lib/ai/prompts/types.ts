@@ -1,4 +1,5 @@
 import type { ProviderId } from "../providers"
+import type { Theme, ResolvedTheme } from "@/lib/theme"
 
 export type PromptUser = {
   name?: string | null
@@ -15,6 +16,8 @@ export type PromptContext = {
   locale?: string
   now?: Date
   model?: PromptModel
+  theme?: Theme | null
+  resolvedTheme?: ResolvedTheme | null
 }
 
 export type PromptSection = {

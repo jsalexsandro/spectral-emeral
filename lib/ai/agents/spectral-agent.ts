@@ -20,6 +20,8 @@ export type AgentRuntimeContext = {
   userId: string
   chatId: string
   startedAt: number
+  theme?: string | null
+  resolvedTheme?: string | null
 }
 
 type CreateSpectralAgentInput = {
@@ -68,7 +70,11 @@ export function createSpectralAgent({
     id: "spectral",
     model,
     instructions,
-    tools: getChatTools({ userId: runtimeContext.userId }),
+    tools: getChatTools({
+      userId: runtimeContext.userId,
+      theme: runtimeContext.theme,
+      resolvedTheme: runtimeContext.resolvedTheme,
+    }),
     stopWhen: [
       isStepCount(MAX_AGENT_STEPS),
       budgetExceeded,

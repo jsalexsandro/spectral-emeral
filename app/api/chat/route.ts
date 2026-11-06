@@ -130,6 +130,8 @@ export async function POST(request: Request) {
         provider: modelKey.provider,
         modelId: modelKey.modelId,
       },
+      theme: parsed.data.theme ?? null,
+      resolvedTheme: parsed.data.resolvedTheme ?? null,
     })
 
     const agent = createSpectralAgent({
@@ -139,6 +141,8 @@ export async function POST(request: Request) {
         userId: session.user.id,
         chatId,
         startedAt: Date.now(),
+        theme: parsed.data.theme ?? null,
+        resolvedTheme: parsed.data.resolvedTheme ?? null,
       },
     })
 

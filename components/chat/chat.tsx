@@ -13,6 +13,8 @@ import { toast } from "sonner"
 import { ChatActionProvider } from "@/app/app/chat-action-provider"
 import { useChatSession } from "@/app/app/chat-provider"
 import { AppActionHandler, RenderHtmlPart } from "@/components/ai-ui"
+import { useTheme } from "@/components/theme-provider"
+import { getResolvedTheme } from "@/lib/theme"
 import {
   RUN_ACTION_TOOL_NAME,
   type ActionResult,
@@ -137,6 +139,9 @@ function ChatSession({
     [],
   )
 
+  const { theme } = useTheme()
+  const resolvedTheme = getResolvedTheme()
+
   const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
     id: chatId,
     messages: initialMessages,
@@ -172,13 +177,15 @@ function ChatSession({
           body: {
             chatId,
             model,
+            theme,
+            resolvedTheme,
           },
         },
       )
 
       return { ok: true }
     },
-    [chatId, isBusy, model, sendMessage],
+    [chatId, isBusy, model, sendMessage, theme, resolvedTheme],
   )
 
   useEffect(() => {

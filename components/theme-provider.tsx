@@ -10,9 +10,11 @@ import {
   type ReactNode,
 } from "react"
 
-export type Theme = "system" | "light" | "dark"
-
-export const THEME_STORAGE_KEY = "spectral-theme"
+import {
+  THEME_STORAGE_KEY,
+  isTheme,
+  type Theme,
+} from "@/lib/theme"
 
 type ThemeContextValue = {
   theme: Theme
@@ -20,10 +22,6 @@ type ThemeContextValue = {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
-
-function isTheme(value: string | null): value is Theme {
-  return value === "system" || value === "light" || value === "dark"
-}
 
 function resolveTheme(theme: Theme) {
   if (theme !== "system") {
@@ -76,6 +74,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
+
+export {
+  THEME_STORAGE_KEY,
+  type Theme,
+  type ResolvedTheme,
+} from "@/lib/theme"
 
 export function useTheme() {
   const context = useContext(ThemeContext)
