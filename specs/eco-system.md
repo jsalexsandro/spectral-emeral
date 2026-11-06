@@ -437,6 +437,26 @@ Proximos passo:
 
     A IA consulta o tema atual via tool `get-theme` antes de `setTheme`, evitando trocar para um tema já ativo. Retorna `{ currentTheme, preference, resolvedTheme }`.
     
+
+### Passo 13 — Notificações de chat
+
+Adiciona notificações nativas do navegador para avisar o usuário quando a IA
+termina de responder no chat, mesmo com a aba em segundo plano.
+
+- [x] `components/ui/chat-notification.tsx`: hook `useChatNotification` com
+      gerenciamento de permissão (`Notification.requestPermission`),
+      preferência salva em `localStorage` (`spectral-chat-notifications`),
+      toast de solicitação de permissão e toggle
+- [x] `components/ui/toast.tsx`: suporte a botão de ação nos toasts
+- [x] `components/chat/chat.tsx`: detecta fim da resposta via `onFinish` do
+      `useChat` e dispara notificação se a aba não estiver em foco
+- [x] `app/app/config-component.tsx`: toggle de notificações na seção Geral
+      das configurações
+- [x] Notificação só dispara se: permissão concedida, notificações ativadas,
+      e a janela não estiver com foco (usuário está fora da aba)
+- [x] Toast de solicitação aparece automaticamente na primeira resposta, com
+      opção "Ativar" para conceder permissão
+
   
   Sistema de view de file/site do outro lado tela assim como claude
   Baixar files, Markdown
