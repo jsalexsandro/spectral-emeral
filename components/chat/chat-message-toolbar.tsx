@@ -1,7 +1,13 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Copy, Check } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Check, Copy, MoreHorizontal } from "lucide-react"
 import { useCallback, useState } from "react"
 
 export function ChatMessageToolbarItem({
@@ -33,11 +39,12 @@ export function ChatMessageToolbarItem({
       onClick={handleClick}
       aria-label={text}
       disabled={active}
+      className="size-6"
     >
       {active && ActiveIcon ? (
-        <ActiveIcon className="size-4" />
+        <ActiveIcon className="size-3.5" />
       ) : (
-        <Icon className="size-4" />
+        <Icon className="size-3.5" />
       )}
     </Button>
   )
@@ -45,9 +52,11 @@ export function ChatMessageToolbarItem({
 
 export function ChatMessageToolbar({
   text,
+  timestamp,
   items,
 }: {
   text: string
+  timestamp?: string | Date
   items?: Array<{
     icon: React.ElementType
     activeIcon?: React.ElementType
@@ -55,6 +64,21 @@ export function ChatMessageToolbar({
     onClick: () => void
   }>
 }) {
+  const formattedTime = timestamp
+    ? new Date(timestamp).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null
+
+  const formattedDate = timestamp
+    ? new Date(timestamp).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    })
+    : null
+
   return (
     <div className="flex justify-end gap-1 pt-1">
       {items?.map((item, index) => (
@@ -66,6 +90,24 @@ export function ChatMessageToolbar({
           onClick={item.onClick}
         />
       ))}
+      <DropdownMenu>
+        <DropdownMenuTrigger>
+          <Button size="icon" variant="outline" aria-label="Mais opções" className="size-6">
+            <MoreHorizontal className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-48">
+          <DropdownMenuItem className="text-xs">
+            {formattedDate && formattedTime ? (
+              <>
+                {formattedDate} às {formattedTime}
+              </>
+            ) : (
+              "Sem data"
+            )}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ChatMessageToolbarItem
         icon={Copy}
         activeIcon={Check}

@@ -90,13 +90,19 @@ const components: Components = {
   em: ({ children }) => <em className="italic">{children}</em>,
 }
 
-export function MarkdownMessage({ content }: { content: string }) {
+export function MarkdownMessage({
+  content,
+  timestamp,
+}: {
+  content: string
+  timestamp?: string | Date
+}) {
   return (
     <div className="min-w-0 text-sm">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
-      <ChatMessageToolbar text={content} />
+      <ChatMessageToolbar text={content} timestamp={timestamp} />
     </div>
   )
 }
