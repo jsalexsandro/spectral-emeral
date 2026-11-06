@@ -3,30 +3,55 @@ import { getThemeTool } from "@/lib/ai/tools/get-theme"
 import { GET_THEME_TOOL_NAME } from "@/lib/ai/tools/get-theme"
 
 describe("get-theme tool", () => {
-  it("retorna theme e resolvedTheme do contexto", async () => {
+  it("retorna currentTheme do resolvedTheme quando disponível", async () => {
     const result = await getThemeTool.execute!(
       {},
       {
         toolCallId: "test-1",
         messages: [],
-        context: { theme: "dark", resolvedTheme: "dark" },
+        context: { theme: "system", resolvedTheme: "light" },
       },
     )
 
-    expect(result).toEqual({ theme: "dark", resolvedTheme: "dark" })
+    expect(result).toEqual({
+      currentTheme: "light",
+      preference: "system",
+      resolvedTheme: "light",
+    })
   })
 
-  it("retorna null quando o contexto não tem tema", async () => {
+  it("retorna currentTheme da preference quando resolvedTheme é null e preference não é system", async () => {
     const result = await getThemeTool.execute!(
       {},
       {
         toolCallId: "test-2",
         messages: [],
+        context: { theme: "dark", resolvedTheme: null },
+      },
+    )
+
+    expect(result).toEqual({
+      currentTheme: "dark",
+      preference: "dark",
+      resolvedTheme: null,
+    })
+  })
+
+  it("retorna null quando não há tema efetivo disponível", async () => {
+    const result = await getThemeTool.execute!(
+      {},
+      {
+        toolCallId: "test-3",
+        messages: [],
         context: {},
       },
     )
 
-    expect(result).toEqual({ theme: null, resolvedTheme: null })
+    expect(result).toEqual({
+      currentTheme: null,
+      preference: null,
+      resolvedTheme: null,
+    })
   })
 
   it("tem o nome esperado", () => {
