@@ -241,8 +241,6 @@ Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-h
   - [x] API `spectral`: `action`, `open`, `theme`, `onThemeChange`, `onReady`
   - [x] Ações revalidam `appActionSchema` no pai antes de executar
   - [x] `sendMessage`/`navigate`/`openDeviceApp` exigem gesto do usuário
-  - [x] Ação `openDeviceApp` abre apps da allowlist em PCs pareados
-  - [x] Rota `POST /api/devices/[id]/open-app` com auth, ownership e rate limit
   - [x] Limites: 40 ações por widget e 12 por janela de 10s
   - [x] CSS do app e tema injetados no iframe (`WidgetFrame`)
   - [x] Altura automática via `widget:resize`
@@ -251,6 +249,64 @@ Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-h
   - [x] Testes de protocolo, `srcdoc` e sanitização
   - [ ] Persistência de estado do widget (Passo 41)
   - [ ] Isolamento por Web Worker para scripts com laço infinito
+
+  #### Catálogo de ações disponível ao widget
+
+  O script do widget só executa ações do `appActionSchema`; cada uma é
+  revalidada no host antes de rodar. O widget não recebe a autoridade do modelo.
+
+  | Ação | Efeito | Gesto obrigatório |
+  | --- | --- | --- |
+  | `toast` | Aviso global | não |
+  | `setTheme` | Troca o tema do app | não |
+  | `openSettings` | Abre uma seção das configurações | não |
+  | `copy` | Copia texto para a área de transferência | não |
+  | `navigate` | Navega para uma rota da allowlist | sim |
+  | `sendMessage` | Envia mensagem no chat | sim |
+  | `openDeviceApp` | Abre um app da allowlist em um PC pareado | sim |
+
+  Ações que mudam a conversa, a rota ou o PC (`sendMessage`, `navigate`,
+  `openDeviceApp`) são recusadas quando `navigator.userActivation` indica que não
+  houve gesto. Isso impede que o script dispare efeitos na carga, em timer ou em
+  loop. O feedback de execução hoje é por toast global; retorno inline no widget
+  fica para o futuro (`widget:action-result`).
+
+  #### Abrir apps no PC
+
+  - [x] Ação `openDeviceApp` (`deviceId`, `appId`) abre apps da allowlist em PCs pareados
+  - [x] `openDeviceApp` está só em `appActionSchema`, nunca em `aiActionSchema`
+  - [x] Rota dedicada `POST /api/devices/[id]/open-app` valida auth, ownership, `revokedAt` e rate limit
+  - [x] Rota encaminha `open-app` via `sendDeviceCommand`; o driver mantém a allowlist real
+  - [x] `ActionRunner` executa com `source: "user"`; erros do PC viram toast traduzido
+  - [x] Prompt ensina `device-online-list` → `device-list-apps` → widget com `select` + botão
+  - [x] Com mais de um PC online, a IA pergunta qual usar antes de gerar o widget
+  - [x] `SYSTEM_PROMPT_VERSION = 18` e `ACTION_CATALOG_VERSION = 3`
+  - [x] Docs em [`specs/chat-device.md`](./chat-device.md) e [`specs/ui-generative-html.md`](./ui-generative-html.md)
+  - [ ] Regenerar widgets antigos do histórico, que ainda só mostram toast
+  - [ ] Feedback inline do resultado da ação dentro do widget
+
+  #### Limites de segurança do widget
+
+  - O iframe roda sem `allow-same-origin`, sem rede (CSP `default-src 'none'`),
+    sem cookies e sem storage.
+  - O script nunca chama o servidor direto: só fala com o host pela bridge
+    `postMessage` com nonce por instância.
+  - Tools de servidor como `device-run-command`, `device-write-file`,
+    `device-edit-file` e `device-press-key` **não** ficam disponíveis ao script.
+  - `openDeviceApp` exige gesto e a rota revalida a sessão e o ownership; um
+    `deviceId` de outro usuário é recusado.
+  - Cada ação nova exige alteração no catálogo, no `ActionRunner` e, quando
+    precisa de servidor, em uma rota dedicada.
+
+  #### Próximo passo: registry de tools para widgets
+
+  Hoje o catálogo é fechado: cada ação nova exige código novo. A evolução
+  planejada é um **registry de tools com opt-in, default-deny, gesto,
+  confirmação no host e validação server-side**, permitindo que widgets novos
+  usem tools novas sem abrir execução arbitrária. O desenho completo, os tiers
+  de permissão e o plano de migração do `openDeviceApp` estão em
+  [`specs/widget-tools.md`](./widget-tools.md) e no
+  [Passo 42](#passo-42-futuro-registry-de-tools-para-widgets).
 
 # Passo 9 — Ações da aplicação
 
@@ -375,6 +431,7 @@ Proximos passo:
   Melhorar o generative HTML
     [x] Usar HTML em vez de componente React.
     [x] Permitir a IA usar JS com sandbox seguro.
+    [ ] Registry de tools para widgets (opt-in, default-deny, confirmação) — ver Passo 42 e `specs/widget-tools.md`
 
     A ia não tem esatados da tela, ela não qual tema estamos, por issa ela acaba mudando pra escuro tanto escuro
     
@@ -412,4 +469,47 @@ por não ter um contrato claro de persistência e segurança. A nova abordagem d
 - [ ] Manter validação Zod no servidor e no cliente
 - [ ] Documentar o contrato antes de implementar
     
-  
+### Passo 42 (futuro): registry de tools para widgets
+
+Referência completa: [`specs/widget-tools.md`](./widget-tools.md)
+
+Evoluir o catálogo fechado de ações do widget para um **registry de tools com
+opt-in e default-deny**, para que widgets novos possam chamar tools novas
+(inclusive as que ainda serão criadas) sem abrir execução arbitrária.
+
+- [ ] Adicionar retorno de resultado à bridge (`widget:action-result` /
+      `widget:tool-result`) para permitir `await spectral.tool(...)` e feedback
+      inline dentro do widget
+- [ ] Criar `lib/widget-tools/registry.ts` com nome, `inputSchema`, `outputSchema`
+      e `exposure` (`enabled`, `requiresGesture`, `requiresConfirmation`, `rateLimit`)
+- [ ] `exposure.enabled` começa `false` em toda tool nova; `requiresGesture`
+      começa `true`; escrita, teclado, shell e arquivos exigem confirmação
+- [ ] Expor `spectral.tool(name, input)` no runtime do widget
+- [ ] Criar `POST /api/widget-tools` com auth, allowlist central, validação Zod,
+      ownership, rate limit e auditoria
+- [ ] Modal de confirmação **fora do iframe** mostrando nome da tool e argumentos
+      (ex.: comando + `cwd` + timeout; caminho + tamanho, sem despejar conteúdo)
+- [ ] Migrar `openDeviceApp` para uma definição `device.openApp`, mantendo a ação
+      antiga por compatibilidade
+- [ ] Expor primeiro as tools de leitura (`device.onlineList`, `device.listApps`,
+      `device.getOs`) com gesto e sem confirmação
+- [ ] Manter `run-command`, `write-file`, `edit-file` e `press-key` atrás de
+      confirmação forte ou fora do widget
+- [ ] Atualizar o prompt para ensinar `spectral.tool(name, input)` e listar apenas
+      as tools widget-safe
+- [ ] Testes: tool desconhecida, tool desabilitada, gesto ausente, confirmação
+      recusada, input inválido, output grande, rate limit e tentativa de tool de
+      outro usuário/dispositivo
+
+#### Tiers de permissão do registry
+
+| Tier | Exemplos | Regra no widget |
+| --- | --- | --- |
+| Seguro / leitura | listar devices, listar apps, get OS | Gesto, sem confirmação |
+| Sensível | abrir app, abrir URL, digitar texto, pressionar tecla | Gesto + confirmação no host |
+| Crítico | `run-command`, `write-file`, `edit-file` | Confirmação forte, argumentos visíveis e auditoria; pode continuar fora do widget |
+| Nunca | segredos, chaves, auth, dados internos | Bloqueado |
+
+Não-objetivos: executar tool sem allowlist no servidor, dar ao iframe acesso a
+cookies/storage/rede/DOM do app, expor segredos ou disparar tools em background,
+em loop ou na carga do widget.

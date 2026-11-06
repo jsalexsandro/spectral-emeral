@@ -317,3 +317,7 @@ Comandos: `npm run test`, `npm run typecheck`, `npm run lint`.
 - Um laço síncrono infinito no script ainda pode travar a aba; o timeout cobre
   apenas a inicialização. Isolamento real exigiria um Web Worker.
 - O vocabulário de classes é fechado e exige atualização manual.
+- O script hoje só acessa ações do catálogo fixo (`appActionSchema`), não tools
+  de servidor. O registry de tools com opt-in e default-deny está planejado no
+  [Passo 42](./eco-system.md#passo-42-futuro-registry-de-tools-para-widgets) e
+  detalhado em [`widget-tools.md`](./widget-tools.md).

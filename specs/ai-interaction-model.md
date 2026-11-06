@@ -69,6 +69,11 @@ HTML/widget gerado.
 sessão, ownership e `revokedAt`, aplica rate limit e encaminha `open-app` ao
 backend/driver. O driver mantém a allowlist real de aplicativos.
 
+Este catálogo é fechado de propósito. A evolução para um registry de tools com
+opt-in, default-deny e confirmação no host está planejada no
+[Passo 42](./eco-system.md#passo-42-futuro-registry-de-tools-para-widgets) e
+detalhada em [`widget-tools.md`](./widget-tools.md).
+
 ## Botões de HTML
 
 Botões renderizados por `renderHtml` usam `data-spectral-action` com um JSON
