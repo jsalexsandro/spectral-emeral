@@ -182,7 +182,7 @@ O prompt é composto por seções independentes e versionado para permitir evolu
 
 - [x] Composição em `lib/ai/prompts/build.ts` (`buildSystemPrompt`)
 - [x] Seções em `lib/ai/prompts/sections/` (identidade, estilo, capacidades, loop agêntico, UI e ações, segurança, contexto do usuário)
-- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 16`)
+- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 20`)
 - [x] Injeção em `app/api/chat/route.ts`
 - [x] Persistência da versão em `Message.promptVersion`
 - [x] Revisão do prompt composto com `npm run prompt:print`
@@ -197,7 +197,8 @@ Regras de evolução:
 - [x] Camada de tools em `lib/ai/tools/` com registro `getChatTools()`
 - [x] Proteções de `fetchUrl`: timeout, limite de resposta, bloqueio de localhost/IPs privados e revalidação de redirects (SSRF)
 - [x] Tool `fetchUrl` para consultas GET/POST
-- [x] Tool `updatePlan` para planejamento visível
+- [x] Tool `get-theme` para consultar o tema atual (`light`, `dark` ou `system`) antes de `setTheme`
+- [x] Tool `updatePlan` para planejamento visível com status `done`, `current`, `pending` e `failed`
 - [x] Tool `renderHtml` para conteúdo visual sanitizado no chat
 - [x] Tool `runAction` para efeitos na aplicação
 - [x] Poda de contexto em `prepareStep` com `pruneMessages`
@@ -208,7 +209,7 @@ Regras de evolução:
 # Passo 7 — Loop agêntico
 
 - [x] Agente: `lib/ai/agents/spectral-agent.ts` (`ToolLoopAgent`, `isStepCount(12)` + budget de tokens)
-- [x] Plano: `lib/ai/tools/update-plan.ts` e `lib/ai/plan.ts`
+- [x] Plano: `lib/ai/tools/update-plan.ts` e `lib/ai/plan.ts` (status `failed` para etapas com erro, validação de no máximo uma etapa `current`, stop condition para falhas repetidas)
 - [x] Timeline: `components/chat/agent-activity.tsx` e `components/chat/agent-plan.tsx`
 - [x] Persistência: `Message.parts` (jsonb), sem migração adicional
 - [x] Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
@@ -280,7 +281,7 @@ Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-h
   - [x] `ActionRunner` executa com `source: "user"`; erros do PC viram toast traduzido
   - [x] Prompt ensina `device-online-list` → `device-list-apps` → widget com `select` + botão
   - [x] Com mais de um PC online, a IA pergunta qual usar antes de gerar o widget
-  - [x] `SYSTEM_PROMPT_VERSION = 18` e `ACTION_CATALOG_VERSION = 3`
+  - [x] `SYSTEM_PROMPT_VERSION = 20` e `ACTION_CATALOG_VERSION = 3`
   - [x] Docs em [`specs/chat-device.md`](./chat-device.md) e [`specs/ui-generative-html.md`](./ui-generative-html.md)
   - [ ] Regenerar widgets antigos do histórico, que ainda só mostram toast
   - [ ] Feedback inline do resultado da ação dentro do widget
@@ -317,12 +318,13 @@ Modelo **“UI é dado, ação é evento”**:
 - `renderHtml` mostra conteúdo sanitizado no chat.
 - `runAction` executa efeitos na aplicação.
 - `fetchUrl` busca dados.
-- `updatePlan` mostra progresso.
+- `updatePlan` mostra progresso com etapas `done`, `current`, `pending` e `failed` (replanejamento após falhas).
 - `sendMessage` é ação exclusiva de botão e nunca é exposta à IA.
 
 Implementado:
 - [x] Catálogo versionado `ACTION_CATALOG_VERSION = 1`
 - [x] Tipos: `toast`, `setTheme`, `openSettings`, `navigate`, `copy`, `sendMessage`
+- [x] Tool `get-theme` (fora de `runAction`): consulta `{ currentTheme, preference, resolvedTheme }` antes de `setTheme`
 - [x] `aiActionSchema` sem `sendMessage`; `appActionSchema` completo
 - [x] Allowlist de `navigate`: `/app`, `/providers/select-model`, `/provider/{provider}/models`
 - [x] Tool `runAction` server-acknowledged: valida no servidor e executa no cliente
@@ -433,7 +435,7 @@ Proximos passo:
     [x] Permitir a IA usar JS com sandbox seguro.
     [ ] Registry de tools para widgets (opt-in, default-deny, confirmação) — ver Passo 42 e `specs/widget-tools.md`
 
-    A ia não tem esatados da tela, ela não qual tema estamos, por issa ela acaba mudando pra escuro tanto escuro
+    A IA consulta o tema atual via tool `get-theme` antes de `setTheme`, evitando trocar para um tema já ativo. Retorna `{ currentTheme, preference, resolvedTheme }`.
     
   
   Sistema de view de file/site do outro lado tela assim como claude
