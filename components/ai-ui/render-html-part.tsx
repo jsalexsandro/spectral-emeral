@@ -11,6 +11,7 @@ import {
   renderHtmlOutputSchema,
 } from "@/lib/ai/ui/html-policy"
 import { useActionRunner } from "./action-context"
+import { WidgetFrame } from "./widget-frame"
 
 export type RenderHtmlPartData = {
   state: string
@@ -65,7 +66,7 @@ export function RenderHtmlPart({ part }: { part: RenderHtmlPartData }) {
   const run = useActionRunner()
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const html = useMemo(() => {
+  const rendered = useMemo(() => {
     if (part.state !== "output-available") {
       return null
     }
@@ -76,7 +77,17 @@ export function RenderHtmlPart({ part }: { part: RenderHtmlPartData }) {
       return null
     }
 
-    return sanitizeHtml(parsed.data.html)
+    const script =
+      parsed.data.uiVersion >= 2 ? parsed.data.script : undefined
+    const html = sanitizeHtml(parsed.data.html, {
+      widget: Boolean(script),
+    })
+
+    if (!html) {
+      return null
+    }
+
+    return { html, script }
   }, [part.output, part.state])
 
   const handleClick = useCallback(
@@ -144,10 +155,14 @@ export function RenderHtmlPart({ part }: { part: RenderHtmlPartData }) {
   }
 
   if (part.state === "output-available") {
-    if (!html) {
+    if (!rendered) {
       return (
         <RenderHtmlError message="O HTML recebido não corresponde a uma visualização válida." />
       )
+    }
+
+    if (rendered.script) {
+      return <WidgetFrame html={rendered.html} script={rendered.script} />
     }
 
     return (
@@ -155,7 +170,7 @@ export function RenderHtmlPart({ part }: { part: RenderHtmlPartData }) {
         ref={containerRef}
         onClick={handleClick}
         className="text-sm text-foreground"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: rendered.html }}
       />
     )
   }

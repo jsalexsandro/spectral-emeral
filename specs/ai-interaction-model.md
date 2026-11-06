@@ -76,6 +76,30 @@ validado por `appActionSchema`. Ao clicar:
 O `ChatActionProvider` também bloqueia `sendMessage` quando
 `source === "tool"`, como defesa em profundidade.
 
+## Widgets interativos (v2)
+
+`renderHtml` aceita um `script` opcional. O HTML continua sanitizado e o script
+roda em um iframe `sandbox="allow-scripts"` (sem `allow-same-origin`), com CSP
+`default-src 'none'`.
+
+O script não acessa o DOM do app. Ele só pode:
+
+- `spectral.action(acao)` — a ação é enviada por `postMessage`, validada com
+  `appActionSchema` e executada pelo `ActionRunner`;
+- `spectral.open(url)` — abre `http(s)`/`mailto` no pai;
+- `spectral.theme` / `spectral.onThemeChange(fn)` — lê o tema efetivo;
+- `spectral.onReady(fn)` — espera o runtime.
+
+Regras:
+
+- ações que mudam a conversa ou a rota (`sendMessage`, `navigate`) só são
+  aceitas com gesto do usuário (`navigator.userActivation`);
+- há limite de 40 ações por widget e 12 por janela de 10s;
+- `widget:ready` é obrigatório; sem ele em 4s o renderer mostra erro;
+- `data-*` e `id` funcionam como ganchos locais dentro do iframe; scripts
+  embutidos no HTML são movidos para o sandbox;
+- outputs v1 continuam estáticos no DOM principal.
+
 ## `sendMessage`
 
 `sendMessage` não é uma tool. Ele existe apenas como ação de botão para que o
@@ -145,5 +169,7 @@ Comandos: `npm run test`, `npm run typecheck`, `npm run lint`.
 - O HTML usa um vocabulário fixo de classes Tailwind; novas classes exigem
   atualização da política e do safelist.
 - Ações sensíveis iniciadas pela IA podem exigir confirmação explícita.
-- Estado interativo no chat será avaliado em um contrato novo, sem reintroduzir
-  `chatState`.
+- O estado do widget vive no iframe e é perdido a cada re-render; persistência
+  será avaliada no Passo 41, sem reintroduzir `chatState`.
+- Um laço síncrono infinito no script ainda pode travar a aba; isolamento por
+  Web Worker fica para uma fase futura.

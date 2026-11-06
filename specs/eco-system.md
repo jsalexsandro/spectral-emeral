@@ -214,20 +214,41 @@ Regras de evolução:
 - [x] Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
 - [x] `renderHtml` e `runAction` não aparecem como cartões na timeline; o efeito visual é o feedback
 
-# Passo 8 — Generative HTML
+# Passo 8 — Generative HTML (Widgets)
 
 Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-html.md)
 
 - [x] `components/ai-ui/render-html-part.tsx` com estados loading/error/success
 - [x] Sanitização DOMPurify no servidor e revalidação no cliente
 - [x] Persistência do HTML sanitizado em `Message.parts`
-- [x] Política versionada `HTML_UI_VERSION = 1`
+- [x] Política versionada `HTML_UI_VERSION = 2`
 - [x] Tool `renderHtml` registrada e anunciada no system prompt
 - [x] Allowlist de tags, atributos e classes Tailwind
 - [x] Botões com ações tipadas em `data-spectral-action`
 - [x] Links externos limitados a `http(s)`/`mailto`, com `rel="noopener noreferrer"` em `target="_blank"`
 - [x] Limite de 20k caracteres e no máximo 2 chamadas de `renderHtml` por resposta
 - [x] Histórico antigo de `renderUi` mostra fallback curto, sem renderer legado
+
+
+# Passo 8.5 Gerenative Html + Js (Widgets Dinamics)
+  Torna o Generative HTML dinamico, conectando ele com javascript para manipular ações.
+
+  - [x] `renderHtml` aceita `script` opcional (`MAX_SCRIPT_LENGTH = 12.000`)
+  - [x] `HTML_UI_VERSION = 2`; outputs v1 continuam estáticos no DOM principal
+  - [x] Script roda em iframe `sandbox="allow-scripts"` sem `allow-same-origin`
+  - [x] CSP `default-src 'none'` (sem rede, cookies ou storage)
+  - [x] Bridge `postMessage` versionada com nonce por instância
+  - [x] API `spectral`: `action`, `open`, `theme`, `onThemeChange`, `onReady`
+  - [x] Ações revalidam `appActionSchema` no pai antes de executar
+  - [x] `sendMessage`/`navigate` exigem gesto do usuário
+  - [x] Limites: 40 ações por widget e 12 por janela de 10s
+  - [x] CSS do app e tema injetados no iframe (`WidgetFrame`)
+  - [x] Altura automática via `widget:resize`
+  - [x] Tags interativas (`input`, `select`, `textarea`, `details` etc.)
+  - [x] Timeout de `widget:ready` em 4s com fallback de erro
+  - [x] Testes de protocolo, `srcdoc` e sanitização
+  - [ ] Persistência de estado do widget (Passo 41)
+  - [ ] Isolamento por Web Worker para scripts com laço infinito
 
 # Passo 9 — Ações da aplicação
 
@@ -351,7 +372,7 @@ Proximos passo:
     
   Melhorar o generative HTML
     [x] Usar HTML em vez de componente React.
-    [ ] Permitir a IA usar JS com sandbox seguro.
+    [x] Permitir a IA usar JS com sandbox seguro.
 
     A ia não tem esatados da tela, ela não qual tema estamos, por issa ela acaba mudando pra escuro tanto escuro
     

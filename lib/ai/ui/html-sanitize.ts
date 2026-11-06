@@ -2,13 +2,28 @@ import DOMPurify from "isomorphic-dompurify"
 import {
   HTML_UI_ACTION_ATTRIBUTE,
   HTML_UI_ATTRIBUTES,
+  HTML_UI_INPUT_TYPE_SET,
   HTML_UI_TAGS,
+  HTML_UI_WIDGET_ATTRIBUTES,
   isAllowedHtmlUri,
   parseHtmlAction,
   sanitizeHtmlClassList,
 } from "./html-policy"
 
 const allowedAttributes = new Set<string>(HTML_UI_ATTRIBUTES)
+
+/**
+ * Widgets v2 podem usar atributos `data-*` e `id` como ganchos de estado e
+ * consulta dentro do iframe. Como o documento tem origem opaca, esses
+ * atributos não alcançam o app; em HTML estático (v1) continuam bloqueados.
+ */
+type SanitizeHtmlOptions = {
+  widget?: boolean
+}
+
+let activeOptions: SanitizeHtmlOptions = {}
+
+const safeDataAttributePattern = /^data-[a-z0-9-]+$/
 
 const forbiddenTags = [
   "audio",
@@ -17,17 +32,14 @@ const forbiddenTags = [
   "embed",
   "form",
   "iframe",
-  "input",
   "link",
   "math",
   "meta",
   "object",
   "script",
-  "select",
   "source",
   "style",
   "svg",
-  "textarea",
   "track",
   "video",
 ]
@@ -52,10 +64,20 @@ function configureDomPurify() {
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.name
 
-      if (
-        (name.startsWith("data-") && name !== HTML_UI_ACTION_ATTRIBUTE) ||
-        (name.startsWith("aria-") && !allowedAttributes.has(name))
-      ) {
+      if (name.startsWith("data-")) {
+        const keepDataAttribute =
+          name === HTML_UI_ACTION_ATTRIBUTE ||
+          (activeOptions.widget === true &&
+            safeDataAttributePattern.test(name))
+
+        if (!keepDataAttribute) {
+          element.removeAttribute(name)
+        }
+
+        continue
+      }
+
+      if (name.startsWith("aria-") && !allowedAttributes.has(name)) {
         element.removeAttribute(name)
       }
     }
@@ -86,6 +108,14 @@ function configureDomPurify() {
       element.setAttribute("type", "button")
     }
 
+    if (tagName === "input") {
+      const inputType = element.getAttribute("type")?.toLowerCase() ?? ""
+
+      if (!HTML_UI_INPUT_TYPE_SET.has(inputType)) {
+        element.setAttribute("type", "text")
+      }
+    }
+
     if (tagName === "a") {
       const href = element.getAttribute("href")
 
@@ -100,17 +130,30 @@ function configureDomPurify() {
   })
 }
 
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(
+  html: string,
+  options: SanitizeHtmlOptions = {},
+): string {
   configureDomPurify()
 
-  const sanitized = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [...HTML_UI_TAGS],
-    ALLOWED_ATTR: [...HTML_UI_ATTRIBUTES],
-    ALLOW_ARIA_ATTR: true,
-    ALLOW_DATA_ATTR: true,
-    FORBID_TAGS: forbiddenTags,
-    FORBID_ATTR: ["id", "style"],
-  })
+  const allowWidgetAttributes = options.widget === true
 
-  return String(sanitized).trim()
+  activeOptions = options
+
+  try {
+    const sanitized = DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [...HTML_UI_TAGS],
+      ALLOWED_ATTR: allowWidgetAttributes
+        ? [...HTML_UI_WIDGET_ATTRIBUTES]
+        : [...HTML_UI_ATTRIBUTES],
+      ALLOW_ARIA_ATTR: true,
+      ALLOW_DATA_ATTR: true,
+      FORBID_TAGS: forbiddenTags,
+      FORBID_ATTR: allowWidgetAttributes ? ["style"] : ["id", "style"],
+    })
+
+    return String(sanitized).trim()
+  } finally {
+    activeOptions = {}
+  }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   MAX_HTML_LENGTH,
+  MAX_SCRIPT_LENGTH,
   isAllowedHtmlUri,
   parseHtmlAction,
   renderHtmlToolInputSchema,
@@ -30,12 +31,21 @@ describe("html sanitization", () => {
     expect(result).not.toContain("style")
   })
 
-  it("removes iframes, forms, inputs and svg", () => {
+  it("removes iframes, forms and svg but keeps safe inputs", () => {
     expect(
       sanitizeHtml(
-        '<iframe src="https://example.com"></iframe><form><input value="x"></form><svg onload="alert(1)"></svg>',
+        '<iframe src="https://example.com"></iframe><form><input value="x" type="hidden"></form><svg onload="alert(1)"></svg>',
       ),
-    ).toBe("")
+    ).toBe('<input value="x" type="text">')
+  })
+
+  it("forces a safe input type", () => {
+    expect(sanitizeHtml('<input type="file" name="f">')).toBe(
+      '<input type="text">',
+    )
+    expect(sanitizeHtml('<input type="range" min="0" max="10">')).toBe(
+      '<input type="range" min="0" max="10">',
+    )
   })
 
   it("rejects javascript and data URLs", () => {
@@ -84,6 +94,37 @@ describe("html sanitization", () => {
       sanitizeHtml('<div id="app" style="position:fixed">Oi</div>'),
     ).toBe("<div>Oi</div>")
   })
+
+  it("keeps data attributes and ids only in widget mode", () => {
+    const markup =
+      '<div id="counter" data-count="0"><button data-increment>+1</button></div>'
+
+    expect(sanitizeHtml(markup, { widget: true })).toBe(
+      '<div id="counter" data-count="0"><button data-increment="" type="button">+1</button></div>',
+    )
+    expect(sanitizeHtml(markup)).toBe(
+      '<div><button type="button">+1</button></div>',
+    )
+  })
+
+  it("still validates actions inside widget mode", () => {
+    expect(
+      sanitizeHtml(
+        `<div data-state="open" data-spectral-action='{"type":"toast","title":"Oi"}'>A</div>`,
+        { widget: true },
+      ),
+    ).toBe('<div data-state="open">A</div>')
+  })
+
+  it("allows ids, labels and names in widget mode", () => {
+    const markup =
+      '<label for="q">Busca</label><input id="q" name="q" type="search">'
+
+    expect(sanitizeHtml(markup, { widget: true })).toBe(markup)
+    expect(sanitizeHtml(markup)).toBe(
+      '<label>Busca</label><input type="search">',
+    )
+  })
 })
 
 describe("html policy helpers", () => {
@@ -103,6 +144,30 @@ describe("html policy helpers", () => {
     expect(
       renderHtmlToolInputSchema.safeParse({
         html: "a".repeat(MAX_HTML_LENGTH + 1),
+      }).success,
+    ).toBe(false)
+  })
+
+  it("accepts an optional script and enforces its limit", () => {
+    expect(
+      renderHtmlToolInputSchema.safeParse({
+        html: "<div>Oi</div>",
+        script: "console.log(1)",
+      }).success,
+    ).toBe(true)
+
+    const blank = renderHtmlToolInputSchema.safeParse({
+      html: "<div>Oi</div>",
+      script: "   ",
+    })
+
+    expect(blank.success).toBe(true)
+    expect(blank.success && blank.data.script).toBeUndefined()
+
+    expect(
+      renderHtmlToolInputSchema.safeParse({
+        html: "<div>Oi</div>",
+        script: "a".repeat(MAX_SCRIPT_LENGTH + 1),
       }).success,
     ).toBe(false)
   })

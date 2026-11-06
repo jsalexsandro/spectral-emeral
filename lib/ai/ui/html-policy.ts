@@ -1,11 +1,13 @@
 import { z } from "zod"
 import { appActionSchema, type AppAction } from "@/lib/ai/actions/catalog"
 
-export const HTML_UI_VERSION = 1
+export const HTML_UI_VERSION = 2
 
 export const RENDER_HTML_TOOL_NAME = "renderHtml" as const
 
 export const MAX_HTML_LENGTH = 20_000
+
+export const MAX_SCRIPT_LENGTH = 12_000
 
 export const HTML_UI_ACTION_ATTRIBUTE = "data-spectral-action" as const
 
@@ -17,6 +19,7 @@ export const HTML_UI_TAGS = [
   "br",
   "button",
   "code",
+  "details",
   "div",
   "em",
   "h1",
@@ -24,15 +27,22 @@ export const HTML_UI_TAGS = [
   "h3",
   "h4",
   "hr",
+  "input",
+  "label",
   "li",
   "ol",
+  "option",
   "p",
   "pre",
+  "progress",
+  "select",
   "span",
   "strong",
+  "summary",
   "table",
   "tbody",
   "td",
+  "textarea",
   "th",
   "thead",
   "tr",
@@ -62,7 +72,44 @@ export const HTML_UI_ATTRIBUTES = [
   "rowspan",
   "scope",
   "start",
+  "value",
+  "checked",
+  "selected",
+  "placeholder",
+  "min",
+  "max",
+  "step",
+  "rows",
+  "cols",
+  "multiple",
+  "readonly",
+  "required",
+  "maxlength",
+  "minlength",
+  "inputmode",
+  "open",
   HTML_UI_ACTION_ATTRIBUTE,
+] as const
+
+export const HTML_UI_INPUT_TYPES = [
+  "checkbox",
+  "date",
+  "number",
+  "radio",
+  "range",
+  "search",
+  "text",
+  "time",
+] as const
+
+export const HTML_UI_INPUT_TYPE_SET = new Set<string>(HTML_UI_INPUT_TYPES)
+
+/** Atributos extras liberados apenas dentro do iframe de widgets v2. */
+export const HTML_UI_WIDGET_ATTRIBUTES = [
+  ...HTML_UI_ATTRIBUTES,
+  "id",
+  "for",
+  "name",
 ] as const
 
 export const HTML_UI_URI_SCHEMES = ["http:", "https:", "mailto:"] as const
@@ -295,6 +342,29 @@ export function normalizeHtmlInput(value: unknown): unknown {
   return (fenced?.[1] ?? trimmed).trim()
 }
 
+const fencedScriptPattern = /^```(?:js|javascript)?\s*([\s\S]*?)\s*```$/i
+
+export function normalizeScriptInput(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value
+  }
+
+  const trimmed = value.trim()
+
+  if (!trimmed) {
+    return undefined
+  }
+
+  const fenced = trimmed.match(fencedScriptPattern)
+
+  return (fenced?.[1] ?? trimmed).trim()
+}
+
+const scriptSchema = z.preprocess(
+  normalizeScriptInput,
+  z.string().trim().min(1).max(MAX_SCRIPT_LENGTH).optional(),
+)
+
 export const renderHtmlToolInputSchema = z.preprocess(
   (value) => {
     if (typeof value === "string") {
@@ -316,12 +386,14 @@ export const renderHtmlToolInputSchema = z.preprocess(
   },
   z.object({
     html: z.string().trim().min(1).max(MAX_HTML_LENGTH),
+    script: scriptSchema,
   }),
 )
 
 export const renderHtmlOutputSchema = z.object({
   uiVersion: z.number().int().positive(),
   html: z.string().min(1).max(MAX_HTML_LENGTH),
+  script: z.string().min(1).max(MAX_SCRIPT_LENGTH).optional(),
 })
 
 export function isAllowedHtmlUri(value: string): boolean {

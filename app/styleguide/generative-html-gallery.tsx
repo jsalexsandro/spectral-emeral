@@ -92,6 +92,89 @@ const unsafeHtml = `
 </div>
 `
 
+const counterHtml = `
+<div class="rounded-xl border border-border bg-card p-4">
+  <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Contador</p>
+  <p class="mt-1 font-mono text-2xl font-semibold tabular-nums" data-counter>0</p>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <button type="button" class="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted" data-step="-1">−1</button>
+    <button type="button" class="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted" data-step="1">+1</button>
+    <button type="button" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90" data-spectral-action='{"type":"toast","title":"Contador preservado"}'>Avisar</button>
+  </div>
+</div>
+`
+
+const counterScript = `
+var output = document.querySelector("[data-counter]");
+var value = 0;
+
+document.addEventListener("click", function (event) {
+  var button = event.target.closest("[data-step]");
+
+  if (!button) return;
+
+  value += Number(button.getAttribute("data-step"));
+  output.textContent = String(value);
+});
+`
+
+const themeHtml = `
+<div class="rounded-xl border border-border bg-card p-4">
+  <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tema atual</p>
+  <p class="mt-1 text-sm font-medium text-foreground" data-theme>claro</p>
+</div>
+`
+
+const themeScript = `
+var label = document.querySelector("[data-theme]");
+
+spectral.onThemeChange(function (theme) {
+  label.textContent = theme === "dark" ? "escuro" : "claro";
+});
+`
+
+const sandboxHtml = `
+<div class="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+  <p class="text-sm font-semibold text-destructive">Sondas de sandbox</p>
+  <ul class="mt-2 list-disc list-inside text-xs text-muted-foreground" data-results></ul>
+</div>
+`
+
+const sandboxScript = `
+var results = document.querySelector("[data-results]");
+
+function probe(label, fn) {
+  var item = document.createElement("li");
+
+  try {
+    fn();
+    item.textContent = label + ": permitido";
+  } catch (error) {
+    item.textContent = label + ": bloqueado";
+  }
+
+  results.appendChild(item);
+}
+
+probe("window.parent.document", function () {
+  var parent = window.parent;
+
+  if (parent === window) throw new Error("sem pai");
+  return parent.document.body;
+});
+
+probe("localStorage", function () {
+  return window.localStorage.getItem("spectral");
+});
+
+probe("document.cookie", function () {
+  var value = document.cookie;
+
+  if (!value) throw new Error("sem cookie");
+  return value;
+});
+`
+
 const fixtures = [
   {
     title: "Dashboard",
@@ -109,6 +192,27 @@ const fixtures = [
     html: calloutHtml,
   },
   {
+    title: "Contador interativo",
+    description:
+      "Widget v2: o script altera o estado local e dispara uma ação tipada pelo runtime.",
+    html: counterHtml,
+    script: counterScript,
+  },
+  {
+    title: "Tema do app",
+    description:
+      "O runtime expõe o tema atual ao widget e reage à troca em tempo real.",
+    html: themeHtml,
+    script: themeScript,
+  },
+  {
+    title: "Sandbox",
+    description:
+      "Sondas tentam acessar o app e o storage. O iframe com origem opaca bloqueia as três.",
+    html: sandboxHtml,
+    script: sandboxScript,
+  },
+  {
     title: "Sanitização",
     description:
       "HTML bruto com script, onclick, javascript: e classe fixed. O renderer remove tudo que não é permitido.",
@@ -116,12 +220,13 @@ const fixtures = [
   },
 ] as const
 
-function successPart(html: string): RenderHtmlPartData {
+function successPart(html: string, script?: string): RenderHtmlPartData {
   return {
     state: "output-available",
     output: {
       uiVersion: HTML_UI_VERSION,
       html,
+      ...(script ? { script } : {}),
     },
   }
 }
@@ -157,13 +262,21 @@ export function GenerativeHtmlGallery() {
                   {fixture.description}
                 </p>
               </div>
-              <RenderHtmlPart part={successPart(fixture.html)} />
+              <RenderHtmlPart
+                part={successPart(
+                  fixture.html,
+                  "script" in fixture ? fixture.script : undefined,
+                )}
+              />
               <details className="rounded-lg border bg-muted/30 p-3">
                 <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  Ver HTML
+                  Ver código
                 </summary>
                 <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
                   {fixture.html.trim()}
+                  {"script" in fixture && fixture.script
+                    ? `\n\n// script\n${fixture.script.trim()}`
+                    : ""}
                 </pre>
               </details>
             </div>

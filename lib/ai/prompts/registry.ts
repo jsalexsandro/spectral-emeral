@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 16
+export const SYSTEM_PROMPT_VERSION = 17
 
 export type SystemPromptChange = {
   version: number
@@ -102,5 +102,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-05",
     summary:
       "Substitui o catálogo de componentes de renderUi por HTML sanitizado via renderHtml, com Tailwind safelist e ações tipadas em botões.",
+  },
+  {
+    version: 17,
+    date: "2026-11-06",
+    summary:
+      "Adiciona widgets dinâmicos ao renderHtml: script opcional em iframe sandbox, API spectral (action, theme, onThemeChange) e tags interativas com regra de ação apenas por gesto do usuário.",
   },
 ]
