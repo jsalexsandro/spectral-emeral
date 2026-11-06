@@ -6,10 +6,10 @@ const description = [
   "Ações permitidas:",
   "  - `toast`: notificação curta com title, description opcional, variant (default, success, warning, error, info) e duration opcional.",
   "  - `setTheme`: altera o tema para light, dark ou system.",
-  "  - `openSettings`: abre as configurações na seção general, account ou byok. Nunca peça chaves de API no chat; abra a seção byok e instrua o usuário a colar a chave no formulário.",
+  "  - `openSettings`: abre as configurações na seção general, account, byok ou devices. Nunca peça chaves de API no chat; abra a seção byok e instrua o usuário a colar a chave no formulário.",
   "  - `navigate`: navega para /app, /providers/select-model ou /provider/{provider}/models. Use apenas quando a tarefa estiver concluída.",
   "  - `copy`: copia um texto curto para a área de transferência.",
-  "Não use `runAction` para exibir dados; use `renderUi`. Não use para marcar progresso; use `updatePlan`.",
+  "Não use `runAction` para exibir dados; use `renderHtml`. Não use para marcar progresso; use `updatePlan`.",
 ].join("\n")
 
 export const runActionTool = tool({

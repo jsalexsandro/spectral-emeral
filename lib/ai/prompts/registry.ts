@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 15
+export const SYSTEM_PROMPT_VERSION = 16
 
 export type SystemPromptChange = {
   version: number
@@ -96,5 +96,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-04",
     summary:
       "Adiciona a tool model-set-enabled para ativar/desativar modelos na seleção rápida, com validação de provedor configurado.",
+  },
+  {
+    version: 16,
+    date: "2026-11-05",
+    summary:
+      "Substitui o catálogo de componentes de renderUi por HTML sanitizado via renderHtml, com Tailwind safelist e ações tipadas em botões.",
   },
 ]

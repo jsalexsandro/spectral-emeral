@@ -8,11 +8,11 @@ import {
   type ToolSet,
 } from "ai"
 import { getChatTools } from "@/lib/ai/tools"
-import { RENDER_UI_TOOL_NAME } from "@/lib/ai/ui/catalog"
+import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 
 export const MAX_AGENT_STEPS = 12
 export const MAX_AGENT_TOKENS = 150_000
-export const MAX_RENDER_UI_CALLS = 2
+export const MAX_RENDER_HTML_CALLS = 2
 
 const MAX_CONTEXT_MESSAGES = 40
 
@@ -45,19 +45,19 @@ type StepWithToolCalls = {
   toolCalls: ReadonlyArray<{ toolName: string }>
 }
 
-export function countRenderUiCalls(steps: readonly StepWithToolCalls[]) {
+export function countRenderHtmlCalls(steps: readonly StepWithToolCalls[]) {
   return steps.reduce(
     (total, step) =>
       total +
-      step.toolCalls.filter((call) => call.toolName === RENDER_UI_TOOL_NAME)
+      step.toolCalls.filter((call) => call.toolName === RENDER_HTML_TOOL_NAME)
         .length,
     0,
   )
 }
 
-const renderUiLimitReached: StopCondition<ToolSet, AgentRuntimeContext> = ({
+const renderHtmlLimitReached: StopCondition<ToolSet, AgentRuntimeContext> = ({
   steps,
-}) => countRenderUiCalls(steps) >= MAX_RENDER_UI_CALLS
+}) => countRenderHtmlCalls(steps) >= MAX_RENDER_HTML_CALLS
 
 export function createSpectralAgent({
   model,
@@ -72,7 +72,7 @@ export function createSpectralAgent({
     stopWhen: [
       isStepCount(MAX_AGENT_STEPS),
       budgetExceeded,
-      renderUiLimitReached,
+      renderHtmlLimitReached,
     ],
     runtimeContext,
     prepareStep: ({ messages }) => {

@@ -44,6 +44,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { useAppActions } from "./app-actions-provider"
 import { useChatSession } from "./chat-provider"
+import { DeviceList } from "./device-list"
 import { MyChats } from "./my-chats"
 import { OptionComponent } from "./option-component"
 
@@ -198,7 +199,7 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
           )}
         </header>
 
-        <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
+        <div className="flex flex-1 flex-col gap-1 overflow-hidden p-2">
           <OptionComponent
             icon={MessageSquarePlus}
             label="Novo Chat"
@@ -212,6 +213,7 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
             collapsed={!open}
             onClick={() => setSearchOpen(true)}
           />
+          <DeviceList collapsed={!open} />
           <MyChats collapsed={!open} />
         </div>
 

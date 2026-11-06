@@ -45,7 +45,7 @@ export function MyChats({ collapsed = false }: MyChatsProps) {
 
   if (collapsed) {
     return (
-      <div className="mt-3 flex flex-col items-center gap-1 border-t border-border pt-3">
+      <div className="mt-3 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto border-t border-border pt-3">
         {chats.slice(0, 12).map((chat) => (
           <Tooltip key={chat.id}>
             <TooltipTrigger
@@ -69,7 +69,7 @@ export function MyChats({ collapsed = false }: MyChatsProps) {
   }
 
   return (
-    <div className="mt-4 min-h-0">
+    <div className="mt-4 flex min-h-0 flex-1 flex-col">
       <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">
         Chats
       </p>
@@ -88,7 +88,7 @@ export function MyChats({ collapsed = false }: MyChatsProps) {
           Nenhum chat ainda.
         </p>
       ) : (
-        <ul className="space-y-0.5">
+        <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {chats.map((chat) => {
             const active = !isDraft && chatId === chat.id
             const isRenaming = renamingChatId === chat.id

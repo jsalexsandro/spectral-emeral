@@ -1,7 +1,9 @@
 import { asSchema } from "ai"
 import { describe, expect, it } from "vitest"
 import { getChatTools } from "@/lib/ai/tools"
+import { renderHtmlTool } from "@/lib/ai/tools/render-html"
 import { runActionTool } from "@/lib/ai/tools/run-action"
+import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 
 function collectForbiddenKeys(
   value: unknown,
@@ -42,6 +44,14 @@ describe("chat tool schemas", () => {
         [],
       )
     }
+  })
+
+  it("registers renderHtml and removes the legacy renderUi tool", () => {
+    const tools = getChatTools({ userId: "test-user" })
+
+    expect(tools[RENDER_HTML_TOOL_NAME]).toBeDefined()
+    expect(tools).not.toHaveProperty("renderUi")
+    expect(typeof renderHtmlTool.execute).toBe("function")
   })
 
   it("exposes runAction as a server-acknowledged command", async () => {

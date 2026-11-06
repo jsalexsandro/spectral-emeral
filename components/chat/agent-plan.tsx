@@ -1,6 +1,6 @@
 import { Loader2, XCircle } from "lucide-react"
-import { Timeline } from "@/components/ai-ui"
 import { updatePlanInputSchema } from "@/lib/ai/plan"
+import { PlanTimeline } from "./plan-timeline"
 
 type AgentPlanPartData = {
   state: string
@@ -38,7 +38,7 @@ export function AgentPlanPart({ part }: { part: AgentPlanPartData }) {
 
   return (
     <div className="rounded-xl border border-border/70 bg-card px-3 py-3">
-      <Timeline title={parsed.data.title ?? "Plano"} items={parsed.data.steps} />
+      <PlanTimeline title={parsed.data.title ?? "Plano"} items={parsed.data.steps} />
     </div>
   )
 }

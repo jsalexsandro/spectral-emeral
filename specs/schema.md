@@ -113,7 +113,7 @@ Mensagem persistida de uma conversa.
 - `chatId` (text, FK -> Chat.id, cascade delete)
 - `role` (MessageRole, not null) - `user`, `assistant` ou `system`
 - `content` (text, not null) - Texto derivado da concatenação das partes de texto (usado para título e busca)
-- `parts` (jsonb, not null) - Partes completas do `UIMessage` (`UIMessagePart[]`), preservando texto, raciocínio, ferramentas etc. Também guarda as tool parts de Generative UI (`renderUi`) com `input`, `output` e `uiVersion`, o que permite reconstruir as interfaces no histórico sem tabela adicional.
+- `parts` (jsonb, not null) - Partes completas do `UIMessage` (`UIMessagePart[]`), preservando texto, raciocínio, ferramentas etc. Também guarda as tool parts de Generative HTML (`renderHtml`) com `input`, `output` e `uiVersion`, o que permite reconstruir as interfaces no histórico sem tabela adicional.
 - `provider` (text, nullable) - Provedor do modelo que gerou a resposta (`assistant`)
 - `model` (text, nullable) - ID do modelo que gerou a resposta (`assistant`)
 - `promptVersion` (integer, nullable) - Versão do system prompt (`SYSTEM_PROMPT_VERSION`) usada na resposta (`assistant`)

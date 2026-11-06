@@ -66,6 +66,7 @@ O necessario para o inicio da aplicação.
   - [x] OptionComponent
         - Novo Chat (estado inicial do /app) ao entrar no site estamos nessa oção inicial por padrão. 
         - Pesquisar (não é bem uma opção e sim botão) ele deve abrir um modal com um input, digite o nome do chat... (o component aplicar um blur no fundo)
+    - [x] DeviceList (lista os 3 primeiros devices, com uma marcação se ta online/offline)
   - [x] MyChatsComponents (gestão dos chats) — Passo 4
   - [x] Footer com o o card de user: [Avatar: nome]
     - [x] ao clicar deve abrir um context menu, com duas opções por enquanto:
@@ -181,7 +182,7 @@ O prompt é composto por seções independentes e versionado para permitir evolu
 
 - [x] Composição em `lib/ai/prompts/build.ts` (`buildSystemPrompt`)
 - [x] Seções em `lib/ai/prompts/sections/` (identidade, estilo, capacidades, loop agêntico, UI e ações, segurança, contexto do usuário)
-- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 15`)
+- [x] Versão e changelog em `lib/ai/prompts/registry.ts` (`SYSTEM_PROMPT_VERSION = 16`)
 - [x] Injeção em `app/api/chat/route.ts`
 - [x] Persistência da versão em `Message.promptVersion`
 - [x] Revisão do prompt composto com `npm run prompt:print`
@@ -197,7 +198,7 @@ Regras de evolução:
 - [x] Proteções de `fetchUrl`: timeout, limite de resposta, bloqueio de localhost/IPs privados e revalidação de redirects (SSRF)
 - [x] Tool `fetchUrl` para consultas GET/POST
 - [x] Tool `updatePlan` para planejamento visível
-- [x] Tool `renderUi` para conteúdo visual no chat
+- [x] Tool `renderHtml` para conteúdo visual sanitizado no chat
 - [x] Tool `runAction` para efeitos na aplicação
 - [x] Poda de contexto em `prepareStep` com `pruneMessages`
 - [x] Renderização das tool parts no chat (`components/chat/chat.tsx`)
@@ -211,22 +212,22 @@ Regras de evolução:
 - [x] Timeline: `components/chat/agent-activity.tsx` e `components/chat/agent-plan.tsx`
 - [x] Persistência: `Message.parts` (jsonb), sem migração adicional
 - [x] Rota: `app/api/chat/route.ts` usa `createAgentUIStreamResponse` e acumula usage por passo
-- [x] `renderUi` e `runAction` não aparecem como cartões na timeline; o efeito visual é o feedback
+- [x] `renderHtml` e `runAction` não aparecem como cartões na timeline; o efeito visual é o feedback
 
-# Passo 8 — Generative UI
+# Passo 8 — Generative HTML
 
-Referência técnica completa: [`specs/ui-generative-components.md`](./ui-generative-components.md)
+Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-html.md)
 
-- [x] `components/ai-ui/` com registry, renderer e estados loading/waiting/success/error
-- [x] Validação Zod no servidor e revalidação no cliente
-- [x] Persistência dos componentes em `Message.parts`
-- [x] Catálogo versionado `UI_CATALOG_VERSION = 2`
-- [x] Tool `renderUi` registrada e anunciada no system prompt
-- [x] Componentes específicos: `callout`, `infoCard`, `statGrid`, `dataTable`, `timeline`, `sourceList`
-- [x] `panel` com primitivos `text`, `button` e `div`
-- [x] Botões do `panel` com ações tipadas (`sendMessage`, `openSettings`, `toast`, `setTheme`, `navigate`, `copy`)
-- [x] Compatibilidade de histórico: `chatUi` legado é normalizado para `panel`; ações string viram `sendMessage`
-- [x] Sem recursão e no máximo 2 níveis de `div`
+- [x] `components/ai-ui/render-html-part.tsx` com estados loading/error/success
+- [x] Sanitização DOMPurify no servidor e revalidação no cliente
+- [x] Persistência do HTML sanitizado em `Message.parts`
+- [x] Política versionada `HTML_UI_VERSION = 1`
+- [x] Tool `renderHtml` registrada e anunciada no system prompt
+- [x] Allowlist de tags, atributos e classes Tailwind
+- [x] Botões com ações tipadas em `data-spectral-action`
+- [x] Links externos limitados a `http(s)`/`mailto`, com `rel="noopener noreferrer"` em `target="_blank"`
+- [x] Limite de 20k caracteres e no máximo 2 chamadas de `renderHtml` por resposta
+- [x] Histórico antigo de `renderUi` mostra fallback curto, sem renderer legado
 
 # Passo 9 — Ações da aplicação
 
@@ -234,7 +235,7 @@ Referência completa: [`specs/ai-interaction-model.md`](./ai-interaction-model.m
 
 Modelo **“UI é dado, ação é evento”**:
 
-- `renderUi` mostra conteúdo no chat.
+- `renderHtml` mostra conteúdo sanitizado no chat.
 - `runAction` executa efeitos na aplicação.
 - `fetchUrl` busca dados.
 - `updatePlan` mostra progresso.
@@ -255,11 +256,11 @@ Implementado:
 
 # Passo 10 — Garantias, testes e próximos passos
 
-- [x] Testes com Vitest para catálogo de ações, catálogo de UI, normalização legada e allowlist
+- [x] Testes com Vitest para catálogo de ações, sanitização de HTML, política de classes e allowlist
 - [x] Teste de JSON Schema sem `$ref`/`$defs`/`definitions` para as tools
 - [x] `npm run typecheck` e `npm run test`
 - [x] Documentação do modelo em `specs/ai-interaction-model.md`
-- [x] Styleguide atualizado para `panel` com ações reais
+- [x] Styleguide atualizado para HTML sanitizado com ações reais
 - [x] Fase 2: execução determinística de tool a partir do clique (sem depender do modelo)
 - [x] Fase 2: confirmação explícita para ações sensíveis (ex.: `navigate` iniciado pela IA)
 - [ ] Fase futura: estado interativo no chat, avaliado sem reintroduzir `chatState`
@@ -329,7 +330,35 @@ Passo 12 - Device System
 
   Próximas fases (após Fase 3)
   - [ ] Suporte a celular e TV Android
+
+
+Proximos passo:
+  Device:
+    Melhorá o sistema de configurações de devices
+    Permitir roda codigo sem limitação, usar qualquer comando sem limitação.
+    Abrir qualquer app. independente do app está listado no driver.
+    Da mais profundiade ao device, fazer com que ele tenha mais poder de execução consiga, executar tarefas insanamente complexas.
+    Device + playwritgh para controlar navegador
+    Poder adicionar devices via chat.
+
+    Integração do device com outros agentes, (device controlando o opencode/cloudcode)    
+
+  
+  Mais tools para melhorar o chat.
+  
+  Sistema de memorias entre os chats
+  Virtual Files (um sistema de virtual arquivos e pastas) que podem ser clonados do dispositivo 
     
+  Melhorar o generative HTML
+    [x] Usar HTML em vez de componente React.
+    [ ] Permitir a IA usar JS com sandbox seguro.
+
+    A ia não tem esatados da tela, ela não qual tema estamos, por issa ela acaba mudando pra escuro tanto escuro
+    
+  
+  Sistema de view de file/site do outro lado tela assim como claude
+  Baixar files, Markdown
+  Fazer LandingPage, fazer o oAuth, sistema de envio de email, e de conta verificada.
   
     
 
@@ -355,7 +384,7 @@ Avaliar um modelo de estado interativo **sem reintroduzir o antigo `chatState`**
 por não ter um contrato claro de persistência e segurança. A nova abordagem deve:
 
 - [ ] Definir um estado tipado e versionado, com persistência explícita em `Message.parts`
-- [ ] Separar estado de apresentação (`renderUi`) de efeitos (`runAction`)
+- [ ] Separar estado de apresentação (`renderHtml`) de efeitos (`runAction`)
 - [ ] Permitir que botões atualizem o estado sem depender de uma nova resposta do modelo
 - [ ] Manter validação Zod no servidor e no cliente
 - [ ] Documentar o contrato antes de implementar

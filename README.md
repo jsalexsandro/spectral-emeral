@@ -78,15 +78,16 @@ O tema **Spectral Emerald** usa branco e off-whites esverdeados como base, com e
 - O prompt v4 adiciona a seção `agent-loop` com as regras de planejar, executar, observar e replanejar
 - As etapas são recuperadas do histórico via `Message.parts`, sem migração adicional
 
-## Generative UI (Passo 7)
+## Generative HTML
 
-- A IA pode renderizar componentes estruturados no chat com a tool `renderUi`
-- Catálogo versionado em `lib/ai/ui/catalog.ts` (`UI_CATALOG_VERSION = 1`)
-- Componentes: callout, infoCard, statGrid, dataTable, timeline e sourceList
-- Registry e renderer em `components/ai-ui/`, com validação Zod e estados loading/waiting/success/error
+- A IA pode renderizar HTML sanitizado no chat com a tool `renderHtml`
+- Política versionada em `lib/ai/ui/html-policy.ts` (`HTML_UI_VERSION = 1`)
+- Tags, atributos e classes Tailwind são allowlisted; scripts, estilos inline, iframes e formulários são removidos
+- Botões usam ações tipadas em `data-spectral-action`; links externos usam `http(s)`/`mailto`
+- O servidor sanitiza no `execute` e o cliente revalida antes de renderizar
 - As interfaces são recuperadas do histórico via `Message.parts` (jsonb), sem migração adicional
-- Galeria visual em `/styleguide#generative-ui`
-- Referência técnica em `specs/ui-generative-components.md`
+- Galeria visual em `/styleguide#generative-html`
+- Referência técnica em `specs/ui-generative-html.md`
 
 ### Variáveis de ambiente
 

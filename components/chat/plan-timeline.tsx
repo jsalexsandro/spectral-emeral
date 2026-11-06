@@ -1,5 +1,5 @@
 import { Check, Circle, CircleDot } from "lucide-react"
-import type { TimelineProps } from "@/lib/ai/ui/catalog"
+import type { PlanStepStatus } from "@/lib/ai/plan"
 import { cn } from "@/lib/utils"
 
 const statusStyles = {
@@ -20,12 +20,22 @@ const statusStyles = {
   },
 } as const
 
-export function Timeline({ title, items }: TimelineProps) {
+type PlanTimelineItem = {
+  title: string
+  description?: string
+  status: PlanStepStatus
+}
+
+export function PlanTimeline({
+  title,
+  items,
+}: {
+  title?: string
+  items: readonly PlanTimelineItem[]
+}) {
   return (
     <div className="space-y-3">
-      {title && (
-        <p className="text-sm font-medium text-foreground">{title}</p>
-      )}
+      {title && <p className="text-sm font-medium text-foreground">{title}</p>}
       <ol className="space-y-3">
         {items.map((item, index) => {
           const style = statusStyles[item.status]

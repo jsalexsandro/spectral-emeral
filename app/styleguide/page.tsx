@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -43,7 +43,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { GenerativeUiGallery } from "./generative-ui-gallery";
+import { GenerativeHtmlGallery } from "./generative-html-gallery";
 
 export const metadata: Metadata = {
   title: "Design system",
@@ -512,11 +512,19 @@ export default function StyleguidePage() {
       <Separator />
 
       <Section
-        id="generative-ui"
-        title="Generative UI"
-        description="Componentes que a IA pode renderizar no chat e os estados do renderer."
+        id="generative-html"
+        title="Generative HTML"
+        description="HTML sanitizado que a IA pode renderizar no chat, com Tailwind e ações tipadas."
       >
-        <GenerativeUiGallery />
+        <Suspense
+          fallback={
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
+              Carregando exemplos de HTML...
+            </div>
+          }
+        >
+          <GenerativeHtmlGallery />
+        </Suspense>
       </Section>
 
       <Separator />

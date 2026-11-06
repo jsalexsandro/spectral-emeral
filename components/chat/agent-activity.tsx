@@ -10,16 +10,20 @@ import {
 } from "ai"
 import { ChevronDown, Loader2 } from "lucide-react"
 import { RUN_ACTION_TOOL_NAME } from "@/lib/ai/actions/catalog"
-import { LEGACY_EXTERN_UI_TOOL_NAME } from "@/lib/ai/actions/legacy"
+import {
+  LEGACY_EXTERN_UI_TOOL_NAME,
+  LEGACY_RENDER_UI_TOOL_NAME,
+} from "@/lib/ai/actions/legacy"
 import { UPDATE_PLAN_TOOL_NAME } from "@/lib/ai/plan"
-import { RENDER_UI_TOOL_NAME } from "@/lib/ai/ui/catalog"
+import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 import { AgentPlanPart } from "./agent-plan"
 import { ToolPartCard } from "./tool-part-card"
 
 const hiddenToolNames = new Set<string>([
-  RENDER_UI_TOOL_NAME,
+  RENDER_HTML_TOOL_NAME,
   RUN_ACTION_TOOL_NAME,
   LEGACY_EXTERN_UI_TOOL_NAME,
+  LEGACY_RENDER_UI_TOOL_NAME,
 ])
 
 type ActivityGroup = {

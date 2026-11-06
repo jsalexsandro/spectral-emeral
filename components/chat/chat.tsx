@@ -12,19 +12,22 @@ import { ArrowUp, Loader2, Paperclip, Square } from "lucide-react"
 import { toast } from "sonner"
 import { ChatActionProvider } from "@/app/app/chat-action-provider"
 import { useChatSession } from "@/app/app/chat-provider"
-import { AppActionHandler, RenderUiPart } from "@/components/ai-ui"
+import { AppActionHandler, RenderHtmlPart } from "@/components/ai-ui"
 import {
   RUN_ACTION_TOOL_NAME,
   type ActionResult,
 } from "@/lib/ai/actions/catalog"
-import { LEGACY_EXTERN_UI_TOOL_NAME } from "@/lib/ai/actions/legacy"
+import {
+  LEGACY_EXTERN_UI_TOOL_NAME,
+  LEGACY_RENDER_UI_TOOL_NAME,
+} from "@/lib/ai/actions/legacy"
 import {
   resolveDefaultModelKey,
   type InstantModelPreference,
 } from "@/lib/ai/instant-models"
 import { aiModels, getModelKey } from "@/lib/ai/models"
 import type { ProviderId } from "@/lib/ai/providers"
-import { RENDER_UI_TOOL_NAME } from "@/lib/ai/ui/catalog"
+import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 import { AgentActivity } from "./agent-activity"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
@@ -55,6 +58,17 @@ function getMessageText(message: UIMessage): string {
     .map((part) => part.text)
     .join("")
     .trim()
+}
+
+function LegacyRenderUiFallback() {
+  return (
+    <div
+      role="status"
+      className="rounded-xl border border-border/70 bg-muted/40 p-3.5 text-xs text-muted-foreground"
+    >
+      Esta visualização usava o formato antigo e não está mais disponível.
+    </div>
+  )
 }
 
 export function Chat({
@@ -260,12 +274,23 @@ function ChatSession({
 
                         if (
                           isToolUIPart(part) &&
-                          getToolName(part) === RENDER_UI_TOOL_NAME
+                          getToolName(part) === RENDER_HTML_TOOL_NAME
                         ) {
                           return (
-                            <RenderUiPart
+                            <RenderHtmlPart
                               key={part.toolCallId ?? `${item.id}-tool-${index}`}
                               part={part}
+                            />
+                          )
+                        }
+
+                        if (
+                          isToolUIPart(part) &&
+                          getToolName(part) === LEGACY_RENDER_UI_TOOL_NAME
+                        ) {
+                          return (
+                            <LegacyRenderUiFallback
+                              key={part.toolCallId ?? `${item.id}-legacy-${index}`}
                             />
                           )
                         }
@@ -294,18 +319,9 @@ function ChatSession({
         </div>
       )}
 
-      <div className="px-4 pt-2 pb-6">
+      <div className="px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-6">
         <form className="mx-auto w-full max-w-2xl" onSubmit={handleSubmit}>
-          <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-3 shadow-soft focus-within:border-primary/50 focus-within:ring-3 focus-within:ring-primary/10">
-            <button
-              type="button"
-              aria-label="Anexar arquivo"
-              title="Anexar arquivo"
-              disabled
-              className="flex size-9 shrink-0 cursor-not-allowed items-center justify-center rounded-lg text-muted-foreground opacity-50"
-            >
-              <Paperclip className="size-4" />
-            </button>
+          <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-2.5 shadow-soft focus-within:border-primary/50 focus-within:ring-3 focus-within:ring-primary/10 sm:flex-row sm:items-end sm:p-3">
             <textarea
               ref={textareaRef}
               value={message}
@@ -314,30 +330,44 @@ function ChatSession({
               placeholder="Como posso ajudar você hoje?"
               rows={1}
               aria-label="Mensagem"
-              className="max-h-60 min-h-10 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm outline-none [scrollbar-width:none] placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
+              enterKeyHint="send"
+              className="order-1 max-h-60 min-h-10 w-full flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-base outline-none [scrollbar-width:none] placeholder:text-muted-foreground sm:order-2 sm:px-1 sm:text-sm [&::-webkit-scrollbar]:hidden"
             />
-            <ModelSelect
-              value={model}
-              onChange={setModel}
-              configuredProviders={configuredProviders}
-              instantPreferences={instantPreferences}
-            />
-            <button
-              type={isBusy ? "button" : "submit"}
-              aria-label={isBusy ? "Parar resposta" : "Enviar mensagem"}
-              title={isBusy ? "Parar resposta" : "Enviar mensagem"}
-              onClick={isBusy ? () => stop() : undefined}
-              disabled={!isBusy && !canSend}
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isBusy ? (
-                <Square className="size-3.5 fill-current" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
-            </button>
+            <div className="order-2 flex items-center gap-2 sm:contents">
+              <button
+                type="button"
+                aria-label="Anexar arquivo"
+                title="Anexar arquivo"
+                disabled
+                className="hidden size-9 shrink-0 cursor-not-allowed items-center justify-center rounded-lg text-muted-foreground opacity-50 sm:order-1 sm:flex"
+              >
+                <Paperclip className="size-4" />
+              </button>
+              <div className="min-w-0 flex-1 sm:order-3 sm:flex-none">
+                <ModelSelect
+                  value={model}
+                  onChange={setModel}
+                  configuredProviders={configuredProviders}
+                  instantPreferences={instantPreferences}
+                />
+              </div>
+              <button
+                type={isBusy ? "button" : "submit"}
+                aria-label={isBusy ? "Parar resposta" : "Enviar mensagem"}
+                title={isBusy ? "Parar resposta" : "Enviar mensagem"}
+                onClick={isBusy ? () => stop() : undefined}
+                disabled={!isBusy && !canSend}
+                className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-50 sm:order-4"
+              >
+                {isBusy ? (
+                  <Square className="size-3.5 fill-current" />
+                ) : (
+                  <ArrowUp className="size-4" />
+                )}
+              </button>
+            </div>
           </div>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
+          <p className="mt-2 hidden text-center text-xs text-muted-foreground sm:block">
             Enter para enviar · Shift+Enter para quebrar linha
           </p>
           {error && (

@@ -4,7 +4,7 @@ Referência do contrato entre o modelo, o chat e a aplicação. A regra central 
 
 > **UI é dado, ação é evento.**
 
-- `renderUi` mostra conteúdo no chat.
+- `renderHtml` mostra conteúdo sanitizado no chat.
 - `runAction` executa efeitos na aplicação.
 - `fetchUrl` busca dados externos.
 - `updatePlan` mostra progresso.
@@ -17,7 +17,7 @@ IA alterasse a UI da aplicação sem um contrato claro. O modelo novo separa:
 
 | Necessidade | Tool/ação | Onde executa |
 | --- | --- | --- |
-| Mostrar tabela, métricas, fontes ou layout | `renderUi` | Renderer no chat |
+| Mostrar tabela, métricas, fontes ou layout | `renderHtml` | Renderer sanitizado no chat |
 | Exibir notificação | `runAction` → `toast` | Cliente |
 | Alterar tema | `runAction` → `setTheme` | Cliente |
 | Abrir configurações | `runAction` → `openSettings` | Cliente |
@@ -63,12 +63,15 @@ O `AppActionHandler`:
 `runActionOutputSchema` usa `aiActionSchema`, então um output forjado com
 `sendMessage` é rejeitado.
 
-## Botões de `panel`
+## Botões de HTML
 
-Botões renderizados por `renderUi` usam `appActionSchema`. Ao clicar:
+Botões renderizados por `renderHtml` usam `data-spectral-action` com um JSON
+validado por `appActionSchema`. Ao clicar:
 
+- o renderer valida a ação novamente no cliente;
 - `sendMessage` chama `sendText` do chat;
-- as demais ações vão para `AppActionsProvider`.
+- as demais ações vão para `AppActionsProvider`;
+- `navigate` pede confirmação antes de navegar.
 
 O `ChatActionProvider` também bloqueia `sendMessage` quando
 `source === "tool"`, como defesa em profundidade.
@@ -81,19 +84,14 @@ dentro de `runAction`; o schema e o provider impedem isso.
 
 Exemplo:
 
-```json
-{
-  "component": "panel",
-  "props": {
-    "children": [
-      {
-        "type": "button",
-        "label": "Abrir configurações",
-        "action": { "type": "openSettings", "section": "byok" }
-      }
-    ]
-  }
-}
+```html
+<button
+  type="button"
+  class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+  data-spectral-action='{"type":"openSettings","section":"byok"}'
+>
+  Abrir configurações
+</button>
 ```
 
 ## Provedores no cliente
@@ -126,25 +124,26 @@ montado ao redor do chat.
 
 ## Compatibilidade e histórico
 
-- `renderUi` mantém `renderUiHistorySchema` com `chatUi` legado.
-- O output antigo é normalizado para `panel`.
-- Ações string em botões antigos viram `sendMessage` com o label.
+- Tool parts antigas de `renderUi` mostram um fallback curto no chat.
+- O renderer antigo e o catálogo de componentes foram removidos.
 - Ações já executadas não são reexecutadas ao abrir o histórico.
 - Não há migração de banco nem mudança em `Message.parts`.
 
 ## Testes
 
 - `lib/ai/actions/catalog.test.ts`: allowlist, `sendMessage`, defaults e output.
-- `lib/ai/ui/catalog.test.ts`: `panel`, limites de `div`, histórico e normalização.
-- `lib/ai/tools/tool-schema.test.ts`: JSON Schema sem `$ref` e execução de
-  `runAction`.
+- `lib/ai/ui/html-policy.test.ts`: sanitização, ações, URLs e classes.
+- `lib/ai/ui/html-classes.test.ts`: sincronização entre a allowlist e o safelist do Tailwind.
+- `lib/ai/tools/render-html.test.ts`: sanitização e erro para HTML vazio.
+- `lib/ai/tools/tool-schema.test.ts`: JSON Schema sem `$ref`, `renderHtml`
+  registrado e execução de `runAction`.
 
 Comandos: `npm run test`, `npm run typecheck`, `npm run lint`.
 
 ## Limitações e próximos passos
 
-- A execução de uma tool a partir do clique ainda depende do modelo; a Fase 2
-  pode tornar isso determinístico.
+- O HTML usa um vocabulário fixo de classes Tailwind; novas classes exigem
+  atualização da política e do safelist.
 - Ações sensíveis iniciadas pela IA podem exigir confirmação explícita.
 - Estado interativo no chat será avaliado em um contrato novo, sem reintroduzir
   `chatState`.
