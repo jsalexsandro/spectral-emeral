@@ -2,7 +2,7 @@ import type { Components } from "react-markdown"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "cn"
-import { CopyButton } from "@/components/ui/copy-button"
+import { ChatMessageToolbar } from "@/components/chat/chat-message-toolbar"
 
 const components: Components = {
   h1: ({ children }) => (
@@ -62,11 +62,9 @@ const components: Components = {
     const text = String(children)
 
     return (
-      <div className="relative group">
-        <pre className="mb-3 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100 last:mb-0 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
-          {children}
-        </pre>
-        <CopyButton text={text} />
+      <div className="mb-3 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100 last:mb-0 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
+        {children}
+        <ChatMessageToolbar text={text} />
       </div>
     )
   },
@@ -94,11 +92,11 @@ const components: Components = {
 
 export function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="min-w-0 text-sm relative group">
-      <CopyButton text={content} />
+    <div className="min-w-0 text-sm">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
+      <ChatMessageToolbar text={content} />
     </div>
   )
 }
