@@ -91,10 +91,11 @@ export function ChatMessageToolbar({
         />
       ))}
       <DropdownMenu>
-        <DropdownMenuTrigger>
-          <Button size="icon" variant="outline" aria-label="Mais opções" className="size-6">
-            <MoreHorizontal className="size-3.5" />
-          </Button>
+        <DropdownMenuTrigger
+          className="inline-flex size-6 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          aria-label="Mais opções"
+        >
+          <MoreHorizontal className="size-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-48">
           <DropdownMenuItem className="text-xs">
