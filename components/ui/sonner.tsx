@@ -1,6 +1,6 @@
 "use client"
 
-import { ToastProvider, Toaster, useToast } from "@/components/ui/toast"
+import { ToastProvider, Toaster, toastGlobal, useToast } from "@/components/ui/toast"
 import type { Toast, ToastVariant } from "@/components/ui/toast"
 
 type ToastOptions = {
@@ -11,14 +11,12 @@ type ToastOptions = {
 
 function buildToast(variant?: ToastVariant) {
   return (title: string, options?: ToastOptions) => {
-    const { toast } = useToast()
-    return toast(title, { ...options, variant })
+    return toastGlobal(title, { ...options, variant })
   }
 }
 
 const baseToast = (title: string, options?: ToastOptions) => {
-  const { toast } = useToast()
-  return toast(title, options)
+  return toastGlobal(title, options)
 }
 
 export const toast = Object.assign(baseToast, {
@@ -29,8 +27,10 @@ export const toast = Object.assign(baseToast, {
 })
 
 export { ToastProvider, Toaster }
-export type { ToastOptions }
+export type { ToastOptions, Toast, ToastVariant }
 
 export function SonnerToaster() {
   return <Toaster />
 }
+
+export { useToast }

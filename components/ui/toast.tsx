@@ -55,6 +55,34 @@ type ToastProviderProps = {
 
 const ToastContext = createContext<ToastContextType | null>(null)
 
+// Referência global para permitir chamar toast() de qualquer lugar (fora de componentes)
+let globalToast: ((title: string, options?: ToastOptions) => ToastAction) | null =
+  null
+let globalDismiss: ((toastId: string) => void) | null = null
+
+export function setGlobalToast(
+  toastFn: (title: string, options?: ToastOptions) => ToastAction,
+  dismissFn: (toastId: string) => void,
+) {
+  globalToast = toastFn
+  globalDismiss = dismissFn
+}
+
+/**
+ * Chama toast de qualquer lugar (event handlers, callbacks, etc.).
+ * Retorna null se ToastProvider não estiver montado.
+ */
+export function toastGlobal(
+  title: string,
+  options?: ToastOptions,
+): ToastAction | null {
+  if (!globalToast) {
+    console.warn("ToastProvider not mounted. Toast ignored:", title)
+    return { id: "", dismiss: () => {} }
+  }
+  return globalToast(title, options)
+}
+
 export function ToastProvider({ children }: ToastProviderProps) {
   const [state, setState] = useState<ToastState>({ toasts: [] })
 
@@ -96,6 +124,15 @@ export function ToastProvider({ children }: ToastProviderProps) {
     },
     [dismiss],
   )
+
+  // Expõe globalmente para uso fora de componentes React
+  useEffect(() => {
+    setGlobalToast(toast, dismiss)
+    return () => {
+      globalToast = null
+      globalDismiss = null
+    }
+  }, [toast, dismiss])
 
   const value = useMemo(
     () => ({ toast, dismiss, toasts: state.toasts }),
