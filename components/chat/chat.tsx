@@ -33,6 +33,7 @@ import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 import { AgentActivity } from "./agent-activity"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
+import { ChatNotificationAsk, useChatNotification } from "@/components/ui/chat-notification"
 
 type ChatProps = {
   greeting?: string
@@ -141,12 +142,29 @@ function ChatSession({
 
   const { theme } = useTheme()
   const resolvedTheme = getResolvedTheme()
+  const {
+    setLastAssistantMessage,
+    notifyAssistantResponse,
+  } = useChatNotification()
 
   const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
     id: chatId,
     messages: initialMessages,
     transport,
-    onFinish: onChatPersisted,
+    onFinish: (response) => {
+      onChatPersisted()
+
+      // Captura a última mensagem do assistente para notificação
+      const lastMessage = [...response.messages]
+        .reverse()
+        .find((m) => m.role === "assistant")
+
+      if (lastMessage) {
+        const text = getMessageText(lastMessage)
+        setLastAssistantMessage(text)
+        notifyAssistantResponse()
+      }
+    },
   })
 
   const isBusy = status === "submitted" || status === "streaming"
@@ -329,6 +347,8 @@ function ChatSession({
           </h1>
         </div>
       )}
+
+      <ChatNotificationAsk />
 
       <div className="px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-6">
         <form className="mx-auto w-full max-w-2xl" onSubmit={handleSubmit}>

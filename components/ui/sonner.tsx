@@ -1,13 +1,7 @@
 "use client"
 
 import { ToastProvider, Toaster, toastGlobal, useToast } from "@/components/ui/toast"
-import type { Toast, ToastVariant } from "@/components/ui/toast"
-
-type ToastOptions = {
-  description?: string
-  duration?: number
-  variant?: ToastVariant
-}
+import type { Toast, ToastOptions, ToastVariant } from "@/components/ui/toast"
 
 function buildToast(variant?: ToastVariant) {
   return (title: string, options?: ToastOptions) => {

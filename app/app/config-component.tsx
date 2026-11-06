@@ -43,6 +43,7 @@ import type { ConfigSection } from "@/lib/config-sections"
 import { cn } from "@/lib/utils"
 import { ByokSection } from "./byok-section"
 import { DevicesSection } from "./devices-section"
+import { ChatNotificationToggle } from "@/components/ui/chat-notification"
 
 export type ConfigUser = {
   name?: string | null
@@ -208,6 +209,8 @@ function GeneralSection() {
           ))}
         </div>
       </div>
+
+      <ChatNotificationToggle />
     </div>
   )
 }

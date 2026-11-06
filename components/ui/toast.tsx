@@ -19,12 +19,20 @@ export type Toast = {
   variant: ToastVariant
   duration?: number
   createdAt: number
+  action?: {
+    label: string
+    onClick: () => void
+  }
 }
 
-type ToastOptions = {
+export type ToastOptions = {
   description?: string
   duration?: number
   variant?: ToastVariant
+  action?: {
+    label: string
+    onClick: () => void
+  }
 }
 
 type ToastAction = {
@@ -103,6 +111,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
         variant: options.variant ?? "default",
         duration: options.duration ?? 4_000,
         createdAt: Date.now(),
+        ...(options.action && { action: options.action }),
       }
 
       setState((prev) => {
@@ -219,6 +228,23 @@ function ToastContent({
           </p>
         )}
       </div>
+
+      {(() => {
+        const action = toast.action
+        if (!action) return null
+        return (
+          <button
+            onClick={() => {
+              action.onClick()
+              onDismiss()
+            }}
+            className="shrink-0 text-xs font-medium bg-primary text-primary-foreground px-2.5 py-1.5 rounded hover:bg-primary/90 transition-colors"
+          >
+            {action.label}
+          </button>
+        )
+      })()}
+
       <button
         onClick={onDismiss}
         className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1"
