@@ -1,30 +1,36 @@
 "use client"
 
-import { Toaster as SonnerToaster } from "sonner"
+import { ToastProvider, Toaster, useToast } from "@/components/ui/toast"
+import type { Toast, ToastVariant } from "@/components/ui/toast"
 
-import { useTheme } from "@/components/theme-provider"
+type ToastOptions = {
+  description?: string
+  duration?: number
+  variant?: ToastVariant
+}
 
-export function Toaster() {
-  const { theme } = useTheme()
+function buildToast(variant?: ToastVariant) {
+  return (title: string, options?: ToastOptions) => {
+    const { toast } = useToast()
+    return toast(title, { ...options, variant })
+  }
+}
 
-  return (
-    <SonnerToaster
-      theme={theme}
-      richColors
-      closeButton
-      position="bottom-right"
-      toastOptions={{
-        classNames: {
-          toast: "group toast group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-soft",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
-          error: "group-[.toaster]:border-destructive/40",
-          success: "group-[.toaster]:border-primary/40",
-          warning: "group-[.toaster]:border-amber-500/40",
-          info: "group-[.toaster]:border-border",
-        },
-      }}
-    />
-  )
+const baseToast = (title: string, options?: ToastOptions) => {
+  const { toast } = useToast()
+  return toast(title, options)
+}
+
+export const toast = Object.assign(baseToast, {
+  success: buildToast("success"),
+  error: buildToast("error"),
+  warning: buildToast("warning"),
+  info: buildToast("info"),
+})
+
+export { ToastProvider, Toaster }
+export type { ToastOptions }
+
+export function SonnerToaster() {
+  return <Toaster />
 }

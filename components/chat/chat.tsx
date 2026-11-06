@@ -9,7 +9,7 @@ import {
   type UIMessage,
 } from "ai"
 import { ArrowUp, Loader2, Paperclip, Square } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/sonner"
 import { ChatActionProvider } from "@/app/app/chat-action-provider"
 import { useChatSession } from "@/app/app/chat-provider"
 import { AppActionHandler, RenderHtmlPart } from "@/components/ai-ui"
