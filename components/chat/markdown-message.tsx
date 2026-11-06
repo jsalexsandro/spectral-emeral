@@ -2,6 +2,7 @@ import type { Components } from "react-markdown"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "cn"
+import { CopyButton } from "@/components/ui/copy-button"
 
 const components: Components = {
   h1: ({ children }) => (
@@ -18,7 +19,9 @@ const components: Components = {
     </h3>
   ),
   h4: ({ children }) => (
-    <h4 className="mt-2.5 mb-1 text-sm font-medium first:mt-0">{children}</h4>
+    <h4 className="mt-2.5 mb-1 text-sm font-medium first:mt-0">
+      {children}
+    </h4>
   ),
   p: ({ children }) => (
     <p className="mb-2 leading-relaxed last:mb-0">{children}</p>
@@ -55,11 +58,18 @@ const components: Components = {
       {children}
     </code>
   ),
-  pre: ({ children }) => (
-    <pre className="mb-3 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100 last:mb-0 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const text = String(children)
+
+    return (
+      <div className="relative group">
+        <pre className="mb-3 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100 last:mb-0 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
+          {children}
+        </pre>
+        <CopyButton text={text} />
+      </div>
+    )
+  },
   table: ({ children }) => (
     <div className="mb-3 overflow-x-auto rounded-lg border border-border last:mb-0">
       <table className="w-full border-collapse text-xs">{children}</table>
@@ -84,7 +94,8 @@ const components: Components = {
 
 export function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="min-w-0 text-sm">
+    <div className="min-w-0 text-sm relative group">
+      <CopyButton text={content} />
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
