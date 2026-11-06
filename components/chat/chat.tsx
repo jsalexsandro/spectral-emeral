@@ -33,7 +33,7 @@ import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 import { AgentActivity } from "./agent-activity"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
-import { ChatNotificationAsk, useChatNotification } from "@/components/ui/chat-notification"
+import { ChatNotificationToggle, useChatNotification } from "@/components/ui/chat-notification"
 
 type ChatProps = {
   greeting?: string
@@ -145,6 +145,8 @@ function ChatSession({
   const {
     setLastAssistantMessage,
     notifyAssistantResponse,
+    shouldAskPermission,
+    requestPermission,
   } = useChatNotification()
 
   const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
@@ -223,6 +225,29 @@ function ChatSession({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" })
   }, [messages, status])
+
+  // Solicita permissão de notificação uma vez por sessão
+  useEffect(() => {
+    if (!shouldAskPermission) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      toast("Deseja ser notificado quando o chat responder?", {
+        description:
+          "Você receberá um aviso na tela mesmo com a aba em segundo plano.",
+        duration: 8000,
+        action: {
+          label: "Ativar",
+          onClick: () => {
+            void requestPermission()
+          },
+        },
+      })
+    }, 2000)
+
+    return () => clearTimeout(timer)
+  }, [shouldAskPermission, requestPermission])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -347,8 +372,6 @@ function ChatSession({
           </h1>
         </div>
       )}
-
-      <ChatNotificationAsk />
 
       <div className="px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-6">
         <form className="mx-auto w-full max-w-2xl" onSubmit={handleSubmit}>
