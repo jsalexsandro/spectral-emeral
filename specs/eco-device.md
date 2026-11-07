@@ -1,6 +1,7 @@
 ### Sistema de devices
 
 Consulte, devices-connect.md
+Roadmap de evolução: devices-evolution.md
 1. Na conexão com o driver, com um driver devemos configurações basicas ali sobre.
    Essas configurações devem acontecer logo apos ser feita a primeira conexão.
    Será injetadas configurações basicas naquela.

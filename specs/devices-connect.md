@@ -235,6 +235,12 @@ e orienta executar `--pair`. Se outra instância assumir o dispositivo
   publicamente; em produção, mantenha-o na rede privada ou atrás do proxy.
 - No Windows, `chmod 0600` é emulado de forma limitada; proteja o diretório do
   usuário com as permissões do sistema.
-- O executor não controla qual janela está em foco e não captura tela. A leitura
-  de arquivos é restrita à pasta do usuário com denylist; não há escrita, edição,
-  shell arbitrário ou execução fora da allowlist.
+- O executor não controla qual janela está em foco e não captura tela. Arquivos
+  são restritos à pasta do usuário com denylist (leitura, escrita e edição); não
+  há shell arbitrário nem execução fora da allowlist.
+
+## Próximos passos
+
+O roadmap de evolução (screenshot, janelas, mouse, clipboard, `run-command` em
+camadas, aprovação, auditoria e instalador) está em
+[`specs/devices-evolution.md`](./devices-evolution.md).

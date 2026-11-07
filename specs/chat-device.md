@@ -144,6 +144,8 @@ carga do widget.
 - Driver: `spectral/driver/src/commands/executor.ts` e
   `spectral/driver/src/commands/files.ts`
 - Arquitetura completa: `specs/devices-connect.md`
+- Roadmap de evolução (screenshot, mouse, janelas, política, auditoria):
+  `specs/devices-evolution.md`
 
 
 testar muito essa api de device, adicionar mais funcionalidades deixar ela mais completa.
