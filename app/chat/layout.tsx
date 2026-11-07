@@ -5,6 +5,7 @@ import { AppActionsProvider } from "@/app/app/app-actions-provider"
 import { AppSidebar } from "@/app/app/app-sidebar"
 import { ChatProvider } from "@/app/app/chat-provider"
 import { AppSessionProvider } from "@/app/app/session-provider"
+import { ChatNotificationProvider } from "@/components/chat/chat-notification-provider"
 
 export const instant = false
 
@@ -24,14 +25,16 @@ export default async function ChatLayout({ children }: { children: ReactNode }) 
 
   return (
     <AppSessionProvider session={session}>
-      <AppActionsProvider user={user}>
-        <ChatProvider>
-          <div className="flex h-dvh w-full overflow-hidden bg-background">
-            <AppSidebar user={user} />
-            <main className="flex min-w-0 flex-1 flex-col">{children}</main>
-          </div>
-        </ChatProvider>
-      </AppActionsProvider>
+      <ChatNotificationProvider>
+        <AppActionsProvider user={user}>
+          <ChatProvider>
+            <div className="flex h-dvh w-full overflow-hidden bg-background">
+              <AppSidebar user={user} />
+              <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+            </div>
+          </ChatProvider>
+        </AppActionsProvider>
+      </ChatNotificationProvider>
     </AppSessionProvider>
   )
 }

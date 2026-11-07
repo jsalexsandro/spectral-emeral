@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useChat } from "@ai-sdk/react"
-import {
-  DefaultChatTransport,
-  getToolName,
-  isToolUIPart,
-  type UIMessage,
-} from "ai"
+import { getToolName, isToolUIPart, type UIMessage } from "ai"
 import { ArrowUp, Loader2, Paperclip, Square } from "lucide-react"
 import { toast } from "@/components/ui/sonner"
 import { ChatActionProvider } from "@/app/app/chat-action-provider"
@@ -30,10 +25,10 @@ import {
 import { aiModels, getModelKey } from "@/lib/ai/models"
 import type { ProviderId } from "@/lib/ai/providers"
 import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
+import { getOrCreateChat, rememberChatModel } from "@/lib/chat-runtime"
 import { AgentActivity } from "./agent-activity"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
-import { useChatNotification } from "./chat-notification-provider"
 
 type ChatProps = {
   greeting?: string
@@ -45,7 +40,6 @@ type ChatSessionProps = ChatProps & {
   chatId: string
   initialMessages: UIMessage[]
   initialModel: string | null
-  onChatPersisted: () => void
 }
 
 const MAX_TEXTAREA_HEIGHT = 240
@@ -84,7 +78,6 @@ export function Chat({
     initialMessages,
     initialModel,
     isLoadingChat,
-    markChatPersisted,
   } = useChatSession()
 
   if (isLoadingChat) {
@@ -104,7 +97,6 @@ export function Chat({
       greeting={greeting}
       configuredProviders={configuredProviders}
       instantPreferences={instantPreferences}
-      onChatPersisted={markChatPersisted}
     />
   )
 }
@@ -116,7 +108,6 @@ function ChatSession({
   greeting,
   configuredProviders,
   instantPreferences,
-  onChatPersisted,
 }: ChatSessionProps) {
   const [message, setMessage] = useState("")
   const [model, setModel] = useState(() => {
@@ -129,43 +120,39 @@ function ChatSession({
 
     return resolveDefaultModelKey(configuredProviders, instantPreferences)
   })
+  // A instância vive fora do React: trocar de conversa não aborta o stream.
+  const [chat] = useState(() => getOrCreateChat(chatId, initialMessages, model))
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const initialMessageIds = useMemo(
     () => new Set(initialMessages.map((item) => item.id)),
     [initialMessages],
   )
-  const transport = useMemo(
-    () => new DefaultChatTransport({ api: "/api/chat" }),
-    [],
-  )
 
   const { theme } = useTheme()
   const resolvedTheme = getResolvedTheme()
-  const { notify } = useChatNotification()
+  const { isDraft, refreshChats } = useChatSession()
 
   const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
-    id: chatId,
-    messages: initialMessages,
-    transport,
-    onFinish: (response) => {
-      onChatPersisted()
-
-      if (response.isAbort || response.isError || response.isDisconnect) {
-        return
-      }
-
-      const lastMessage = [...response.messages]
-        .reverse()
-        .find((message) => message.role === "assistant")
-
-      if (!lastMessage) {
-        return
-      }
-
-      notify({ body: getMessageText(lastMessage) })
-    },
+    chat,
   })
+
+  const draftRefreshedRef = useRef(false)
+
+  useEffect(() => {
+    rememberChatModel(chatId, model)
+  }, [chatId, model])
+
+  // Assim que um chat novo começa a responder ele já aparece na sidebar,
+  // permitindo sair e voltar sem perder o stream.
+  useEffect(() => {
+    if (!isDraft || status !== "streaming" || draftRefreshedRef.current) {
+      return
+    }
+
+    draftRefreshedRef.current = true
+    void refreshChats()
+  }, [isDraft, status, refreshChats])
 
   const isBusy = status === "submitted" || status === "streaming"
   const canSend = message.trim().length > 0 && model.length > 0 && !isBusy

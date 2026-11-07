@@ -469,14 +469,36 @@ visível.
       e grava `asked` tanto ao ativar quanto ao fechar/expirar
 - [x] `components/chat/notification-setting.tsx`: switch acessível na seção
       Geral com estados ativo/inativo/bloqueado/não suportado
-- [x] `components/chat/chat.tsx`: dispara via `onFinish` do `useChat`, ignorando
-      respostas abortadas, com erro ou desconectadas
+- [x] `components/chat/chat.tsx`: a resposta termina via `onFinish` da
+      instância persistente de chat (ver Passo 14), ignorando respostas
+      abortadas, com erro ou desconectadas
 - [x] `lib/toast-store.ts`: store fora do React com `useSyncExternalStore`.
       Elimina a referência global (`ToastProvider not mounted`), suporta
       `onDismiss`, pausa no hover e `aria-live`
 - [x] Chaves: `spectral:notifications:enabled` e `spectral:notifications:asked`
 - [x] Limitação conhecida: somente desktop. Android/iOS exigiriam Service Worker
       (`registration.showNotification`) e ficam para uma fase futura
+
+### Passo 14 — Continuidade do chat ao trocar de conversa
+
+Trocar de conversa não pode perder a resposta em andamento. O stream continua
+rodando em segundo plano e, ao voltar, a mensagem já está lá (inclusive parcial).
+
+- [x] `lib/chat-runtime.ts`: registry de instâncias `Chat` do AI SDK por
+      `chatId`, fora do ciclo de montagem do React. No servidor nada é
+      armazenado (evita vazar mensagens entre usuários)
+- [x] `components/chat/chat.tsx`: usa `useChat({ chat })` com a instância
+      externa. Desmontar a conversa não chama mais `chat.stop()`
+- [x] `app/app/chat-provider.tsx`: `openChat` reutiliza a instância viva
+      (sem fetch/race) quando a conversa já foi aberta nesta sessão
+- [x] `onFinish` centralizado na instância: atualiza a sidebar e notifica mesmo
+      com a conversa fora da tela
+- [x] Excluir uma conversa descarta a instância e interrompe o stream órfão
+- [x] `initialMessageIds` continua sendo capturado na montagem, evitando
+      reexecutar ações antigas ao voltar
+- [x] Limitação conhecida: recarregar a página no meio do stream depende do
+      `onEnd` com `isAborted` salvar a parcial (comportamento atual)
+
 
   
  

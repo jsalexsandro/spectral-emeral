@@ -11,6 +11,14 @@ import {
   type ReactNode,
 } from "react"
 import type { UIMessage } from "ai"
+import { useChatNotification } from "@/components/chat/chat-notification-provider"
+import {
+  disposeChatRuntime,
+  getChatMessages,
+  getChatModel,
+  hasChatRuntime,
+  setChatFinishHandler,
+} from "@/lib/chat-runtime"
 
 export type ChatSummary = {
   id: string
@@ -40,7 +48,7 @@ type ChatContextValue = {
   startNewChat: () => void
   openChat: (id: string) => Promise<void>
   refreshChats: () => Promise<void>
-  markChatPersisted: () => void
+  markChatPersisted: (chatId: string) => void
   deleteChat: (id: string) => Promise<boolean>
   renameChat: (id: string, title: string) => Promise<void>
 }
@@ -105,7 +113,16 @@ function toUIMessages(value: unknown): UIMessage[] {
   )
 }
 
+function getAssistantText(message: UIMessage): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+    .trim()
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
+  const { notify } = useChatNotification()
   const [active, setActive] = useState<ActiveChat>(createDraftChat)
   const openRequestRef = useRef(0)
   const [chats, setChats] = useState<ChatSummary[]>([])
@@ -145,12 +162,54 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeout)
   }, [refreshChats])
 
+  const markChatPersisted = useCallback(
+    (chatId: string) => {
+      setActive((current) =>
+        current.chatId === chatId ? { ...current, isDraft: false } : current,
+      )
+      void refreshChats()
+    },
+    [refreshChats],
+  )
+
+  // A resposta pode terminar com a conversa fora da tela: a instância vive no
+  // registry, então o handler continua valendo e atualiza sidebar/notificação.
+  useEffect(() => {
+    setChatFinishHandler((chatId, event) => {
+      markChatPersisted(chatId)
+
+      if (event.isAbort || event.isError || event.isDisconnect) {
+        return
+      }
+
+      const text = getAssistantText(event.message)
+
+      if (text) {
+        notify({ body: text })
+      }
+    })
+
+    return () => setChatFinishHandler(() => {})
+  }, [markChatPersisted, notify])
+
   const startNewChat = useCallback(() => {
     openRequestRef.current += 1
     setActive(createDraftChat())
   }, [])
 
   const openChat = useCallback(async (id: string) => {
+    if (hasChatRuntime(id)) {
+      openRequestRef.current += 1
+      setActive({
+        chatId: id,
+        isDraft: false,
+        isLoading: false,
+        messages: getChatMessages(id),
+        model: getChatModel(id),
+      })
+      return
+    }
+
     const requestId = openRequestRef.current + 1
     openRequestRef.current = requestId
 
@@ -192,11 +251,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const markChatPersisted = useCallback(() => {
-    setActive((current) => ({ ...current, isDraft: false }))
-    void refreshChats()
-  }, [refreshChats])
-
   const deleteChat = useCallback(
     async (id: string) => {
       try {
@@ -208,6 +262,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return false
         }
 
+        disposeChatRuntime(id)
         setChats((current) => current.filter((chat) => chat.id !== id))
         openRequestRef.current += 1
         setActive((current) => {
@@ -218,12 +273,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return createDraftChat()
         })
 
-    return true
-  } catch {
-    return false
-  }
-  },
-  [],
+        return true
+      } catch {
+        return false
+      }
+    },
+    [],
   )
 
   const renameChat = useCallback(
