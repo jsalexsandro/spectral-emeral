@@ -299,6 +299,10 @@ Referência técnica completa: [`specs/ui-generative-html.md`](./ui-generative-h
   - Cada ação nova exige alteração no catálogo, no `ActionRunner` e, quando
     precisa de servidor, em uma rota dedicada.
 
+  ### O script é limitado não conseguimo usar ferramentes de controle de devices
+  ### O get-theme não é usado no script
+  eu pedir pra ela criar uma div amarela e não conseguiu
+
   #### Próximo passo: registry de tools para widgets
 
   Hoje o catálogo é fechado: cada ação nova exige código novo. A evolução
@@ -436,33 +440,46 @@ Proximos passo:
     [ ] Registry de tools para widgets (opt-in, default-deny, confirmação) — ver Passo 42 e `specs/widget-tools.md`
 
     A IA consulta o tema atual via tool `get-theme` antes de `setTheme`, evitando trocar para um tema já ativo. Retorna `{ currentTheme, preference, resolvedTheme }`.
-    
 
-### Passo 13 — Notificações de chat
-
-Adiciona notificações nativas do navegador para avisar o usuário quando a IA
-termina de responder no chat, mesmo com a aba em segundo plano.
-
-- [x] `components/ui/chat-notification.tsx`: hook `useChatNotification` com
-      gerenciamento de permissão (`Notification.requestPermission`),
-      preferência salva em `localStorage` (`spectral-chat-notifications`),
-      toast de solicitação de permissão e toggle
-- [x] `components/ui/toast.tsx`: suporte a botão de ação nos toasts
-- [x] `components/chat/chat.tsx`: detecta fim da resposta via `onFinish` do
-      `useChat` e dispara notificação se a aba não estiver em foco
-- [x] `app/app/config-component.tsx`: toggle de notificações na seção Geral
-      das configurações
-- [x] Notificação só dispara se: permissão concedida, notificações ativadas,
-      e a janela não estiver com foco (usuário está fora da aba)
-- [x] Toast de solicitação aparece automaticamente na primeira resposta, com
-      opção "Ativar" para conceder permissão
-
-  
-  Sistema de view de file/site do outro lado tela assim como claude
+   Sistema de view de file/site do outro lado tela assim como claude
   Baixar files, Markdown
   Fazer LandingPage, fazer o oAuth, sistema de envio de email, e de conta verificada.
   
     
+    
+
+### Passo 13 — Notificações de chat
+
+Avisa o usuário quando a IA termina de responder: notificação nativa do sistema
+quando a aba está em segundo plano e toast in-app discreto quando a aba está
+visível.
+
+- [x] `lib/notifications.ts`: chaves de `localStorage`, detecção de suporte,
+      leitura de permissão e decisão pura do canal
+      (`native` | `in-app` | `none`) em `resolveNotificationChannel`
+- [x] `components/chat/chat-notification-provider.tsx`: **instância única** via
+      Context, montada em `app/app/layout.tsx`. Chat e Configurações compartilham
+      o mesmo estado (`enabled`, `permission`, `supported`, `asked`)
+- [x] Reconciliação automática: se a permissão foi revogada, o aviso efetivo
+      fica desligado (sem apagar a preferência, que volta a valer quando a
+      permissão for concedida de novo)
+- [x] Sincronização entre abas (`storage`) e acompanhamento de mudanças de
+      permissão via `navigator.permissions.query({ name: "notifications" })`
+- [x] Prompt de permissão aparece **uma única vez**, no fim da primeira resposta,
+      e grava `asked` tanto ao ativar quanto ao fechar/expirar
+- [x] `components/chat/notification-setting.tsx`: switch acessível na seção
+      Geral com estados ativo/inativo/bloqueado/não suportado
+- [x] `components/chat/chat.tsx`: dispara via `onFinish` do `useChat`, ignorando
+      respostas abortadas, com erro ou desconectadas
+- [x] `lib/toast-store.ts`: store fora do React com `useSyncExternalStore`.
+      Elimina a referência global (`ToastProvider not mounted`), suporta
+      `onDismiss`, pausa no hover e `aria-live`
+- [x] Chaves: `spectral:notifications:enabled` e `spectral:notifications:asked`
+- [x] Limitação conhecida: somente desktop. Android/iOS exigiriam Service Worker
+      (`registration.showNotification`) e ficam para uma fase futura
+
+  
+ 
 
 ### Passo 40 (futuro): configurações personalizadas de prompt
 

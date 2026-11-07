@@ -33,7 +33,7 @@ import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 import { AgentActivity } from "./agent-activity"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
-import { ChatNotificationToggle, useChatNotification } from "@/components/ui/chat-notification"
+import { useChatNotification } from "./chat-notification-provider"
 
 type ChatProps = {
   greeting?: string
@@ -142,12 +142,7 @@ function ChatSession({
 
   const { theme } = useTheme()
   const resolvedTheme = getResolvedTheme()
-  const {
-    setLastAssistantMessage,
-    notifyAssistantResponse,
-    shouldAskPermission,
-    requestPermission,
-  } = useChatNotification()
+  const { notify } = useChatNotification()
 
   const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
     id: chatId,
@@ -156,16 +151,19 @@ function ChatSession({
     onFinish: (response) => {
       onChatPersisted()
 
-      // Captura a última mensagem do assistente para notificação
+      if (response.isAbort || response.isError || response.isDisconnect) {
+        return
+      }
+
       const lastMessage = [...response.messages]
         .reverse()
-        .find((m) => m.role === "assistant")
+        .find((message) => message.role === "assistant")
 
-      if (lastMessage) {
-        const text = getMessageText(lastMessage)
-        setLastAssistantMessage(text)
-        notifyAssistantResponse()
+      if (!lastMessage) {
+        return
       }
+
+      notify({ body: getMessageText(lastMessage) })
     },
   })
 
@@ -225,29 +223,6 @@ function ChatSession({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" })
   }, [messages, status])
-
-  // Solicita permissão de notificação uma vez por sessão
-  useEffect(() => {
-    if (!shouldAskPermission) {
-      return
-    }
-
-    const timer = setTimeout(() => {
-      toast("Deseja ser notificado quando o chat responder?", {
-        description:
-          "Você receberá um aviso na tela mesmo com a aba em segundo plano.",
-        duration: 8000,
-        action: {
-          label: "Ativar",
-          onClick: () => {
-            void requestPermission()
-          },
-        },
-      })
-    }, 2000)
-
-    return () => clearTimeout(timer)
-  }, [shouldAskPermission, requestPermission])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

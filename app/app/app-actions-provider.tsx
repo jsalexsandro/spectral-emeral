@@ -30,8 +30,6 @@ function showToast(action: Extract<AppAction, { type: "toast" }>) {
   const options = {
     description: action.description,
     duration: action.duration ?? 4_000,
-    className: "border-border bg-card text-foreground",
-    descriptionClassName: "text-muted-foreground",
   }
 
   if (action.variant === "success") {
