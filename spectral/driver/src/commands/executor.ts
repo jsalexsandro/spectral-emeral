@@ -12,6 +12,12 @@ import {
   DeviceFileError,
   getDefaultFileSandbox,
 } from "./files.js"
+import {
+  DeviceWindowError,
+  focusWindow,
+  listWindows,
+  type DeviceWindow,
+} from "./windows.js"
 
 const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
@@ -329,16 +335,20 @@ async function openApp(appId: string): Promise<string> {
   throw unsupported("Abrir aplicativos não é suportado nesta plataforma.")
 }
 
-async function typeText(text: string): Promise<void> {
+async function typeText(
+  text: string,
+  windowId?: string,
+): Promise<DeviceWindow | undefined> {
+  const window = windowId ? await focusWindow(windowId) : undefined
   const safe = escapeSendKeys(text)
 
   console.log(
-    `[driver] typeText: length=${text.length} platform=${process.platform}`,
+    `[driver] typeText: length=${text.length} windowId=${windowId ?? "-"} platform=${process.platform}`,
   )
 
   if (process.platform === "win32") {
     await sendKeysWindows(safe)
-    return
+    return window
   }
 
   if (process.platform === "darwin") {
@@ -347,12 +357,12 @@ async function typeText(text: string): Promise<void> {
       'on run argv\n  tell application "System Events" to keystroke (item 1 of argv)\nend run',
       text,
     ])
-    return
+    return window
   }
 
   if (process.platform === "linux") {
     await run("xdotool", ["type", "--clearmodifiers", "--", text])
-    return
+    return window
   }
 
   throw unsupported("Digitação não é suportada nesta plataforma.")
@@ -361,13 +371,15 @@ async function typeText(text: string): Promise<void> {
 async function pressKey(
   key: DeviceKey,
   modifiers: readonly DeviceKeyModifier[],
-): Promise<void> {
+  windowId?: string,
+): Promise<DeviceWindow | undefined> {
+  const window = windowId ? await focusWindow(windowId) : undefined
   const combo = sendKeysPrefix(modifiers) + sendKeysToken(key)
 
   console.log(
     `[driver] pressKey: key="${key}" modifiers=${JSON.stringify(
       modifiers,
-    )} combo="${combo}" platform=${process.platform}`,
+    )} windowId=${windowId ?? "-"} combo="${combo}" platform=${process.platform}`,
   )
 
   if (process.platform === "win32") {
@@ -376,12 +388,12 @@ async function pressKey(
     }
 
     await sendKeysWindows(combo)
-    return
+    return window
   }
 
   if (process.platform === "darwin") {
     await run("osascript", ["-e", darwinPressKeyScript(key, modifiers)])
-    return
+    return window
   }
 
   if (process.platform === "linux") {
@@ -391,7 +403,7 @@ async function pressKey(
       "--",
       linuxCombo(key, modifiers),
     ])
-    return
+    return window
   }
 
   throw unsupported("Teclas não são suportadas nesta plataforma.")
@@ -414,12 +426,24 @@ export async function executeDeviceCommand(
         const name = await openApp(command.input.appId)
         return { ok: true, output: "Aplicativo aberto: " + name }
       }
-      case "type-text":
-        await typeText(command.input.text)
-        return { ok: true }
-      case "press-key":
-        await pressKey(command.input.key, command.input.modifiers)
-        return { ok: true }
+      case "type-text": {
+        const window = await typeText(command.input.text, command.input.windowId)
+        return { ok: true, ...(window ? { window } : {}) }
+      }
+      case "press-key": {
+        const window = await pressKey(
+          command.input.key,
+          command.input.modifiers,
+          command.input.windowId,
+        )
+        return { ok: true, ...(window ? { window } : {}) }
+      }
+      case "list-windows":
+        return { ok: true, windows: await listWindows(command.input) }
+      case "focus-window": {
+        const window = await focusWindow(command.input.windowId)
+        return { ok: true, window }
+      }
 
       case "list-files":
         return { ...(await files.listFiles(command.input)), ok: true }
@@ -448,6 +472,10 @@ export async function executeDeviceCommand(
         }
     }
   } catch (error) {
+    if (error instanceof DeviceWindowError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
     if (error instanceof DeviceFileError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }

@@ -32,8 +32,10 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-list-apps` | Lista os aplicativos que o PC permite abrir | `{ deviceId }` | `apps[]` com `id` e `name` |
 | `device-open-url` | Abre uma URL no navegador padrão do PC | `{ deviceId, url }` | `ok` |
 | `device-open-app` | Abre um aplicativo da allowlist no PC | `{ deviceId, appId }` | `ok` + `output` |
-| `device-type-text` | Digita texto na janela em foco do PC | `{ deviceId, text }` | `ok` (requer confirmação em texto antes de executar) |
-| `device-press-key` | Pressiona uma tecla ou combinação no PC | `{ deviceId, key, modifiers? }` | `ok` (requer confirmação em texto antes de executar) |
+| `device-type-text` | Digita texto na janela alvo do PC | `{ deviceId, text, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
+| `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
+| `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
+| `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
 | `device-list-files` | Lista arquivos e pastas do PC (somente leitura) | `{ deviceId, path?, depth?, showHidden?, maxEntries? }` | `entries[]` com nome, caminho, tipo, tamanho e modificação |
 | `device-read-file` | Lê conteúdo de texto de um arquivo (somente leitura) | `{ deviceId, path, offset?, limit? }` | `file` com `content`, linhas e `truncated` |
 | `device-glob` | Busca arquivos por padrão glob (somente leitura) | `{ deviceId, pattern, path?, showHidden?, maxResults? }` | `paths[]` de arquivos |
@@ -53,12 +55,21 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   `chrome`, `edge`, `firefox`, `notepad`, `explorer`, `vscode`, `terminal` e
   `calculator`. Use `device-list-apps` antes para descobrir os ids disponíveis.
 - `device-type-text` aceita de 1 a 2000 caracteres e rejeita caracteres de
-  controle (exceto tab, CR e LF). O texto vai para a janela que estiver em foco;
-  o driver não escolhe a janela.
+  controle (exceto tab, CR e LF). Sem `windowId`, o texto vai para a janela que
+  estiver em foco; com `windowId`, o driver foca a janela e digita no mesmo
+  comando.
 - `device-press-key` aceita letras `a-z`, dígitos `0-9`, `enter`, `tab`,
   `escape`, `backspace`, `delete`, `space`, `insert`, setas, `home`, `end`,
   `pageup`, `pagedown` e `f1`-`f12`, com modificadores `ctrl`, `alt`, `shift` e
-  `meta`. As combinações `alt+F4` e `ctrl+alt+delete` são bloqueadas.
+  `meta`. As combinações `alt+F4` e `ctrl+alt+delete` são bloqueadas. Também
+  aceita `windowId` opcional.
+- `device-list-windows` retorna até 20 janelas por padrão (máximo 30), com
+  `includeMinimized` para incluir janelas minimizadas. Use antes de digitar ou
+  pressionar teclas para escolher a janela certa.
+- `device-focus-window` recebe um `windowId` retornado por
+  `device-list-windows`. Se o SO bloquear o foco, retorna `focus_denied`; se a
+  janela sumiu, retorna `window_not_found`. No Wayland, ambos retornam
+  `unsupported_environment`.
 - `device-list-files` lista a pasta do usuário por padrão, com `depth` de 1 a 3
   e no máximo 200 itens. Não segue links simbólicos.
 - `device-read-file` lê até 2000 linhas / 64 KB por chamada, com `offset` e
@@ -102,21 +113,24 @@ carga do widget.
 - Timeout padrão de 15s por comando (máximo de 60s).
 - O endpoint interno do backend exige `x-internal-secret` e nunca deve ser
   exposto publicamente.
-- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco.
-  O prompt exige confirmação antes de conteúdo sensível e proíbe senhas.
-- O driver não executa shell arbitrário, não escreve/edita arquivos e não captura
-  tela. A leitura de arquivos é restrita à pasta de usuário com sandbox e denylist
-  de caminhos sensíveis (`.ssh`, `.gnupg`, `.aws`, credenciais, perfis de
-  navegador, arquivos do sistema, etc.).
+- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco
+  quando não recebem `windowId`. O prompt exige que a IA liste as janelas antes,
+  confirme antes de conteúdo sensível e proíba senhas.
+- O driver não executa shell arbitrário fora da allowlist, escreve/edita apenas
+  dentro do sandbox da pasta do usuário e não captura tela. A leitura de arquivos
+  é restrita à pasta de usuário com sandbox e denylist de caminhos sensíveis
+  (`.ssh`, `.gnupg`, `.aws`, credenciais, perfis de navegador, arquivos do
+  sistema, etc.).
 - O driver deve ser iniciado com privilégios de administrador (PowerShell como
   Administrador ou `sudo`) para que comandos futuros possam ser elevados. Isso é
   refletido em `device-get-os` (`elevated`).
 
 ## Confirmação no chat
 
-- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco.
-  Antes de executá-las, o assistente pede confirmação em texto (sim/não).
-  O comando só é enviado ao dispositivo após o usuário confirmar.
+- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco
+  quando não recebem `windowId`. Antes de executá-las, o assistente lista as
+  janelas, escolhe a alvo e pede confirmação em texto (sim/não). O comando só é
+  enviado ao dispositivo após o usuário confirmar.
 - Se o usuário não confirmar, o comando não é executado.
 - No futuro, haverá um modo/opção `requireApproval: false` (autônomo) para
   desativar confirmações.

@@ -13,6 +13,8 @@ export const DEVICE_COMMAND_NAMES = [
   "write-file",
   "edit-file",
   "run-command",
+  "list-windows",
+  "focus-window",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -105,6 +107,13 @@ const DEVICE_KEY_SET = new Set<string>(DEVICE_KEYS)
 
 export const DEVICE_URL_MAX_LENGTH = 2048
 export const DEVICE_TEXT_MAX_LENGTH = 2000
+export const DEVICE_WINDOW_ID_MAX_LENGTH = 128
+export const DEVICE_WINDOW_TITLE_MAX_LENGTH = 120
+export const DEVICE_WINDOW_PROCESS_NAME_MAX_LENGTH = 80
+export const DEVICE_WINDOW_LIMIT_MIN = 1
+export const DEVICE_WINDOW_LIMIT_MAX = 30
+export const DEVICE_WINDOW_LIMIT_DEFAULT = 20
+export const DEVICE_WINDOW_ID_PATTERN = /^[A-Za-z0-9:._-]{1,128}$/
 export const DEVICE_APP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 export const DEVICE_COMMAND_TIMEOUT_MIN_MS = 1_000
 export const DEVICE_COMMAND_TIMEOUT_MAX_MS = 60_000
@@ -147,6 +156,23 @@ export type DeviceOsInfo = {
   version: string
   architecture: string
   elevated?: boolean
+}
+
+export type DeviceWindowBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type DeviceWindow = {
+  id: string
+  title: string
+  processId: number
+  processName: string
+  bounds: DeviceWindowBounds | null
+  focused: boolean
+  minimized: boolean
 }
 
 export type DeviceFileEntryType =
@@ -206,8 +232,14 @@ export type DeviceCommandInputMap = {
   "open-app": { appId: string }
   "list-apps": Record<string, never>
   "get-os": Record<string, never>
-  "type-text": { text: string }
-  "press-key": { key: DeviceKey; modifiers: DeviceKeyModifier[] }
+  "type-text": { text: string; windowId?: string }
+  "press-key": {
+    key: DeviceKey
+    modifiers: DeviceKeyModifier[]
+    windowId?: string
+  }
+  "list-windows": { includeMinimized: boolean; limit: number }
+  "focus-window": { windowId: string }
   "list-files": {
     path?: string
     depth: number
@@ -258,17 +290,19 @@ export type DeviceCommandSuccess = {
   output?: string
   apps?: DeviceAppInfo[]
   os?: DeviceOsInfo
-      entries?: DeviceFileEntry[]
-      file?: DeviceFileContent
-      paths?: string[]
-      matches?: DeviceGrepMatch[]
-      truncated?: boolean
-      total?: number
-      filesScanned?: number
-      admin?: boolean
-      write?: DeviceFileWriteResult
-      edit?: DeviceFileEditResult
-      run?: DeviceCommandRunResult
+  entries?: DeviceFileEntry[]
+  file?: DeviceFileContent
+  paths?: string[]
+  matches?: DeviceGrepMatch[]
+  truncated?: boolean
+  total?: number
+  filesScanned?: number
+  admin?: boolean
+  write?: DeviceFileWriteResult
+  edit?: DeviceFileEditResult
+  run?: DeviceCommandRunResult
+  windows?: DeviceWindow[]
+  window?: DeviceWindow
 }
 
 export type DeviceCommandFailure = {
@@ -295,6 +329,10 @@ export function isDeviceCommandName(value: string): value is DeviceCommandName {
 
 export function isDeviceKey(value: string): value is DeviceKey {
   return DEVICE_KEY_SET.has(value)
+}
+
+export function isDeviceWindowId(value: string): boolean {
+  return DEVICE_WINDOW_ID_PATTERN.test(value)
 }
 
 export function isAllowedDeviceUrl(value: string): boolean {
@@ -425,6 +463,7 @@ function parseOpenApp(input: unknown): DeviceCommand {
 
 function parseTypeText(input: unknown): DeviceCommand {
   const text = readString(input, "text", "invalid_text")
+  const windowId = readOptionalWindowId(input)
 
   if (text.length === 0 || text.length > DEVICE_TEXT_MAX_LENGTH) {
     throw new DeviceCommandValidationError(
@@ -440,11 +479,15 @@ function parseTypeText(input: unknown): DeviceCommand {
     )
   }
 
-  return { command: "type-text", input: { text } }
+  return {
+    command: "type-text",
+    input: { text, ...(windowId ? { windowId } : {}) },
+  }
 }
 
 function parsePressKey(input: unknown): DeviceCommand {
   const key = readString(input, "key", "invalid_key").trim().toLowerCase()
+  const windowId = readOptionalWindowId(input)
 
   if (!isDeviceKey(key)) {
     throw new DeviceCommandValidationError(
@@ -462,7 +505,68 @@ function parsePressKey(input: unknown): DeviceCommand {
     )
   }
 
-  return { command: "press-key", input: { key, modifiers } }
+  return {
+    command: "press-key",
+    input: { key, modifiers, ...(windowId ? { windowId } : {}) },
+  }
+}
+
+function readOptionalWindowId(input: unknown): string | undefined {
+  if (
+    !isRecord(input) ||
+    input.windowId === undefined ||
+    input.windowId === null
+  ) {
+    return undefined
+  }
+
+  if (typeof input.windowId !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      'Campo "windowId" deve ser um texto.',
+    )
+  }
+
+  const value = input.windowId.trim()
+
+  if (value.length === 0) {
+    return undefined
+  }
+
+  if (!isDeviceWindowId(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      "Identificador de janela inválido.",
+    )
+  }
+
+  return value
+}
+
+function parseListWindows(input: unknown): DeviceCommand {
+  const includeMinimized = readBoolean(input, "includeMinimized", false)
+  const limit = readInteger(
+    input,
+    "limit",
+    DEVICE_WINDOW_LIMIT_DEFAULT,
+    DEVICE_WINDOW_LIMIT_MIN,
+    DEVICE_WINDOW_LIMIT_MAX,
+  )
+
+  return { command: "list-windows", input: { includeMinimized, limit } }
+}
+
+function parseFocusWindow(input: unknown): DeviceCommand {
+  const windowId = readOptionalWindowId(input)
+
+  if (!windowId) {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      'Campo "windowId" é obrigatório.',
+    )
+  }
+
+  return { command: "focus-window", input: { windowId } }
 }
 
 function readOptionalPath(input: unknown): string | undefined {
@@ -896,5 +1000,9 @@ export function parseDeviceCommand(
       return parseEditFile(input)
     case "run-command":
       return parseRunCommand(input)
+    case "list-windows":
+      return parseListWindows(input)
+    case "focus-window":
+      return parseFocusWindow(input)
   }
 }

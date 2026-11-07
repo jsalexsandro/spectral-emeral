@@ -12,7 +12,7 @@ import type { DeviceIdentity } from "./identity.js"
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 45_000
-const MAX_PAYLOAD_BYTES = 16 * 1024
+const MAX_PAYLOAD_BYTES = 256 * 1024
 const HANDSHAKE_TIMEOUT_MS = 10_000
 
 const FATAL_ERROR_CODES = new Set([

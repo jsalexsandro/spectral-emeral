@@ -32,11 +32,19 @@ export {
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
   DEVICE_RUN_OUTPUT_MAX_BYTES,
+  DEVICE_WINDOW_ID_MAX_LENGTH,
+  DEVICE_WINDOW_TITLE_MAX_LENGTH,
+  DEVICE_WINDOW_PROCESS_NAME_MAX_LENGTH,
+  DEVICE_WINDOW_LIMIT_MIN,
+  DEVICE_WINDOW_LIMIT_MAX,
+  DEVICE_WINDOW_LIMIT_DEFAULT,
+  DEVICE_WINDOW_ID_PATTERN,
   DeviceCommandValidationError,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   isDeviceCommandName,
   isDeviceKey,
+  isDeviceWindowId,
   parseDeviceCommand,
 } from "@/spectral/shared/device-commands"
 
@@ -58,4 +66,6 @@ export type {
   DeviceKey,
   DeviceKeyModifier,
   DeviceOsInfo,
+  DeviceWindow,
+  DeviceWindowBounds,
 } from "@/spectral/shared/device-commands"

@@ -179,4 +179,69 @@ describe("device command contract", () => {
       input: {},
     })
   })
+
+  it("normalizes list-windows with defaults and limits", () => {
+    expect(parseDeviceCommand("list-windows", {})).toEqual({
+      command: "list-windows",
+      input: { includeMinimized: false, limit: 20 },
+    })
+
+    expect(
+      parseDeviceCommand("list-windows", {
+        includeMinimized: true,
+        limit: 5,
+      }),
+    ).toEqual({
+      command: "list-windows",
+      input: { includeMinimized: true, limit: 5 },
+    })
+
+    expect(() =>
+      parseDeviceCommand("list-windows", { limit: 31 }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("requires a valid window id for focus-window", () => {
+    expect(
+      parseDeviceCommand("focus-window", { windowId: " 123456 " }),
+    ).toEqual({
+      command: "focus-window",
+      input: { windowId: "123456" },
+    })
+
+    expect(() => parseDeviceCommand("focus-window", {})).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() =>
+      parseDeviceCommand("focus-window", { windowId: "abc; rm -rf /" }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("accepts an optional window id on type-text and press-key", () => {
+    expect(
+      parseDeviceCommand("type-text", { text: "olá", windowId: "123:0" }),
+    ).toEqual({
+      command: "type-text",
+      input: { text: "olá", windowId: "123:0" },
+    })
+
+    expect(
+      parseDeviceCommand("press-key", {
+        key: "c",
+        modifiers: ["ctrl"],
+        windowId: "0x3a00007",
+      }),
+    ).toEqual({
+      command: "press-key",
+      input: {
+        key: "c",
+        modifiers: ["ctrl"],
+        windowId: "0x3a00007",
+      },
+    })
+
+    expect(() =>
+      parseDeviceCommand("type-text", { text: "olá", windowId: "a b" }),
+    ).toThrow(DeviceCommandValidationError)
+  })
 })

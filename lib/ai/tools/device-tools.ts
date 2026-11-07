@@ -35,6 +35,11 @@ import {
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
+  DEVICE_WINDOW_ID_MAX_LENGTH,
+  DEVICE_WINDOW_ID_PATTERN,
+  DEVICE_WINDOW_LIMIT_DEFAULT,
+  DEVICE_WINDOW_LIMIT_MAX,
+  DEVICE_WINDOW_LIMIT_MIN,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   type DeviceCommand,
@@ -59,6 +64,8 @@ export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
 export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
 export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
 export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
+export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
+export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 
 const deviceIdSchema = z
   .string()
@@ -104,9 +111,20 @@ export const deviceGetOsInputSchema = z.object({
   deviceId: deviceIdSchema,
 })
 
+const deviceWindowIdSchema = z
+  .string()
+  .min(1)
+  .max(DEVICE_WINDOW_ID_MAX_LENGTH)
+  .regex(DEVICE_WINDOW_ID_PATTERN, "Identificador de janela inválido.")
+
 export const deviceTypeTextInputSchema = z.object({
   deviceId: deviceIdSchema,
   text: z.string().min(1).max(DEVICE_TEXT_MAX_LENGTH),
+  windowId: deviceWindowIdSchema
+    .optional()
+    .describe(
+      "Id da janela retornado por device-list-windows. Quando informado, o driver foca a janela antes de digitar.",
+    ),
 })
 
 export const devicePressKeyInputSchema = z
@@ -114,6 +132,11 @@ export const devicePressKeyInputSchema = z
     deviceId: deviceIdSchema,
     key: deviceKeySchema,
     modifiers: z.array(deviceModifierSchema).max(4).optional(),
+    windowId: deviceWindowIdSchema
+      .optional()
+      .describe(
+        "Id da janela retornado por device-list-windows. Quando informado, o driver foca a janela antes de pressionar a tecla.",
+      ),
   })
   .refine(
     (value) => !isBlockedKeyCombination(value.key, value.modifiers ?? []),
@@ -122,6 +145,22 @@ export const devicePressKeyInputSchema = z
       path: ["key"],
     },
   )
+
+export const deviceListWindowsInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  includeMinimized: z.boolean().default(false),
+  limit: z
+    .number()
+    .int()
+    .min(DEVICE_WINDOW_LIMIT_MIN)
+    .max(DEVICE_WINDOW_LIMIT_MAX)
+    .default(DEVICE_WINDOW_LIMIT_DEFAULT),
+})
+
+export const deviceFocusWindowInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  windowId: deviceWindowIdSchema,
+})
 
 export const deviceListFilesInputSchema = z.object({
   deviceId: deviceIdSchema,
@@ -317,6 +356,8 @@ function toCommandToolResult(
     ...(output.result.write ? { write: output.result.write } : {}),
     ...(output.result.edit ? { edit: output.result.edit } : {}),
     ...(output.result.run ? { run: output.result.run } : {}),
+    ...(output.result.windows ? { windows: output.result.windows } : {}),
+    ...(output.result.window ? { window: output.result.window } : {}),
   }
 }
 
@@ -370,13 +411,14 @@ const getOsDescription = [
 ].join("\n")
 
 const typeTextDescription = [
-  "Digita texto no aplicativo que está em foco no dispositivo.",
-  "O driver envia as teclas para a janela ativa; ele não escolhe nem confirma qual janela está em foco.",
+  "Digita texto na janela alvo do dispositivo.",
+  "Use `device-list-windows` antes para escolher a janela e prefira informar `windowId`; sem ele, o texto vai para a janela que estiver em foco.",
   "Confirme com o usuário antes de digitar conteúdo sensível e evite senhas.",
 ].join("\n")
 
 const pressKeyDescription = [
-  "Pressiona uma tecla ou combinação no dispositivo em foco.",
+  "Pressiona uma tecla ou combinação na janela alvo do dispositivo.",
+  "Use `device-list-windows` antes para escolher a janela e prefira informar `windowId`; sem ele, o comando vai para a janela que estiver em foco.",
   "Teclas: letras a-z, dígitos 0-9, enter, tab, escape, backspace, delete, space, insert, setas, home, end, pageup, pagedown e f1-f12.",
   "Modificadores: ctrl, alt, shift e meta. As combinações alt+f4 e ctrl+alt+delete são bloqueadas.",
   "Use com cuidado: atalhos podem fechar janelas ou alterar o sistema.",
@@ -437,6 +479,19 @@ const runCommandDescription = [
   "Comandos destrutivos (rm, del, shutdown, sudo, etc.) são bloqueados.",
   "Saída limitada a 64 KB. Timeout configurável (padrão 15s, máximo 60s).",
   "Use com cuidado: qualquer comando pode afetar o sistema do dispositivo.",
+].join("\n")
+
+const listWindowsDescription = [
+  "Lista as janelas abertas em um dispositivo online.",
+  "Retorna título, processo, limites na tela e qual janela está em foco.",
+  "Use antes de `device-type-text` ou `device-press-key` para escolher a janela certa em vez de digitar na janela ativa por acaso.",
+  "Retorna até 20 janelas por padrão (máximo 30). Janelas minimizadas ficam de fora, a menos que `includeMinimized` seja true.",
+].join("\n")
+
+const focusWindowDescription = [
+  "Foca uma janela específica de um dispositivo online.",
+  "Informe o `windowId` retornado por `device-list-windows`.",
+  "Se o sistema operacional bloquear o foco, retorna `focus_denied`; nesse caso peça ao usuário para clicar na janela.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -562,11 +617,11 @@ export function createDeviceTools(userId: string) {
     [DEVICE_TYPE_TEXT_TOOL_NAME]: tool({
       description: typeTextDescription,
       inputSchema: deviceTypeTextInputSchema,
-      execute: async ({ deviceId, text }) => {
+      execute: async ({ deviceId, text, windowId }) => {
         try {
           return await runDeviceCommand(userId, deviceId, {
             command: "type-text",
-            input: { text },
+            input: { text, ...(windowId ? { windowId } : {}) },
           })
         } catch (error) {
           return {
@@ -583,11 +638,15 @@ export function createDeviceTools(userId: string) {
     [DEVICE_PRESS_KEY_TOOL_NAME]: tool({
       description: pressKeyDescription,
       inputSchema: devicePressKeyInputSchema,
-      execute: async ({ deviceId, key, modifiers }) => {
+      execute: async ({ deviceId, key, modifiers, windowId }) => {
         try {
           return await runDeviceCommand(userId, deviceId, {
             command: "press-key",
-            input: { key, modifiers: modifiers ?? [] },
+            input: {
+              key,
+              modifiers: modifiers ?? [],
+              ...(windowId ? { windowId } : {}),
+            },
           })
         } catch (error) {
           return {
@@ -765,6 +824,48 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-run-command.",
+          }
+        }
+      },
+    }),
+    [DEVICE_LIST_WINDOWS_TOOL_NAME]: tool({
+      description: listWindowsDescription,
+      inputSchema: deviceListWindowsInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "list-windows",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-list-windows.",
+          }
+        }
+      },
+    }),
+    [DEVICE_FOCUS_WINDOW_TOOL_NAME]: tool({
+      description: focusWindowDescription,
+      inputSchema: deviceFocusWindowInputSchema,
+      execute: async ({ deviceId, windowId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "focus-window",
+            input: { windowId },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-focus-window.",
           }
         }
       },

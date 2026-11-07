@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 20
+export const SYSTEM_PROMPT_VERSION = 21
 
 export type SystemPromptChange = {
   version: number

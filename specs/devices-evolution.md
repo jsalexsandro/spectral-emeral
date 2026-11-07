@@ -29,9 +29,10 @@ O que já existe e funciona:
 
 - **A IA é cega.** Não existe `device-screenshot`. Ela digita e torce para ter
   acertado.
-- **A IA é míope.** `device-type-text` e `device-press-key` agem sobre a janela
-  em foco, mas não há como listar ou focar janelas — não dá para saber onde está
-  digitando.
+- **A IA era míope.** `device-type-text` e `device-press-key` agiam sobre a
+  janela em foco, sem como listar ou focar janelas. Isso foi resolvido com
+  `device-list-windows` + `device-focus-window` (item 2), e `type-text`/
+  `press-key` agora aceitam `windowId` para focar e agir no mesmo comando.
 - **O `device-run-command` não roda nada útil.** A allowlist em
   `spectral/driver/src/commands/files.ts` só tem `dir`, `type`, `echo`,
   `tasklist`, `systeminfo` etc., e o denylist bloqueia `node`, `git`, `python`,
@@ -45,7 +46,7 @@ O que já existe e funciona:
 - **Não há política por dispositivo, aprovação real nem auditoria.** A
   confirmação é apenas texto no chat.
 - **O transporte limita o tamanho e a duração.** O WebSocket do backend usa
-  `maxPayload` de 16 KB e cada comando tem timeout máximo de 60s, com um comando
+  `maxPayload` de 256 KB e cada comando tem timeout máximo de 60s, com um comando
   em voo por PC (`device_busy`).
 
 ---
@@ -70,14 +71,18 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Onde mexer:** `spectral/shared/device-commands.ts`,
   `spectral/driver/src/commands/screen.ts`, `lib/ai/tools/device-tools.ts`,
   prompt em `lib/ai/prompts/sections/devices.ts`, widget de visualização.
-- **Atenção:** base64 de imagem não cabe no `maxPayload` de 16 KB. Salvar em
+- **Atenção:** base64 de imagem não cabe no `maxPayload` de 256 KB. Salvar em
   storage e devolver uma URL/referência, ou criar um canal binário separado.
 - **Pronto quando:** a IA tira um print, vê a imagem, clica em um elemento e
   confirma por um segundo print.
 - **Esforço:** M · **Risco:** M (privacidade da tela).
 
-#### 2. `device-list-windows` + `device-focus-window` — janelas
+#### 2. `device-list-windows` + `device-focus-window` — janelas ✅
 
+- **Status:** implementado. Contrato em `spectral/shared/device-commands.ts`,
+  driver em `spectral/driver/src/commands/windows.ts`, tools
+  `device-list-windows`/`device-focus-window` e `windowId` opcional em
+  `device-type-text`/`device-press-key`.
 - **O que:** listar janelas abertas (título, processo, bounds, foco) e focar uma
   janela por id ou título.
 - **Por quê:** elimina o risco de digitar na janela errada e permite "abra o VS
@@ -87,6 +92,11 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Pronto quando:** `type-text`/`press-key` puderem ser precedidos por foco
   explícito e o prompt orientar esse fluxo.
 - **Esforço:** M · **Risco:** baixo.
+- **Limites:** `windowId` com até 128 caracteres (`^[A-Za-z0-9:._-]+$`),
+  `list-windows` com `limit` de 1 a 30 (padrão 20) e título/processo truncados.
+  Windows usa PowerShell + P/Invoke; macOS usa System Events (exige
+  Acessibilidade); Linux usa `wmctrl`/`xdotool` em X11, com
+  `unsupported_environment` no Wayland.
 
 #### 3. Mouse — `device-click`, `device-move-mouse`, `device-scroll`, `device-drag`
 

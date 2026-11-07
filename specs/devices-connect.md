@@ -90,7 +90,7 @@ Transporte `ws://` em desenvolvimento e `wss://` atrás de TLS em produção.
   online quando `now - lastSeenAt <= 45s`.
 - Cada heartbeat consulta a revogação de forma condicional; dispositivo revogado
   recebe `revoked_device` e o socket é fechado.
-- `maxPayload` de 16 KB e rate limit em memória por IP.
+- `maxPayload` de 256 KB e rate limit em memória por IP.
 
 ### Códigos de fechamento
 
@@ -139,8 +139,10 @@ Backend --HTTP 200 { ok, result }--> Tool
 | `open-app` | `{ appId }` | `ok` + `output` |
 | `list-apps` | `{}` | `ok` + `apps[{ id, name }]` |
 | `get-os` | `{}` | `ok` + `os{ platform, type, release, version, architecture, elevated }` |
-| `type-text` | `{ text }` | `ok` |
-| `press-key` | `{ key, modifiers? }` | `ok` |
+| `type-text` | `{ text, windowId? }` | `ok` + `window` |
+| `press-key` | `{ key, modifiers?, windowId? }` | `ok` + `window` |
+| `list-windows` | `{ includeMinimized?, limit? }` | `ok` + `windows[{ id, title, processId, processName, bounds, focused, minimized }]` |
+| `focus-window` | `{ windowId }` | `ok` + `window` |
 | `list-files` | `{ path?, depth?, showHidden?, maxEntries? }` | `ok` + `entries[]`, `total`, `truncated` |
 | `read-file` | `{ path, offset?, limit? }` | `ok` + `file{ content, startLine, endLine, totalLines, truncated, size }` |
 | `glob` | `{ pattern, path?, showHidden?, maxResults? }` | `ok` + `paths[]`, `total`, `truncated` |
@@ -156,10 +158,17 @@ Backend --HTTP 200 { ok, result }--> Tool
 - `get-os`: sem input; retorna `platform`, `type`, `release`, `version` e
   `architecture` do `node:os` do driver.
 - `type-text`: 1 a 2000 caracteres; caracteres de controle são rejeitados
-  (exceto tab, CR e LF).
+  (exceto tab, CR e LF). `windowId` opcional (até 128 caracteres) faz o driver
+  focar a janela antes de digitar.
 - `press-key`: teclas `a-z`, `0-9`, `enter`, `tab`, `escape`, `backspace`,
   `delete`, `space`, `insert`, setas, `home`, `end`, `pageup`, `pagedown` e
-  `f1`-`f12`; modificadores `ctrl`, `alt`, `shift` e `meta`.
+  `f1`-`f12`; modificadores `ctrl`, `alt`, `shift` e `meta`. `windowId` opcional
+  faz o driver focar a janela antes da tecla.
+- `list-windows`: `limit` entre 1 e 30 (padrão 20); `includeMinimized` padrão
+  `false`; título truncado em 120 e nome do processo em 80 caracteres.
+- `focus-window`: `windowId` obrigatório no padrão `^[A-Za-z0-9:._-]+$`.
+  Retorna `window_not_found` se a janela sumiu e `focus_denied` se o SO bloquear
+  o foco. No Wayland retorna `unsupported_environment`.
 - `alt+F4` e `ctrl+alt+delete` são bloqueados no contrato e no driver.
 - `list-files`: caminho padrão é a pasta do usuário; `depth` entre 1 e 3;
   `maxEntries` entre 1 e 500 (padrão 200); não segue links simbólicos.
@@ -177,9 +186,14 @@ Backend --HTTP 200 { ok, result }--> Tool
   arquivos do sistema). Links simbólicos no caminho alvo são rejeitados.
 - O driver usa `execFile`/`spawn` com argumentos separados (sem shell
   interpolado), `windowsHide` e timeout de execução de 10s.
-- `type-text` e `press-key` agem sobre a janela em foco; o driver não escolhe
-  nem valida qual janela está ativa. Por isso o prompt exige confirmação em texto
-  antes de conteúdo sensível e proíbe senhas.
+- `type-text` e `press-key` agem sobre a janela em foco quando não recebem
+  `windowId`; com `windowId`, o driver foca a janela e executa a ação no mesmo
+  comando. O prompt exige confirmação em texto antes de conteúdo sensível e
+  proíbe senhas.
+- Janelas são listadas/focadas com APIs nativas: PowerShell + P/Invoke no
+  Windows, System Events no macOS (exige Acessibilidade) e `wmctrl`/`xdotool`
+  no Linux X11. Wayland não permite enumerar/controlar janelas globalmente e
+  retorna `unsupported_environment`.
 
 ## Driver
 
@@ -235,9 +249,9 @@ e orienta executar `--pair`. Se outra instância assumir o dispositivo
   publicamente; em produção, mantenha-o na rede privada ou atrás do proxy.
 - No Windows, `chmod 0600` é emulado de forma limitada; proteja o diretório do
   usuário com as permissões do sistema.
-- O executor não controla qual janela está em foco e não captura tela. Arquivos
-  são restritos à pasta do usuário com denylist (leitura, escrita e edição); não
-  há shell arbitrário nem execução fora da allowlist.
+- O executor lista e foca janelas, mas ainda não captura tela. Arquivos são
+  restritos à pasta do usuário com denylist (leitura, escrita e edição); não há
+  shell arbitrário nem execução fora da allowlist.
 
 ## Próximos passos
 

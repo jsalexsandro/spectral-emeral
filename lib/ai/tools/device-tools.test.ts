@@ -16,6 +16,8 @@ import {
   DEVICE_WRITE_FILE_TOOL_NAME,
   DEVICE_EDIT_FILE_TOOL_NAME,
   DEVICE_RUN_COMMAND_TOOL_NAME,
+  DEVICE_LIST_WINDOWS_TOOL_NAME,
+  DEVICE_FOCUS_WINDOW_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
   deviceOpenAppInputSchema,
@@ -26,6 +28,8 @@ import {
   deviceGlobInputSchema,
   deviceGrepInputSchema,
   deviceCheckAdminInputSchema,
+  deviceListWindowsInputSchema,
+  deviceFocusWindowInputSchema,
   selectOnlineDevices,
   toDeviceToolSummary,
 } from "./device-tools"
@@ -101,6 +105,8 @@ describe("device tools", () => {
         DEVICE_WRITE_FILE_TOOL_NAME,
         DEVICE_EDIT_FILE_TOOL_NAME,
         DEVICE_RUN_COMMAND_TOOL_NAME,
+        DEVICE_LIST_WINDOWS_TOOL_NAME,
+        DEVICE_FOCUS_WINDOW_TOOL_NAME,
       ].sort(),
     )
 
@@ -243,5 +249,60 @@ describe("device tools", () => {
     ).toBe(true)
 
     expect(deviceCheckAdminInputSchema.safeParse({}).success).toBe(false)
+  })
+
+  it("valida device-list-windows e device-focus-window", () => {
+    expect(
+      deviceListWindowsInputSchema.safeParse({
+        deviceId: "device-1",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceListWindowsInputSchema.safeParse({
+        deviceId: "device-1",
+        includeMinimized: true,
+        limit: 30,
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceListWindowsInputSchema.safeParse({
+        deviceId: "device-1",
+        limit: 31,
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceFocusWindowInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "0x3a00007",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceFocusWindowInputSchema.safeParse({
+        deviceId: "device-1",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("aceita windowId em type-text e press-key", () => {
+    expect(
+      devicePressKeyInputSchema.safeParse({
+        deviceId: "device-1",
+        key: "c",
+        modifiers: ["ctrl"],
+        windowId: "123:0",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      devicePressKeyInputSchema.safeParse({
+        deviceId: "device-1",
+        key: "c",
+        windowId: "a b",
+      }).success,
+    ).toBe(false)
   })
 })
