@@ -217,6 +217,31 @@ describe("device command contract", () => {
     ).toThrow(DeviceCommandValidationError)
   })
 
+  it("normalizes window action commands", () => {
+    const commands = [
+      "minimize-window",
+      "maximize-window",
+      "restore-window",
+      "close-window",
+    ] as const
+
+    for (const command of commands) {
+      expect(
+        parseDeviceCommand(command, { windowId: " 123:0 " }),
+      ).toEqual({
+        command,
+        input: { windowId: "123:0" },
+      })
+
+      expect(() => parseDeviceCommand(command, {})).toThrow(
+        DeviceCommandValidationError,
+      )
+      expect(() =>
+        parseDeviceCommand(command, { windowId: "abc; rm -rf /" }),
+      ).toThrow(DeviceCommandValidationError)
+    }
+  })
+
   it("accepts an optional window id on type-text and press-key", () => {
     expect(
       parseDeviceCommand("type-text", { text: "olá", windowId: "123:0" }),

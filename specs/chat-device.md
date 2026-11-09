@@ -36,6 +36,7 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
 | `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
+| `device-window-action` | Minimiza, maximiza, restaura ou fecha uma janela do PC | `{ deviceId, windowId, action }` | `ok` + `window` em `minimize`/`maximize`/`restore`; `ok` em `close` |
 | `device-list-files` | Lista arquivos e pastas do PC (somente leitura) | `{ deviceId, path?, depth?, showHidden?, maxEntries? }` | `entries[]` com nome, caminho, tipo, tamanho e modificação |
 | `device-read-file` | Lê conteúdo de texto de um arquivo (somente leitura) | `{ deviceId, path, offset?, limit? }` | `file` com `content`, linhas e `truncated` |
 | `device-glob` | Busca arquivos por padrão glob (somente leitura) | `{ deviceId, pattern, path?, showHidden?, maxResults? }` | `paths[]` de arquivos |
@@ -70,6 +71,15 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   `device-list-windows`. Se o SO bloquear o foco, retorna `focus_denied`; se a
   janela sumiu, retorna `window_not_found`. No Wayland, ambos retornam
   `unsupported_environment`.
+- `device-window-action` recebe o mesmo `windowId` e uma `action`:
+  `minimize` (minimiza), `maximize` (maximiza), `restore` (volta ao tamanho
+  normal, desfazendo minimizado/maximizado) ou `close` (fecha). As três
+  primeiras retornam o snapshot atualizado em `window`; `close` retorna apenas
+  `ok: true`.
+- `close` é gracioso: no Windows envia `WM_CLOSE`, no macOS pressiona o botão de
+  fechar via Acessibilidade e no Linux usa `wmctrl -c`. O aplicativo pode abrir
+  um diálogo para salvar alterações e continuar aberto; não há força bruta nem
+  encerramento por processo.
 - `device-list-files` lista a pasta do usuário por padrão, com `depth` de 1 a 3
   e no máximo 200 itens. Não segue links simbólicos.
 - `device-read-file` lê até 2000 linhas / 64 KB por chamada, com `offset` e
@@ -132,6 +142,9 @@ carga do widget.
   janelas, escolhe a alvo e pede confirmação em texto (sim/não). O comando só é
   enviado ao dispositivo após o usuário confirmar.
 - Se o usuário não confirmar, o comando não é executado.
+- `device-window-action` (incluindo `close`) não exige confirmação textual nesta
+  versão. O fechamento continua gracioso, então o aplicativo ainda pode pedir
+  para salvar alterações.
 - No futuro, haverá um modo/opção `requireApproval: false` (autônomo) para
   desativar confirmações.
 

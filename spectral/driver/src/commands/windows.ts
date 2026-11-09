@@ -8,6 +8,7 @@ import {
   DEVICE_WINDOW_TITLE_MAX_LENGTH,
   type DeviceCommandInputMap,
   type DeviceWindow,
+  type DeviceWindowAction,
   type DeviceWindowBounds,
 } from "../../../shared/device-commands.js"
 
@@ -178,6 +179,8 @@ public class SpectralWindows {
   [DllImport("user32.dll")]
   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")]
+  public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")]
   public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")]
   public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
@@ -267,6 +270,23 @@ public class SpectralWindows {
     GetWindowThreadProcessId(new IntPtr(handle), out processId);
     return (int)processId;
   }
+
+  public static void Minimize(long handle) {
+    ShowWindow(new IntPtr(handle), 6);
+  }
+
+  public static void Maximize(long handle) {
+    ShowWindow(new IntPtr(handle), 3);
+  }
+
+  public static void Restore(long handle) {
+    ShowWindow(new IntPtr(handle), 9);
+  }
+
+  public static bool Close(long handle) {
+    const uint WM_CLOSE = 0x0010;
+    return PostMessage(new IntPtr(handle), WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+  }
 }
 '@
 `
@@ -296,6 +316,19 @@ if (-not $focused) {
   }
 }
 if (-not $focused) { exit 3 }
+`
+
+const WINDOWS_ACTION_SCRIPT = `${WINDOWS_WINDOW_API}
+$handle = [long]$env:SPECTRAL_WINDOW_ID
+switch ($env:SPECTRAL_WINDOW_ACTION) {
+  'minimize' { [SpectralWindows]::Minimize($handle) }
+  'maximize' { [SpectralWindows]::Maximize($handle) }
+  'restore' { [SpectralWindows]::Restore($handle) }
+  'close' {
+    if (-not [SpectralWindows]::Close($handle)) { exit 4 }
+  }
+  default { exit 2 }
+}
 `
 
 function parseJsonWindows(stdout: string): DeviceWindow[] {
@@ -372,6 +405,44 @@ async function focusWindowsWindow(windowId: string): Promise<void> {
     }
 
     throw windowExecError(error, "focar a janela")
+  }
+}
+
+async function applyWindowsWindowAction(
+  action: DeviceWindowAction,
+  windowId: string,
+): Promise<void> {
+  try {
+    await execFileAsync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        WINDOWS_ACTION_SCRIPT,
+      ],
+      {
+        timeout: WINDOW_EXEC_TIMEOUT_MS,
+        windowsHide: true,
+        maxBuffer: WINDOW_MAX_BUFFER_BYTES,
+        env: {
+          ...process.env,
+          SPECTRAL_WINDOW_ID: windowId,
+          SPECTRAL_WINDOW_ACTION: action,
+        },
+      },
+    )
+  } catch (error) {
+    if (execErrorCode(error) === 4) {
+      throw new DeviceWindowError(
+        "window_not_found",
+        "A janela não está mais disponível no dispositivo.",
+      )
+    }
+
+    throw windowExecError(error, windowActionLabel(action))
   }
 }
 
@@ -472,6 +543,74 @@ function run() {
 }
 `
 
+const MACOS_ACTION_SCRIPT = (
+  windowId: string,
+  action: DeviceWindowAction,
+) => `
+function run() {
+  var parts = '${windowId}'.split(':');
+  var pid = parseInt(parts[0], 10);
+  var index = parseInt(parts[1], 10);
+
+  if (!isFinite(pid)) { return 'window_not_found'; }
+
+  var SystemEvents = Application('System Events');
+  var processes = SystemEvents.applicationProcesses.whose({ unixId: pid })();
+
+  if (!processes.length) { return 'window_not_found'; }
+
+  var process = processes[0];
+  var target;
+
+  try {
+    target = process.windows()[index];
+  } catch (error) {
+    return 'permission_denied';
+  }
+
+  if (!target) { return 'window_not_found'; }
+
+  try { process.frontmost = true; } catch (error) {}
+
+  try {
+    if ('${action}' === 'minimize') {
+      target.attributes.byName('AXMinimized').value = true;
+    } else if ('${action}' === 'maximize') {
+      try { target.attributes.byName('AXMinimized').value = false; } catch (error) {}
+      target.attributes.byName('AXFullScreen').value = true;
+    } else if ('${action}' === 'restore') {
+      try { target.attributes.byName('AXMinimized').value = false; } catch (error) {}
+      try { target.attributes.byName('AXFullScreen').value = false; } catch (error) {}
+    } else if ('${action}' === 'close') {
+      var closed = false;
+
+      try {
+        var buttons = target.buttons.byName('AXCloseButton');
+        if (buttons.length > 0) {
+          buttons[0].actions.byName('AXPress').perform();
+          closed = true;
+        }
+      } catch (error) {}
+
+      if (!closed) {
+        try {
+          target.buttons[0].actions[0].perform();
+          closed = true;
+        } catch (error) {}
+      }
+
+      if (!closed) { return 'action_failed'; }
+    } else {
+      return 'action_failed';
+    }
+  } catch (error) {
+    return 'action_failed';
+  }
+
+  return 'ok';
+}
+`
+
 function macosError(error: unknown): DeviceWindowError {
   const text = execErrorText(error)
 
@@ -531,6 +670,49 @@ async function focusMacosWindow(windowId: string): Promise<void> {
     throw new DeviceWindowError(
       "window_not_found",
       "A janela não está mais disponível no dispositivo.",
+    )
+  }
+}
+
+async function applyMacosWindowAction(
+  action: DeviceWindowAction,
+  windowId: string,
+): Promise<void> {
+  let stdout: string
+
+  try {
+    const result = await execFileAsync(
+      "osascript",
+      ["-l", "JavaScript", "-e", MACOS_ACTION_SCRIPT(windowId, action)],
+      {
+        timeout: WINDOW_EXEC_TIMEOUT_MS,
+        maxBuffer: WINDOW_MAX_BUFFER_BYTES,
+      },
+    )
+
+    stdout = result.stdout.trim()
+  } catch (error) {
+    throw macosError(error)
+  }
+
+  if (stdout === "window_not_found") {
+    throw new DeviceWindowError(
+      "window_not_found",
+      "A janela não está mais disponível no dispositivo.",
+    )
+  }
+
+  if (stdout === "permission_denied") {
+    throw new DeviceWindowError(
+      "permission_denied",
+      "O macOS exige permissão de Acessibilidade para controlar janelas. Autorize o driver em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade.",
+    )
+  }
+
+  if (stdout !== "ok") {
+    throw new DeviceWindowError(
+      "command_failed",
+      `Não foi possível ${windowActionLabel(action)} no dispositivo.`,
     )
   }
 }
@@ -708,6 +890,76 @@ async function focusLinuxWindow(windowId: string): Promise<void> {
   }
 }
 
+async function runWmctrl(args: string[], action: string): Promise<void> {
+  try {
+    await execFileAsync("wmctrl", args, {
+      timeout: WINDOW_EXEC_TIMEOUT_MS,
+      maxBuffer: WINDOW_MAX_BUFFER_BYTES,
+    })
+  } catch (error) {
+    if (execErrorCode(error) === "ENOENT") {
+      throw new DeviceWindowError(
+        "dependency_missing",
+        `O comando wmctrl não está instalado. Instale com \`sudo apt install wmctrl\` para ${action} no Linux.`,
+      )
+    }
+
+    throw new DeviceWindowError(
+      "command_failed",
+      `Não foi possível ${action} no Linux.`,
+    )
+  }
+}
+
+async function applyLinuxWindowAction(
+  action: DeviceWindowAction,
+  windowId: string,
+): Promise<void> {
+  if (isWayland()) {
+    throw new DeviceWindowError(
+      "unsupported_environment",
+      "Controlar janelas no Linux exige uma sessão X11. No Wayland o sistema não permite minimizar, maximizar ou fechar janelas globalmente.",
+    )
+  }
+
+  switch (action) {
+    case "minimize":
+      await runWmctrl(
+        ["-i", "-r", windowId, "-b", "add,hidden"],
+        windowActionLabel(action),
+      )
+      return
+    case "maximize":
+      await runWmctrl(
+        [
+          "-i",
+          "-r",
+          windowId,
+          "-b",
+          "add,maximized_vert,maximized_horz",
+        ],
+        windowActionLabel(action),
+      )
+      return
+    case "restore":
+      await runWmctrl(
+        [
+          "-i",
+          "-r",
+          windowId,
+          "-b",
+          "remove,hidden,maximized_vert,maximized_horz",
+        ],
+        windowActionLabel(action),
+      )
+      await runWmctrl(["-i", "-a", windowId], "focar")
+      return
+    case "close":
+      await runWmctrl(["-i", "-c", windowId], windowActionLabel(action))
+      return
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Platform dispatch                                                          */
 /* -------------------------------------------------------------------------- */
@@ -724,6 +976,19 @@ function windowExecError(error: unknown, action: string): DeviceWindowError {
     "command_failed",
     `Não foi possível ${action} no dispositivo.`,
   )
+}
+
+function windowActionLabel(action: DeviceWindowAction): string {
+  switch (action) {
+    case "minimize":
+      return "minimizar a janela"
+    case "maximize":
+      return "maximizar a janela"
+    case "restore":
+      return "restaurar a janela"
+    case "close":
+      return "fechar a janela"
+  }
 }
 
 async function listPlatformWindows(): Promise<DeviceWindow[]> {
@@ -757,6 +1022,28 @@ async function focusPlatformWindow(windowId: string): Promise<void> {
       throw new DeviceWindowError(
         "unsupported_platform",
         "Focar janelas não é suportado nesta plataforma.",
+      )
+  }
+}
+
+async function applyPlatformWindowAction(
+  action: DeviceWindowAction,
+  windowId: string,
+): Promise<void> {
+  switch (process.platform) {
+    case "win32":
+      await applyWindowsWindowAction(action, windowId)
+      return
+    case "darwin":
+      await applyMacosWindowAction(action, windowId)
+      return
+    case "linux":
+      await applyLinuxWindowAction(action, windowId)
+      return
+    default:
+      throw new DeviceWindowError(
+        "unsupported_platform",
+        "Controlar janelas não é suportado nesta plataforma.",
       )
   }
 }
@@ -802,4 +1089,61 @@ export async function focusWindow(windowId: string): Promise<DeviceWindow> {
   await focusPlatformWindow(windowId)
 
   return { ...target, focused: true }
+}
+
+async function changeWindowState(
+  action: Exclude<DeviceWindowAction, "close">,
+  windowId: string,
+): Promise<DeviceWindow> {
+  const windows = await listPlatformWindows()
+  const target = windows.find((window) => window.id === windowId)
+
+  if (!target) {
+    throw new DeviceWindowError(
+      "window_not_found",
+      "A janela não está mais disponível no dispositivo.",
+    )
+  }
+
+  await applyPlatformWindowAction(action, windowId)
+
+  let updated: DeviceWindow | undefined
+
+  try {
+    const refreshed = await listPlatformWindows()
+    updated = refreshed.find((window) => window.id === windowId)
+  } catch {
+    updated = undefined
+  }
+
+  if (updated) {
+    return { ...updated, minimized: action === "minimize" }
+  }
+
+  return { ...target, minimized: action === "minimize" }
+}
+
+export function minimizeWindow(windowId: string): Promise<DeviceWindow> {
+  return changeWindowState("minimize", windowId)
+}
+
+export function maximizeWindow(windowId: string): Promise<DeviceWindow> {
+  return changeWindowState("maximize", windowId)
+}
+
+export function restoreWindow(windowId: string): Promise<DeviceWindow> {
+  return changeWindowState("restore", windowId)
+}
+
+export async function closeWindow(windowId: string): Promise<void> {
+  const windows = await listPlatformWindows()
+
+  if (!windows.some((window) => window.id === windowId)) {
+    throw new DeviceWindowError(
+      "window_not_found",
+      "A janela não está mais disponível no dispositivo.",
+    )
+  }
+
+  await applyPlatformWindowAction("close", windowId)
 }

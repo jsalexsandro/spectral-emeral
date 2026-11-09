@@ -21,6 +21,23 @@ export const disconnectMessageSchema = z.object({
   type: z.literal("device:disconnect"),
 })
 
+const deviceWindowSchema = z.object({
+  id: z.string().min(1).max(128),
+  title: z.string().min(1).max(120),
+  processId: z.number().int().nonnegative(),
+  processName: z.string().max(80),
+  bounds: z
+    .object({
+      x: z.number().int(),
+      y: z.number().int(),
+      width: z.number().int(),
+      height: z.number().int(),
+    })
+    .nullable(),
+  focused: z.boolean(),
+  minimized: z.boolean(),
+})
+
 export const commandResultMessageSchema = z.object({
   type: z.literal("device:command:result"),
   id: z.string().min(1).max(128),
@@ -110,6 +127,8 @@ export const commandResultMessageSchema = z.object({
           durationMs: z.number().int().nonnegative(),
         })
         .optional(),
+      windows: z.array(deviceWindowSchema).max(30).optional(),
+      window: deviceWindowSchema.optional(),
     }),
     z.object({
       ok: z.literal(false),

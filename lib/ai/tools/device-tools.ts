@@ -40,11 +40,14 @@ import {
   DEVICE_WINDOW_LIMIT_DEFAULT,
   DEVICE_WINDOW_LIMIT_MAX,
   DEVICE_WINDOW_LIMIT_MIN,
+  DEVICE_WINDOW_ACTIONS,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
+  parseDeviceCommand,
   type DeviceCommand,
   type DeviceKey,
   type DeviceKeyModifier,
+  type DeviceWindowAction,
 } from "@/lib/devices/commands"
 import { isDeviceOnline, type DeviceStatus } from "@/lib/devices/types"
 
@@ -66,6 +69,7 @@ export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
 export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
+export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
 
 const deviceIdSchema = z
   .string()
@@ -160,6 +164,21 @@ export const deviceListWindowsInputSchema = z.object({
 export const deviceFocusWindowInputSchema = z.object({
   deviceId: deviceIdSchema,
   windowId: deviceWindowIdSchema,
+})
+
+const deviceWindowActionSchema = z.enum(
+  DEVICE_WINDOW_ACTIONS as unknown as [
+    DeviceWindowAction,
+    ...DeviceWindowAction[],
+  ],
+)
+
+export const deviceWindowActionInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  windowId: deviceWindowIdSchema,
+  action: deviceWindowActionSchema.describe(
+    "Ação a aplicar na janela: minimize, maximize, restore ou close.",
+  ),
 })
 
 export const deviceListFilesInputSchema = z.object({
@@ -492,6 +511,14 @@ const focusWindowDescription = [
   "Foca uma janela específica de um dispositivo online.",
   "Informe o `windowId` retornado por `device-list-windows`.",
   "Se o sistema operacional bloquear o foco, retorna `focus_denied`; nesse caso peça ao usuário para clicar na janela.",
+].join("\n")
+
+const windowActionDescription = [
+  "Minimiza, maximiza, restaura ou fecha uma janela específica de um dispositivo online.",
+  "Informe o `windowId` retornado por `device-list-windows` e a `action` desejada.",
+  "`restore` desfaz a minimização e o estado maximizado, devolvendo a janela ao tamanho normal.",
+  "`close` envia um pedido de fechamento gracioso: o aplicativo pode abrir um diálogo para salvar alterações em vez de encerrar imediatamente. Não há força bruta nem encerramento por processo.",
+  "Use apenas em janelas que o usuário pediu para controlar; nunca feche janelas do sistema ou aplicativos sem relação com o pedido.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -866,6 +893,28 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-focus-window.",
+          }
+        }
+      },
+    }),
+    [DEVICE_WINDOW_ACTION_TOOL_NAME]: tool({
+      description: windowActionDescription,
+      inputSchema: deviceWindowActionInputSchema,
+      execute: async ({ deviceId, windowId, action }) => {
+        try {
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand(`${action}-window`, { windowId }),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-window-action.",
           }
         }
       },

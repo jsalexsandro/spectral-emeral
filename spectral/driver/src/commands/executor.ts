@@ -14,8 +14,12 @@ import {
 } from "./files.js"
 import {
   DeviceWindowError,
+  closeWindow,
   focusWindow,
   listWindows,
+  maximizeWindow,
+  minimizeWindow,
+  restoreWindow,
   type DeviceWindow,
 } from "./windows.js"
 
@@ -444,6 +448,21 @@ export async function executeDeviceCommand(
         const window = await focusWindow(command.input.windowId)
         return { ok: true, window }
       }
+      case "minimize-window": {
+        const window = await minimizeWindow(command.input.windowId)
+        return { ok: true, window }
+      }
+      case "maximize-window": {
+        const window = await maximizeWindow(command.input.windowId)
+        return { ok: true, window }
+      }
+      case "restore-window": {
+        const window = await restoreWindow(command.input.windowId)
+        return { ok: true, window }
+      }
+      case "close-window":
+        await closeWindow(command.input.windowId)
+        return { ok: true }
 
       case "list-files":
         return { ...(await files.listFiles(command.input)), ok: true }

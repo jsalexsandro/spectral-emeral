@@ -77,26 +77,32 @@ Risco considera exposição de segurança ao liberar o recurso.
   confirma por um segundo print.
 - **Esforço:** M · **Risco:** M (privacidade da tela).
 
-#### 2. `device-list-windows` + `device-focus-window` — janelas ✅
+#### 2. Janelas: listar, focar e controlar ✅
 
 - **Status:** implementado. Contrato em `spectral/shared/device-commands.ts`,
   driver em `spectral/driver/src/commands/windows.ts`, tools
-  `device-list-windows`/`device-focus-window` e `windowId` opcional em
-  `device-type-text`/`device-press-key`.
-- **O que:** listar janelas abertas (título, processo, bounds, foco) e focar uma
-  janela por id ou título.
-- **Por quê:** elimina o risco de digitar na janela errada e permite "abra o VS
-  Code e vá para a janela X".
-- **Onde mexer:** contrato compartilhado, driver (`window.ts` por plataforma),
-  tools e prompt.
+  `device-list-windows`/`device-focus-window`/`device-window-action` e
+  `windowId` opcional em `device-type-text`/`device-press-key`.
+- **O que:** listar janelas abertas (título, processo, bounds, foco), focar uma
+  janela por id e minimizar, maximizar, restaurar ou fechar por id.
+- **Por quê:** elimina o risco de digitar na janela errada, permite "abra o VS
+  Code e vá para a janela X" e dá controle básico de janelas ao assistente.
+- **Onde mexer:** contrato compartilhado, driver (`windows.ts` por plataforma),
+  executor, tools e prompt.
 - **Pronto quando:** `type-text`/`press-key` puderem ser precedidos por foco
-  explícito e o prompt orientar esse fluxo.
-- **Esforço:** M · **Risco:** baixo.
+  explícito, ações de janela estiverem disponíveis por id e o prompt orientar
+  esse fluxo.
+- **Esforço:** M · **Risco:** baixo para foco/minimizar/maximizar; médio para
+  fechar (trabalho não salvo).
 - **Limites:** `windowId` com até 128 caracteres (`^[A-Za-z0-9:._-]+$`),
   `list-windows` com `limit` de 1 a 30 (padrão 20) e título/processo truncados.
   Windows usa PowerShell + P/Invoke; macOS usa System Events (exige
   Acessibilidade); Linux usa `wmctrl`/`xdotool` em X11, com
   `unsupported_environment` no Wayland.
+- **Ações:** `device-window-action` (`minimize`, `maximize`, `restore`,
+  `close`) mapeia para `minimize-window`, `maximize-window`, `restore-window` e
+  `close-window`. `close` é gracioso (`WM_CLOSE`/botão de fechar/`wmctrl -c`) e
+  não usa força bruta. Nesta versão `close` não exige confirmação textual.
 
 #### 3. Mouse — `device-click`, `device-move-mouse`, `device-scroll`, `device-drag`
 

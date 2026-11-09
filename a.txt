@@ -657,3 +657,6 @@ possui.
 emparelhamento; a identidade criptográfica autentica as conexões
 seguintes; e uma camada futura de permissões decidirá o que cada agente
 poderá fazer no dispositivo.
+
+
+RESOLVER o BUG, não ta rodando no deploy

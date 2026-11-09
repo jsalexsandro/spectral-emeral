@@ -18,6 +18,7 @@ import {
   DEVICE_RUN_COMMAND_TOOL_NAME,
   DEVICE_LIST_WINDOWS_TOOL_NAME,
   DEVICE_FOCUS_WINDOW_TOOL_NAME,
+  DEVICE_WINDOW_ACTION_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
   deviceOpenAppInputSchema,
@@ -30,6 +31,7 @@ import {
   deviceCheckAdminInputSchema,
   deviceListWindowsInputSchema,
   deviceFocusWindowInputSchema,
+  deviceWindowActionInputSchema,
   selectOnlineDevices,
   toDeviceToolSummary,
 } from "./device-tools"
@@ -107,6 +109,7 @@ describe("device tools", () => {
         DEVICE_RUN_COMMAND_TOOL_NAME,
         DEVICE_LIST_WINDOWS_TOOL_NAME,
         DEVICE_FOCUS_WINDOW_TOOL_NAME,
+        DEVICE_WINDOW_ACTION_TOOL_NAME,
       ].sort(),
     )
 
@@ -283,6 +286,33 @@ describe("device tools", () => {
     expect(
       deviceFocusWindowInputSchema.safeParse({
         deviceId: "device-1",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-window-action", () => {
+    for (const action of ["minimize", "maximize", "restore", "close"] as const) {
+      expect(
+        deviceWindowActionInputSchema.safeParse({
+          deviceId: "device-1",
+          windowId: "123:0",
+          action,
+        }).success,
+      ).toBe(true)
+    }
+
+    expect(
+      deviceWindowActionInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "123:0",
+        action: "explode",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWindowActionInputSchema.safeParse({
+        deviceId: "device-1",
+        action: "close",
       }).success,
     ).toBe(false)
   })

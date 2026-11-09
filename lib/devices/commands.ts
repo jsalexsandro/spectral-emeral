@@ -39,6 +39,7 @@ export {
   DEVICE_WINDOW_LIMIT_MAX,
   DEVICE_WINDOW_LIMIT_DEFAULT,
   DEVICE_WINDOW_ID_PATTERN,
+  DEVICE_WINDOW_ACTIONS,
   DeviceCommandValidationError,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
@@ -68,4 +69,5 @@ export type {
   DeviceOsInfo,
   DeviceWindow,
   DeviceWindowBounds,
+  DeviceWindowAction,
 } from "@/spectral/shared/device-commands"

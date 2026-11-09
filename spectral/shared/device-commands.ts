@@ -15,6 +15,10 @@ export const DEVICE_COMMAND_NAMES = [
   "run-command",
   "list-windows",
   "focus-window",
+  "minimize-window",
+  "maximize-window",
+  "restore-window",
+  "close-window",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -114,6 +118,16 @@ export const DEVICE_WINDOW_LIMIT_MIN = 1
 export const DEVICE_WINDOW_LIMIT_MAX = 30
 export const DEVICE_WINDOW_LIMIT_DEFAULT = 20
 export const DEVICE_WINDOW_ID_PATTERN = /^[A-Za-z0-9:._-]{1,128}$/
+
+export const DEVICE_WINDOW_ACTIONS = [
+  "minimize",
+  "maximize",
+  "restore",
+  "close",
+] as const
+
+export type DeviceWindowAction = (typeof DEVICE_WINDOW_ACTIONS)[number]
+
 export const DEVICE_APP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 export const DEVICE_COMMAND_TIMEOUT_MIN_MS = 1_000
 export const DEVICE_COMMAND_TIMEOUT_MAX_MS = 60_000
@@ -240,6 +254,10 @@ export type DeviceCommandInputMap = {
   }
   "list-windows": { includeMinimized: boolean; limit: number }
   "focus-window": { windowId: string }
+  "minimize-window": { windowId: string }
+  "maximize-window": { windowId: string }
+  "restore-window": { windowId: string }
+  "close-window": { windowId: string }
   "list-files": {
     path?: string
     depth: number
@@ -567,6 +585,26 @@ function parseFocusWindow(input: unknown): DeviceCommand {
   }
 
   return { command: "focus-window", input: { windowId } }
+}
+
+function parseWindowAction(
+  command:
+    | "minimize-window"
+    | "maximize-window"
+    | "restore-window"
+    | "close-window",
+  input: unknown,
+): DeviceCommand {
+  const windowId = readOptionalWindowId(input)
+
+  if (!windowId) {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      'Campo "windowId" é obrigatório.',
+    )
+  }
+
+  return { command, input: { windowId } }
 }
 
 function readOptionalPath(input: unknown): string | undefined {
@@ -1004,5 +1042,10 @@ export function parseDeviceCommand(
       return parseListWindows(input)
     case "focus-window":
       return parseFocusWindow(input)
+    case "minimize-window":
+    case "maximize-window":
+    case "restore-window":
+    case "close-window":
+      return parseWindowAction(command, input)
   }
 }

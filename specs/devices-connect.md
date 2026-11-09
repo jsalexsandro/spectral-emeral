@@ -143,6 +143,10 @@ Backend --HTTP 200 { ok, result }--> Tool
 | `press-key` | `{ key, modifiers?, windowId? }` | `ok` + `window` |
 | `list-windows` | `{ includeMinimized?, limit? }` | `ok` + `windows[{ id, title, processId, processName, bounds, focused, minimized }]` |
 | `focus-window` | `{ windowId }` | `ok` + `window` |
+| `minimize-window` | `{ windowId }` | `ok` + `window` |
+| `maximize-window` | `{ windowId }` | `ok` + `window` |
+| `restore-window` | `{ windowId }` | `ok` + `window` |
+| `close-window` | `{ windowId }` | `ok` |
 | `list-files` | `{ path?, depth?, showHidden?, maxEntries? }` | `ok` + `entries[]`, `total`, `truncated` |
 | `read-file` | `{ path, offset?, limit? }` | `ok` + `file{ content, startLine, endLine, totalLines, truncated, size }` |
 | `glob` | `{ pattern, path?, showHidden?, maxResults? }` | `ok` + `paths[]`, `total`, `truncated` |
@@ -169,6 +173,18 @@ Backend --HTTP 200 { ok, result }--> Tool
 - `focus-window`: `windowId` obrigatório no padrão `^[A-Za-z0-9:._-]+$`.
   Retorna `window_not_found` se a janela sumiu e `focus_denied` se o SO bloquear
   o foco. No Wayland retorna `unsupported_environment`.
+- `minimize-window`, `maximize-window`, `restore-window` e `close-window`:
+  `windowId` obrigatório no mesmo padrão. Os três primeiros retornam
+  `ok: true` + `window` com o snapshot atualizado; `close-window` retorna
+  `ok: true`.
+- `close-window` é gracioso: Windows usa `PostMessage(WM_CLOSE)`, macOS
+  pressiona o botão de fechar via System Events e Linux usa `wmctrl -c`. O app
+  pode abrir um diálogo para salvar e continuar aberto; não há força bruta nem
+  encerramento por processo.
+- `minimize-window`/`maximize-window`/`restore-window` usam `ShowWindow`
+  (6/3/9) no Windows, `AXMinimized`/`AXFullScreen` no macOS e
+  `wmctrl -b add,hidden`, `add,maximized_vert,maximized_horz` e
+  `remove,hidden,maximized_vert,maximized_horz` no Linux X11.
 - `alt+F4` e `ctrl+alt+delete` são bloqueados no contrato e no driver.
 - `list-files`: caminho padrão é a pasta do usuário; `depth` entre 1 e 3;
   `maxEntries` entre 1 e 500 (padrão 200); não segue links simbólicos.
@@ -249,9 +265,10 @@ e orienta executar `--pair`. Se outra instância assumir o dispositivo
   publicamente; em produção, mantenha-o na rede privada ou atrás do proxy.
 - No Windows, `chmod 0600` é emulado de forma limitada; proteja o diretório do
   usuário com as permissões do sistema.
-- O executor lista e foca janelas, mas ainda não captura tela. Arquivos são
-  restritos à pasta do usuário com denylist (leitura, escrita e edição); não há
-  shell arbitrário nem execução fora da allowlist.
+- O executor lista, foca, minimiza, maximiza, restaura e fecha janelas, mas
+  ainda não captura tela. Arquivos são restritos à pasta do usuário com denylist
+  (leitura, escrita e edição); não há shell arbitrário nem execução fora da
+  allowlist.
 
 ## Próximos passos
 

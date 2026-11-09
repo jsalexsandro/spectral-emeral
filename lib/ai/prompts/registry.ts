@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 21
+export const SYSTEM_PROMPT_VERSION = 22
 
 export type SystemPromptChange = {
   version: number
@@ -126,5 +126,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-06",
     summary:
       "Melhora o planejamento multi-passo com o status failed para etapas, validação de no máximo uma etapa current no updatePlan e stop condition para falhas repetidas do plano.",
+  },
+  {
+    version: 22,
+    date: "2026-11-08",
+    summary:
+      "Adiciona a tool device-window-action para minimizar, maximizar, restaurar e fechar janelas de dispositivos pareados, com fechamento gracioso e uso obrigatório do windowId retornado por device-list-windows.",
   },
 ]
