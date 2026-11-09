@@ -23,6 +23,11 @@ import {
   type DeviceWindow,
 } from "./windows.js"
 import { DeviceScreenshotError, takeScreenshot } from "./screen.js"
+import {
+  DeviceClipboardError,
+  readClipboard,
+  writeClipboard,
+} from "./clipboard.js"
 
 const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
@@ -443,6 +448,11 @@ export async function executeDeviceCommand(
         )
         return { ok: true, ...(window ? { window } : {}) }
       }
+      case "read-clipboard":
+        return { ok: true, clipboard: await readClipboard() }
+      case "write-clipboard":
+        await writeClipboard(command.input.text)
+        return { ok: true }
       case "list-windows":
         return { ok: true, windows: await listWindows(command.input) }
       case "focus-window": {
@@ -504,6 +514,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceScreenshotError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceClipboardError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

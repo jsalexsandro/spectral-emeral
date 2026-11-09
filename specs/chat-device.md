@@ -34,6 +34,8 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-open-app` | Abre um aplicativo da allowlist no PC | `{ deviceId, appId }` | `ok` + `output` |
 | `device-type-text` | Digita texto na janela alvo do PC | `{ deviceId, text, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
+| `device-read-clipboard` | Lê o texto atual da área de transferência do PC | `{ deviceId }` | `clipboard` com `text`, `length` e `truncated` (usar apenas quando o usuário pedir) |
+| `device-write-clipboard` | Substitui o texto da área de transferência do PC | `{ deviceId, text }` | `ok` (avisa que o conteúdo atual será substituído) |
 | `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
 | `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
 | `device-window-action` | Minimiza, maximiza, restaura ou fecha uma janela do PC | `{ deviceId, windowId, action }` | `ok` + `window` em `minimize`/`maximize`/`restore`; `ok` em `close` |
@@ -119,6 +121,19 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 - Por privacidade, a captura só deve ser usada quando o usuário pedir ou para
   confirmar uma ação autorizada. O prompt proíbe capturas em loop e exige cuidado
   com senhas e dados sensíveis.
+- `device-read-clipboard` lê apenas texto, com limite de 100 mil caracteres. O
+  resultado traz `length` (tamanho original) e `truncated: true` quando o
+  conteúdo foi cortado. O clipboard pode conter senhas, tokens e dados
+  sensíveis: a leitura só deve ocorrer quando o usuário pedir explicitamente, e
+  o conteúdo não deve ser repetido sem necessidade nem enviado para fora.
+- `device-write-clipboard` aceita de 1 a 100 mil caracteres e rejeita caracteres
+  de controle (tab, CR e LF são permitidos). A operação substitui o conteúdo
+  atual; o prompt exige aviso e confirmação antes de sobrescrever algo que o
+  usuário possa querer manter.
+- Erros do clipboard: `clipboard_unavailable` (falha ao ler o clipboard),
+  `clipboard_write_failed`, `dependency_missing` (Linux sem `xclip`/`xsel`) e
+  `unsupported_environment` (Wayland sem `wl-clipboard`). Quando o clipboard
+  não tem texto, a leitura tende a voltar vazia.
 
 ## Widget de abrir apps
 

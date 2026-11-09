@@ -11,6 +11,7 @@ import {
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
+  DEVICE_CLIPBOARD_TEXT_MAX_LENGTH,
   DEVICE_URL_MAX_LENGTH,
   DEVICE_PATH_MAX_LENGTH,
   DEVICE_PATTERN_MAX_LENGTH,
@@ -74,6 +75,8 @@ export const DEVICE_LIST_APPS_TOOL_NAME = "device-list-apps"
 export const DEVICE_GET_OS_TOOL_NAME = "device-get-os"
 export const DEVICE_TYPE_TEXT_TOOL_NAME = "device-type-text"
 export const DEVICE_PRESS_KEY_TOOL_NAME = "device-press-key"
+export const DEVICE_READ_CLIPBOARD_TOOL_NAME = "device-read-clipboard"
+export const DEVICE_WRITE_CLIPBOARD_TOOL_NAME = "device-write-clipboard"
 export const DEVICE_LIST_FILES_TOOL_NAME = "device-list-files"
 export const DEVICE_READ_FILE_TOOL_NAME = "device-read-file"
 export const DEVICE_GLOB_TOOL_NAME = "device-glob"
@@ -166,6 +169,26 @@ export const devicePressKeyInputSchema = z
       path: ["key"],
     },
   )
+
+const clipboardControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
+
+export const deviceReadClipboardInputSchema = z.object({
+  deviceId: deviceIdSchema,
+})
+
+export const deviceWriteClipboardInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  text: z
+    .string()
+    .min(1)
+    .max(DEVICE_CLIPBOARD_TEXT_MAX_LENGTH)
+    .refine((value) => !clipboardControlCharacters.test(value), {
+      message: "O texto contém caracteres de controle não suportados.",
+    })
+    .describe(
+      "Texto que substituirá o conteúdo atual da área de transferência.",
+    ),
+})
 
 export const deviceListWindowsInputSchema = z.object({
   deviceId: deviceIdSchema,
@@ -512,6 +535,20 @@ const pressKeyDescription = [
   "Use com cuidado: atalhos podem fechar janelas ou alterar o sistema.",
 ].join("\n")
 
+const readClipboardDescription = [
+  "Lê o conteúdo atual da área de transferência (texto) de um dispositivo online.",
+  "Use somente quando o usuário pedir explicitamente para ver, recuperar ou colar o que copiou.",
+  "O clipboard pode conter senhas, tokens e dados sensíveis: não repita o conteúdo sem necessidade nem o envie para fora.",
+  "A leitura é limitada a 100 mil caracteres; quando for cortada, o resultado traz `truncated: true` e o tamanho original em `length`.",
+].join("\n")
+
+const writeClipboardDescription = [
+  "Escreve texto na área de transferência de um dispositivo online, substituindo o conteúdo atual.",
+  "Use quando o usuário pedir para copiar um texto no PC para colar em outro lugar.",
+  "Avise que a operação substitui o clipboard atual e confirme antes de sobrescrever conteúdo que o usuário possa querer manter.",
+  "Limite de 100 mil caracteres; caracteres de controle não são aceitos (tab, CR e LF são permitidos).",
+].join("\n")
+
 const listFilesDescription = [
   "Lista arquivos e pastas de um dispositivo online.",
   "Informe o deviceId retornado por device-list ou device-online-list.",
@@ -761,6 +798,48 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-press-key.",
+          }
+        }
+      },
+    }),
+    [DEVICE_READ_CLIPBOARD_TOOL_NAME]: tool({
+      description: readClipboardDescription,
+      inputSchema: deviceReadClipboardInputSchema,
+      execute: async ({ deviceId }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "read-clipboard",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-read-clipboard.",
+          }
+        }
+      },
+    }),
+    [DEVICE_WRITE_CLIPBOARD_TOOL_NAME]: tool({
+      description: writeClipboardDescription,
+      inputSchema: deviceWriteClipboardInputSchema,
+      execute: async ({ deviceId, text }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "write-clipboard",
+            input: { text },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-write-clipboard.",
           }
         }
       },

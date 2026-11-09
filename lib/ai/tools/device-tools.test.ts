@@ -20,8 +20,12 @@ import {
   DEVICE_FOCUS_WINDOW_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
   DEVICE_SCREENSHOT_TOOL_NAME,
+  DEVICE_READ_CLIPBOARD_TOOL_NAME,
+  DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
+  deviceReadClipboardInputSchema,
+  deviceWriteClipboardInputSchema,
   deviceScreenshotInputSchema,
   deviceOpenAppInputSchema,
   deviceOpenUrlInputSchema,
@@ -113,6 +117,8 @@ describe("device tools", () => {
         DEVICE_FOCUS_WINDOW_TOOL_NAME,
         DEVICE_WINDOW_ACTION_TOOL_NAME,
         DEVICE_SCREENSHOT_TOOL_NAME,
+        DEVICE_READ_CLIPBOARD_TOOL_NAME,
+        DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
       ].sort(),
     )
 
@@ -369,6 +375,40 @@ describe("device tools", () => {
       deviceScreenshotInputSchema.safeParse({
         deviceId: "device-1",
         format: "webp",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida as tools de clipboard", () => {
+    expect(
+      deviceReadClipboardInputSchema.safeParse({ deviceId: "device-1" }).success,
+    ).toBe(true)
+
+    expect(
+      deviceWriteClipboardInputSchema.safeParse({
+        deviceId: "device-1",
+        text: "texto com\nquebra de linha",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceWriteClipboardInputSchema.safeParse({
+        deviceId: "device-1",
+        text: "",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWriteClipboardInputSchema.safeParse({
+        deviceId: "device-1",
+        text: "a".repeat(100_001),
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWriteClipboardInputSchema.safeParse({
+        deviceId: "device-1",
+        text: "senha\u0000oculta",
       }).success,
     ).toBe(false)
   })

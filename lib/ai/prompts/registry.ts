@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 23
+export const SYSTEM_PROMPT_VERSION = 24
 
 export type SystemPromptChange = {
   version: number
@@ -138,5 +138,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-09",
     summary:
       "Adiciona a tool device-screenshot para capturar a tela inteira, um monitor ou uma região e anexar a imagem ao modelo, com limites de tamanho, privacidade e tradução dos erros de permissão e ambiente.",
+  },
+  {
+    version: 24,
+    date: "2026-11-09",
+    summary:
+      "Adiciona as tools device-read-clipboard e device-write-clipboard para ler e substituir o texto da área de transferência dos dispositivos, com limite de tamanho, aviso de privacidade e tradução dos erros de dependência e ambiente.",
   },
 ]

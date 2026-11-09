@@ -129,6 +129,13 @@ export const commandResultMessageSchema = z.object({
         .optional(),
       windows: z.array(deviceWindowSchema).max(30).optional(),
       window: deviceWindowSchema.optional(),
+      clipboard: z
+        .object({
+          text: z.string().max(100_000),
+          length: z.number().int().nonnegative(),
+          truncated: z.boolean(),
+        })
+        .optional(),
       screenshot: z
         .object({
           id: z.string().min(1).max(128),

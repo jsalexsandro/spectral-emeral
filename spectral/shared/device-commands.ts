@@ -5,6 +5,8 @@ export const DEVICE_COMMAND_NAMES = [
   "get-os",
   "type-text",
   "press-key",
+  "read-clipboard",
+  "write-clipboard",
   "list-files",
   "read-file",
   "glob",
@@ -112,6 +114,7 @@ const DEVICE_KEY_SET = new Set<string>(DEVICE_KEYS)
 
 export const DEVICE_URL_MAX_LENGTH = 2048
 export const DEVICE_TEXT_MAX_LENGTH = 2000
+export const DEVICE_CLIPBOARD_TEXT_MAX_LENGTH = 100_000
 export const DEVICE_WINDOW_ID_MAX_LENGTH = 128
 export const DEVICE_WINDOW_TITLE_MAX_LENGTH = 120
 export const DEVICE_WINDOW_PROCESS_NAME_MAX_LENGTH = 80
@@ -276,12 +279,20 @@ export type DeviceGrepMatch = {
   text: string
 }
 
+export type DeviceClipboardContent = {
+  text: string
+  length: number
+  truncated: boolean
+}
+
 export type DeviceCommandInputMap = {
   "open-url": { url: string }
   "open-app": { appId: string }
   "list-apps": Record<string, never>
   "get-os": Record<string, never>
   "type-text": { text: string; windowId?: string }
+  "read-clipboard": Record<string, never>
+  "write-clipboard": { text: string }
   "press-key": {
     key: DeviceKey
     modifiers: DeviceKeyModifier[]
@@ -369,6 +380,7 @@ export type DeviceCommandSuccess = {
    * antes de expor o resultado ao modelo e ao histórico do chat.
    */
   imageBase64?: string
+  clipboard?: DeviceClipboardContent
 }
 
 export type DeviceCommandFailure = {
@@ -575,6 +587,30 @@ function parsePressKey(input: unknown): DeviceCommand {
     command: "press-key",
     input: { key, modifiers, ...(windowId ? { windowId } : {}) },
   }
+}
+
+function parseReadClipboard(): DeviceCommand {
+  return { command: "read-clipboard", input: {} }
+}
+
+function parseWriteClipboard(input: unknown): DeviceCommand {
+  const text = readString(input, "text", "invalid_text")
+
+  if (text.length === 0 || text.length > DEVICE_CLIPBOARD_TEXT_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_text",
+      `O texto deve ter entre 1 e ${DEVICE_CLIPBOARD_TEXT_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
+    throw new DeviceCommandValidationError(
+      "invalid_text",
+      "O texto contém caracteres de controle não suportados.",
+    )
+  }
+
+  return { command: "write-clipboard", input: { text } }
 }
 
 function readOptionalWindowId(input: unknown): string | undefined {
@@ -1216,6 +1252,10 @@ export function parseDeviceCommand(
       return parseTypeText(input)
     case "press-key":
       return parsePressKey(input)
+    case "read-clipboard":
+      return parseReadClipboard()
+    case "write-clipboard":
+      return parseWriteClipboard(input)
     case "list-files":
       return parseListFiles(input)
     case "read-file":

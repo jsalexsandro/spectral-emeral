@@ -21,7 +21,8 @@ O que já existe e funciona:
 - Tools de chat: `device-list`, `device-online-list`, `device-get-os`,
   `device-list-apps`, `device-open-url`, `device-open-app`, `device-type-text`,
   `device-press-key`, `device-list-windows`, `device-focus-window`,
-  `device-window-action`, `device-screenshot`, `device-list-files`,
+  `device-window-action`, `device-screenshot`, `device-read-clipboard`,
+  `device-write-clipboard`, `device-list-files`,
   `device-read-file`, `device-glob`, `device-grep`, `device-check-admin`,
   `device-write-file`, `device-edit-file` e `device-run-command`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
@@ -41,7 +42,7 @@ O que já existe e funciona:
   `tasklist`, `systeminfo` etc., e o denylist bloqueia `node`, `git`, `python`,
   `npm` e shell. Ou seja: não dá para "criar um script e executar", que é
   justamente a promessa do produto.
-- **Não há mouse, clipboard nem operações de arquivo básicas** (copiar, mover,
+- **Não há mouse nem operações de arquivo básicas** (copiar, mover,
   renomear, apagar, upload/download).
 - **O driver não é um produto instalável.** Hoje é `npm run dev:driver` em um
   terminal aberto. Sem instalador, serviço/tray, autostart e auto-update, a
@@ -129,7 +130,7 @@ Risco considera exposição de segurança ao liberar o recurso.
   por screenshot.
 - **Esforço:** M · **Risco:** alto (ações destrutivas) — exige aprovação.
 
-#### 4. Clipboard — `device-read-clipboard` / `device-write-clipboard`
+#### 4. Clipboard — `device-read-clipboard` / `device-write-clipboard` ✅
 
 - **O que:** ler e escrever a área de transferência do PC.
 - **Por quê:** baixo risco e utilidade enorme ("manda esse texto pro PC",
@@ -138,6 +139,10 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Pronto quando:** copiar/colar entre chat e dispositivo funcionar nos três
   sistemas.
 - **Esforço:** P · **Risco:** baixo.
+- **Status:** implementado em texto (ler/escrever), com limite de 100 mil
+  caracteres, aviso de privacidade e suporte a Windows, macOS, Linux X11
+  (`xclip`/`xsel`) e Wayland (`wl-clipboard`). Imagens e arquivos no clipboard
+  ficam para depois.
 
 ### Bloco B — Controle real do PC
 

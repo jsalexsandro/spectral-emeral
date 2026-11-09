@@ -7,6 +7,7 @@ export {
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
+  DEVICE_CLIPBOARD_TEXT_MAX_LENGTH,
   DEVICE_URL_MAX_LENGTH,
   DEVICE_PATH_MAX_LENGTH,
   DEVICE_PATTERN_MAX_LENGTH,
@@ -61,6 +62,7 @@ export {
 
 export type {
   DeviceAppInfo,
+  DeviceClipboardContent,
   DeviceCommand,
   DeviceCommandFailure,
   DeviceCommandInputMap,

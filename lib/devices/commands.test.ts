@@ -332,4 +332,40 @@ describe("device command contract", () => {
       parseDeviceCommand("type-text", { text: "olá", windowId: "a b" }),
     ).toThrow(DeviceCommandValidationError)
   })
+
+  it("normalizes clipboard commands", () => {
+    expect(parseDeviceCommand("read-clipboard", {})).toEqual({
+      command: "read-clipboard",
+      input: {},
+    })
+
+    expect(
+      parseDeviceCommand("write-clipboard", {
+        text: "linha 1\nlinha 2\tcom tab",
+      }),
+    ).toEqual({
+      command: "write-clipboard",
+      input: { text: "linha 1\nlinha 2\tcom tab" },
+    })
+  })
+
+  it("rejects invalid clipboard text", () => {
+    expect(() => parseDeviceCommand("write-clipboard", {})).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() =>
+      parseDeviceCommand("write-clipboard", { text: "" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("write-clipboard", {
+        text: "a".repeat(100_001),
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("write-clipboard", { text: "senha\u0000oculta" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("write-clipboard", { text: "a\u0007b" }),
+    ).toThrow(DeviceCommandValidationError)
+  })
 })

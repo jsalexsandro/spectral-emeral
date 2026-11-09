@@ -143,6 +143,8 @@ Backend --HTTP 200 { ok, result }--> Tool
 | `get-os` | `{}` | `ok` + `os{ platform, type, release, version, architecture, elevated }` |
 | `type-text` | `{ text, windowId? }` | `ok` + `window` |
 | `press-key` | `{ key, modifiers?, windowId? }` | `ok` + `window` |
+| `read-clipboard` | `{}` | `ok` + `clipboard{ text, length, truncated }` |
+| `write-clipboard` | `{ text }` | `ok` |
 | `list-windows` | `{ includeMinimized?, limit? }` | `ok` + `windows[{ id, title, processId, processName, bounds, focused, minimized }]` |
 | `focus-window` | `{ windowId }` | `ok` + `window` |
 | `minimize-window` | `{ windowId }` | `ok` + `window` |
@@ -171,6 +173,18 @@ Backend --HTTP 200 { ok, result }--> Tool
   `delete`, `space`, `insert`, setas, `home`, `end`, `pageup`, `pagedown` e
   `f1`-`f12`; modificadores `ctrl`, `alt`, `shift` e `meta`. `windowId` opcional
   faz o driver focar a janela antes da tecla.
+- `read-clipboard`: sem input; lê apenas texto. O conteúdo é limitado a 100 mil
+  caracteres; quando maior, `text` vem cortado, `truncated` é `true` e `length`
+  informa o tamanho original. Quando não há texto no clipboard, a leitura tende
+  a voltar vazia; falhas reais retornam `clipboard_unavailable`.
+- `write-clipboard`: `text` obrigatório de 1 a 100 mil caracteres; caracteres de
+  controle são rejeitados (exceto tab, CR e LF). Falhas de escrita retornam
+  `clipboard_write_failed`.
+- `read-clipboard`/`write-clipboard` usam `Get-Clipboard`/`Set-Clipboard` no
+  Windows (via PowerShell), `pbpaste`/`pbcopy` no macOS, `wl-paste`/`wl-copy` no
+  Wayland e `xclip` com fallback para `xsel` no Linux X11. Wayland sem
+  `wl-clipboard` retorna `unsupported_environment`; X11 sem `xclip`/`xsel`
+  retorna `dependency_missing`.
 - `list-windows`: `limit` entre 1 e 30 (padrão 20); `includeMinimized` padrão
   `false`; título truncado em 120 e nome do processo em 80 caracteres.
 - `focus-window`: `windowId` obrigatório no padrão `^[A-Za-z0-9:._-]+$`.
@@ -219,6 +233,9 @@ Backend --HTTP 200 { ok, result }--> Tool
   `windowId`; com `windowId`, o driver foca a janela e executa a ação no mesmo
   comando. O prompt exige confirmação em texto antes de conteúdo sensível e
   proíbe senhas.
+- O clipboard pode conter dados sensíveis: a leitura deve ser pedida pelo
+  usuário e a escrita deve avisar que substitui o conteúdo atual. Nenhum dos dois
+  comandos persiste o texto no histórico além do resultado da tool.
 - Janelas são listadas/focadas com APIs nativas: PowerShell + P/Invoke no
   Windows, System Events no macOS (exige Acessibilidade) e `wmctrl`/`xdotool`
   no Linux X11. Wayland não permite enumerar/controlar janelas globalmente e
@@ -280,14 +297,15 @@ e orienta executar `--pair`. Se outra instância assumir o dispositivo
   publicamente; em produção, mantenha-o na rede privada ou atrás do proxy.
 - No Windows, `chmod 0600` é emulado de forma limitada; proteja o diretório do
   usuário com as permissões do sistema.
-- O executor lista, foca, minimiza, maximiza, restaura e fecha janelas e captura
-  tela sob comando explícito. Screenshots trafegam em base64 pelo WebSocket e
-  ficam no máximo 15 minutos em disco temporário; não são persistidos no
-  histórico. Arquivos são restritos à pasta do usuário com denylist (leitura,
+- O executor lista, foca, minimiza, maximiza, restaura e fecha janelas, captura
+  tela e lê/escreve o clipboard sob comando explícito. Screenshots trafegam em
+  base64 pelo WebSocket e ficam no máximo 15 minutos em disco temporário; não são
+  persistidos no histórico. O clipboard aceita apenas texto, com limite de 100 mil
+  caracteres. Arquivos são restritos à pasta do usuário com denylist (leitura,
   escrita e edição); não há shell arbitrário nem execução fora da allowlist.
 
 ## Próximos passos
 
-O roadmap de evolução (screenshot, janelas, mouse, clipboard, `run-command` em
-camadas, aprovação, auditoria e instalador) está em
+O roadmap de evolução (mouse, `run-command` em camadas, aprovação, auditoria e
+instalador) está em
 [`specs/devices-evolution.md`](./devices-evolution.md).
