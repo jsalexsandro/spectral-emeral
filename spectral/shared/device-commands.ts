@@ -13,6 +13,7 @@ export const DEVICE_COMMAND_NAMES = [
   "write-file",
   "edit-file",
   "run-command",
+  "screenshot",
   "list-windows",
   "focus-window",
   "minimize-window",
@@ -158,6 +159,22 @@ export const DEVICE_RUN_TIMEOUT_MAX_MS = 60_000
 export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
 export const DEVICE_RUN_ARGS_MAX_LENGTH = 1024
 
+export const DEVICE_SCREENSHOT_FORMATS = ["jpeg", "png"] as const
+
+export type DeviceScreenshotFormat = (typeof DEVICE_SCREENSHOT_FORMATS)[number]
+
+const DEVICE_SCREENSHOT_FORMAT_SET = new Set<string>(DEVICE_SCREENSHOT_FORMATS)
+
+export const DEVICE_SCREENSHOT_MAX_WIDTH_MIN = 320
+export const DEVICE_SCREENSHOT_MAX_WIDTH_MAX = 3840
+export const DEVICE_SCREENSHOT_MAX_WIDTH_DEFAULT = 1280
+export const DEVICE_SCREENSHOT_QUALITY_MIN = 30
+export const DEVICE_SCREENSHOT_QUALITY_MAX = 90
+export const DEVICE_SCREENSHOT_QUALITY_DEFAULT = 70
+export const DEVICE_SCREENSHOT_MAX_BYTES = 400 * 1024
+export const DEVICE_SCREENSHOT_IMAGE_MAX_LENGTH = 4_000_000
+export const DEVICE_SCREENSHOT_MONITOR_MAX = 15
+
 export type DeviceAppInfo = {
   id: string
   name: string
@@ -187,6 +204,24 @@ export type DeviceWindow = {
   bounds: DeviceWindowBounds | null
   focused: boolean
   minimized: boolean
+}
+
+export type DeviceScreenshot = {
+  id: string
+  width: number
+  height: number
+  /**
+   * Pixels da captura nativa por unidade do sistema operacional. Em telas
+   * Retina, por exemplo, é 2. A imagem final pode ter sido reduzida; use
+   * `width`/`region` para converter coordenadas da imagem em coordenadas da
+   * tela.
+   */
+  scale: number
+  monitor: number | null
+  region: DeviceWindowBounds
+  format: DeviceScreenshotFormat
+  byteLength: number
+  capturedAt: string
 }
 
 export type DeviceFileEntryType =
@@ -294,6 +329,13 @@ export type DeviceCommandInputMap = {
     timeoutMs?: number
     cwd?: string
   }
+  screenshot: {
+    monitor?: number
+    region?: DeviceWindowBounds
+    maxWidth: number
+    quality: number
+    format: DeviceScreenshotFormat
+  }
 }
 
 export type DeviceCommand = {
@@ -321,6 +363,12 @@ export type DeviceCommandSuccess = {
   run?: DeviceCommandRunResult
   windows?: DeviceWindow[]
   window?: DeviceWindow
+  screenshot?: DeviceScreenshot
+  /**
+   * Bytes da imagem em base64. Transiente: o app guarda em disco e remove
+   * antes de expor o resultado ao modelo e ao histórico do chat.
+   */
+  imageBase64?: string
 }
 
 export type DeviceCommandFailure = {
@@ -740,6 +788,37 @@ function readInteger(
   return integer
 }
 
+function readOptionalInteger(
+  input: unknown,
+  field: string,
+  min: number,
+  max: number,
+): number | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
+
+  const value = input[field]
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_number",
+      `Campo "${field}" deve ser um número inteiro.`,
+    )
+  }
+
+  const integer = Math.trunc(value)
+
+  if (integer < min || integer > max) {
+    throw new DeviceCommandValidationError(
+      "invalid_number",
+      `Campo "${field}" deve estar entre ${min} e ${max}.`,
+    )
+  }
+
+  return integer
+}
+
 function readBoolean(
   input: unknown,
   field: string,
@@ -998,6 +1077,121 @@ function parseRunCommand(input: unknown): DeviceCommand {
   }
 }
 
+function parseScreenshot(input: unknown): DeviceCommand {
+  const monitor = readOptionalInteger(
+    input,
+    "monitor",
+    0,
+    DEVICE_SCREENSHOT_MONITOR_MAX,
+  )
+  const region = readScreenshotRegion(input)
+  const maxWidth = readInteger(
+    input,
+    "maxWidth",
+    DEVICE_SCREENSHOT_MAX_WIDTH_DEFAULT,
+    DEVICE_SCREENSHOT_MAX_WIDTH_MIN,
+    DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
+  )
+  const quality = readInteger(
+    input,
+    "quality",
+    DEVICE_SCREENSHOT_QUALITY_DEFAULT,
+    DEVICE_SCREENSHOT_QUALITY_MIN,
+    DEVICE_SCREENSHOT_QUALITY_MAX,
+  )
+  const format = readScreenshotFormat(input)
+
+  return {
+    command: "screenshot",
+    input: {
+      ...(monitor !== undefined ? { monitor } : {}),
+      ...(region ? { region } : {}),
+      maxWidth,
+      quality,
+      format,
+    },
+  }
+}
+
+function readScreenshotFormat(input: unknown): DeviceScreenshotFormat {
+  if (
+    !isRecord(input) ||
+    input.format === undefined ||
+    input.format === null
+  ) {
+    return "jpeg"
+  }
+
+  if (typeof input.format !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_format",
+      'Campo "format" deve ser "jpeg" ou "png".',
+    )
+  }
+
+  const value = input.format.trim().toLowerCase()
+
+  if (!DEVICE_SCREENSHOT_FORMAT_SET.has(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_format",
+      'Formato inválido. Use "jpeg" ou "png".',
+    )
+  }
+
+  return value as DeviceScreenshotFormat
+}
+
+function readScreenshotRegion(
+  input: unknown,
+): DeviceWindowBounds | undefined {
+  if (!isRecord(input) || input.region === undefined || input.region === null) {
+    return undefined
+  }
+
+  if (!isRecord(input.region)) {
+    throw new DeviceCommandValidationError(
+      "invalid_region",
+      'Campo "region" deve ser um objeto com x, y, width e height.',
+    )
+  }
+
+  const region = input.region
+
+  const x = readRegionInteger(region, "x", -100_000, 100_000)
+  const y = readRegionInteger(region, "y", -100_000, 100_000)
+  const width = readRegionInteger(region, "width", 1, 100_000)
+  const height = readRegionInteger(region, "height", 1, 100_000)
+
+  return { x, y, width, height }
+}
+
+function readRegionInteger(
+  region: Record<string, unknown>,
+  field: string,
+  min: number,
+  max: number,
+): number {
+  const value = region[field]
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_region",
+      `Campo "region.${field}" deve ser um número inteiro.`,
+    )
+  }
+
+  const integer = Math.trunc(value)
+
+  if (integer < min || integer > max) {
+    throw new DeviceCommandValidationError(
+      "invalid_region",
+      `Campo "region.${field}" deve estar entre ${min} e ${max}.`,
+    )
+  }
+
+  return integer
+}
+
 export function parseDeviceCommand(
   command: unknown,
   input: unknown,
@@ -1038,6 +1232,8 @@ export function parseDeviceCommand(
       return parseEditFile(input)
     case "run-command":
       return parseRunCommand(input)
+    case "screenshot":
+      return parseScreenshot(input)
     case "list-windows":
       return parseListWindows(input)
     case "focus-window":

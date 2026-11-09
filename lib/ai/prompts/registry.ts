@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 22
+export const SYSTEM_PROMPT_VERSION = 23
 
 export type SystemPromptChange = {
   version: number
@@ -132,5 +132,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-08",
     summary:
       "Adiciona a tool device-window-action para minimizar, maximizar, restaurar e fechar janelas de dispositivos pareados, com fechamento gracioso e uso obrigatório do windowId retornado por device-list-windows.",
+  },
+  {
+    version: 23,
+    date: "2026-11-09",
+    summary:
+      "Adiciona a tool device-screenshot para capturar a tela inteira, um monitor ou uma região e anexar a imagem ao modelo, com limites de tamanho, privacidade e tradução dos erros de permissão e ambiente.",
   },
 ]

@@ -129,6 +129,25 @@ export const commandResultMessageSchema = z.object({
         .optional(),
       windows: z.array(deviceWindowSchema).max(30).optional(),
       window: deviceWindowSchema.optional(),
+      screenshot: z
+        .object({
+          id: z.string().min(1).max(128),
+          width: z.number().int().nonnegative(),
+          height: z.number().int().nonnegative(),
+          scale: z.number().positive(),
+          monitor: z.number().int().nonnegative().nullable(),
+          region: z.object({
+            x: z.number().int(),
+            y: z.number().int(),
+            width: z.number().int().positive(),
+            height: z.number().int().positive(),
+          }),
+          format: z.enum(["jpeg", "png"]),
+          byteLength: z.number().int().nonnegative(),
+          capturedAt: z.string().min(1).max(64),
+        })
+        .optional(),
+      imageBase64: z.string().min(1).max(4_000_000).optional(),
     }),
     z.object({
       ok: z.literal(false),

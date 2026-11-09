@@ -43,7 +43,7 @@ export const config = {
   heartbeatIntervalMs: 15_000,
   challengeTtlMs: 30_000,
   authTimeoutMs: 10_000,
-  maxPayloadBytes: 256 * 1024,
+  maxPayloadBytes: readInteger("DEVICE_WS_MAX_PAYLOAD_BYTES", 4 * 1024 * 1024),
   internalSecret:
     process.env.SPECTRAL_INTERNAL_SECRET ?? process.env.AUTH_SECRET ?? "",
   commandTimeoutMs: readInteger("DEVICE_COMMAND_TIMEOUT_MS", 15_000),

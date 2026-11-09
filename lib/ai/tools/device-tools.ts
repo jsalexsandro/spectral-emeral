@@ -35,6 +35,14 @@ import {
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
+  DEVICE_SCREENSHOT_FORMATS,
+  DEVICE_SCREENSHOT_MAX_WIDTH_MIN,
+  DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
+  DEVICE_SCREENSHOT_MAX_WIDTH_DEFAULT,
+  DEVICE_SCREENSHOT_QUALITY_MIN,
+  DEVICE_SCREENSHOT_QUALITY_MAX,
+  DEVICE_SCREENSHOT_QUALITY_DEFAULT,
+  DEVICE_SCREENSHOT_MONITOR_MAX,
   DEVICE_WINDOW_ID_MAX_LENGTH,
   DEVICE_WINDOW_ID_PATTERN,
   DEVICE_WINDOW_LIMIT_DEFAULT,
@@ -49,7 +57,14 @@ import {
   type DeviceKeyModifier,
   type DeviceWindowAction,
 } from "@/lib/devices/commands"
+import { getScreenshot, saveScreenshot } from "@/lib/devices/screenshot-store"
+import {
+  DEVICE_SCREENSHOT_TOOL_NAME,
+  type DeviceScreenshotToolOutput,
+} from "@/lib/devices/screenshot-tool"
 import { isDeviceOnline, type DeviceStatus } from "@/lib/devices/types"
+
+export { DEVICE_SCREENSHOT_TOOL_NAME }
 
 export const DEVICE_LIST_TOOL_NAME = "device-list"
 export const DEVICE_ONLINE_LIST_TOOL_NAME = "device-online-list"
@@ -70,6 +85,8 @@ export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
+
+const SCREENSHOT_COMMAND_TIMEOUT_MS = 30_000
 
 const deviceIdSchema = z
   .string()
@@ -180,6 +197,57 @@ export const deviceWindowActionInputSchema = z.object({
     "Ação a aplicar na janela: minimize, maximize, restore ou close.",
   ),
 })
+
+const deviceScreenshotRegionSchema = z.object({
+  x: z.number().int().min(-100_000).max(100_000),
+  y: z.number().int().min(-100_000).max(100_000),
+  width: z.number().int().min(1).max(100_000),
+  height: z.number().int().min(1).max(100_000),
+})
+
+const deviceScreenshotFormatSchema = z.enum(
+  DEVICE_SCREENSHOT_FORMATS as unknown as ["jpeg", "png"],
+)
+
+export const deviceScreenshotInputSchema = z
+  .object({
+    deviceId: deviceIdSchema,
+    monitor: z
+      .number()
+      .int()
+      .min(0)
+      .max(DEVICE_SCREENSHOT_MONITOR_MAX)
+      .optional()
+      .describe(
+        "Índice do monitor (0 = primeiro). Sem ele, captura a tela inteira virtual.",
+      ),
+    region: deviceScreenshotRegionSchema
+      .optional()
+      .describe(
+        "Retângulo da tela em coordenadas nativas do sistema operacional. Não combine com monitor.",
+      ),
+    maxWidth: z
+      .number()
+      .int()
+      .min(DEVICE_SCREENSHOT_MAX_WIDTH_MIN)
+      .max(DEVICE_SCREENSHOT_MAX_WIDTH_MAX)
+      .default(DEVICE_SCREENSHOT_MAX_WIDTH_DEFAULT)
+      .describe("Largura máxima da imagem final em pixels."),
+    quality: z
+      .number()
+      .int()
+      .min(DEVICE_SCREENSHOT_QUALITY_MIN)
+      .max(DEVICE_SCREENSHOT_QUALITY_MAX)
+      .default(DEVICE_SCREENSHOT_QUALITY_DEFAULT)
+      .describe("Qualidade JPEG (30–90). Ignorada em PNG."),
+    format: deviceScreenshotFormatSchema
+      .default("jpeg")
+      .describe("Formato da imagem: jpeg (padrão e menor) ou png."),
+  })
+  .refine((value) => !(value.monitor !== undefined && value.region), {
+    message: "Use monitor ou region, não os dois ao mesmo tempo.",
+    path: ["region"],
+  })
 
 export const deviceListFilesInputSchema = z.object({
   deviceId: deviceIdSchema,
@@ -377,6 +445,7 @@ function toCommandToolResult(
     ...(output.result.run ? { run: output.result.run } : {}),
     ...(output.result.windows ? { windows: output.result.windows } : {}),
     ...(output.result.window ? { window: output.result.window } : {}),
+    ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
   }
 }
 
@@ -519,6 +588,15 @@ const windowActionDescription = [
   "`restore` desfaz a minimização e o estado maximizado, devolvendo a janela ao tamanho normal.",
   "`close` envia um pedido de fechamento gracioso: o aplicativo pode abrir um diálogo para salvar alterações em vez de encerrar imediatamente. Não há força bruta nem encerramento por processo.",
   "Use apenas em janelas que o usuário pediu para controlar; nunca feche janelas do sistema ou aplicativos sem relação com o pedido.",
+].join("\n")
+
+const screenshotDescription = [
+  "Captura e envia ao modelo uma imagem da tela de um dispositivo online.",
+  "Sem `monitor` nem `region`, captura a tela inteira (todos os monitores). Use `monitor` (índice começando em 0) para um monitor específico ou `region` para um retângulo em coordenadas nativas do sistema.",
+  "A saída inclui id, largura, altura, escala do SO, monitor, região, formato e tamanho. A imagem não é salva no histórico do chat; ela fica disponível apenas por tempo limitado e é anexada ao modelo na mesma rodada.",
+  "Use após uma ação para verificar o resultado antes de continuar. Não capture a tela em sequência sem necessidade: cada imagem consome contexto e tokens.",
+  "Privacidade: só capture quando o usuário pedir ou quando for necessário para confirmar uma ação que ele autorizou. Nunca capture senhas, dados sensíveis ou conteúdo sem relação com o pedido.",
+  "Erros comuns: `screen_permission_denied` no macOS (autorize Gravação de Tela), `unsupported_environment` no Wayland, `dependency_missing` no Linux (instale ImageMagick/xrandr) e `monitor_not_found` para índice inválido.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -916,6 +994,107 @@ export function createDeviceTools(userId: string) {
                 ? error.message
                 : "Erro desconhecido ao executar device-window-action.",
           }
+        }
+      },
+    }),
+    [DEVICE_SCREENSHOT_TOOL_NAME]: tool({
+      description: screenshotDescription,
+      inputSchema: deviceScreenshotInputSchema,
+      execute: async ({
+        deviceId,
+        ...input
+      }): Promise<DeviceScreenshotToolOutput> => {
+        try {
+          const output = await sendDeviceCommand({
+            userId,
+            deviceId,
+            command: parseDeviceCommand("screenshot", input),
+            timeoutMs: SCREENSHOT_COMMAND_TIMEOUT_MS,
+          })
+
+          if (!output.ok) {
+            return { ok: false, code: output.code, error: output.error }
+          }
+
+          if (!output.result.ok) {
+            return {
+              ok: false,
+              code: output.result.code ?? "command_failed",
+              error: output.result.error,
+            }
+          }
+
+          const screenshot = output.result.screenshot
+          const imageBase64 = output.result.imageBase64
+
+          if (!screenshot || !imageBase64) {
+            return {
+              ok: false,
+              code: "invalid_response",
+              error: "O dispositivo não retornou a captura de tela.",
+            }
+          }
+
+          await saveScreenshot({
+            id: screenshot.id,
+            deviceId,
+            format: screenshot.format,
+            base64: imageBase64,
+          })
+
+          return { ok: true, deviceId, screenshot }
+        } catch (error) {
+          return {
+            ok: false,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-screenshot.",
+          }
+        }
+      },
+      toModelOutput: async ({ output }) => {
+        if (!output.ok) {
+          return {
+            type: "text",
+            value: [
+              `Falha ao capturar a tela: ${output.code ?? "command_failed"}.`,
+              output.error ?? "O dispositivo não detalhou o erro.",
+            ].join(" "),
+          }
+        }
+
+        const { screenshot } = output
+        const stored = await getScreenshot(screenshot.id)
+        const summary = [
+          `Captura de tela de ${output.deviceId}: ${screenshot.width}x${screenshot.height}px, ${screenshot.format.toUpperCase()}, ${Math.round(screenshot.byteLength / 1024)} KB.`,
+          screenshot.monitor !== null
+            ? `Monitor ${screenshot.monitor}.`
+            : "Tela inteira (todos os monitores).",
+          `Região de origem: x=${screenshot.region.x}, y=${screenshot.region.y}, ${screenshot.region.width}x${screenshot.region.height}. Escala do SO: ${screenshot.scale}.`,
+        ].join(" ")
+
+        if (!stored) {
+          return {
+            type: "text",
+            value: `${summary} A imagem não está mais disponível para visualização.`,
+          }
+        }
+
+        return {
+          type: "content",
+          value: [
+            {
+              type: "text",
+              text: `${summary} A imagem está anexada a seguir; use-a para decidir o próximo passo e confirme o resultado com o usuário.`,
+            },
+            {
+              type: "file",
+              mediaType: stored.format === "png" ? "image/png" : "image/jpeg",
+              data: { type: "data", data: stored.bytes.toString("base64") },
+            },
+          ],
         }
       },
     }),

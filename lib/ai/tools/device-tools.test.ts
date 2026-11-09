@@ -19,8 +19,10 @@ import {
   DEVICE_LIST_WINDOWS_TOOL_NAME,
   DEVICE_FOCUS_WINDOW_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
+  DEVICE_SCREENSHOT_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
+  deviceScreenshotInputSchema,
   deviceOpenAppInputSchema,
   deviceOpenUrlInputSchema,
   devicePressKeyInputSchema,
@@ -110,6 +112,7 @@ describe("device tools", () => {
         DEVICE_LIST_WINDOWS_TOOL_NAME,
         DEVICE_FOCUS_WINDOW_TOOL_NAME,
         DEVICE_WINDOW_ACTION_TOOL_NAME,
+        DEVICE_SCREENSHOT_TOOL_NAME,
       ].sort(),
     )
 
@@ -313,6 +316,59 @@ describe("device tools", () => {
       deviceWindowActionInputSchema.safeParse({
         deviceId: "device-1",
         action: "close",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-screenshot", () => {
+    const parsed = deviceScreenshotInputSchema.safeParse({
+      deviceId: "device-1",
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success ? parsed.data : null).toEqual({
+      deviceId: "device-1",
+      maxWidth: 1280,
+      quality: 70,
+      format: "jpeg",
+    })
+
+    expect(
+      deviceScreenshotInputSchema.safeParse({
+        deviceId: "device-1",
+        monitor: 2,
+        maxWidth: 1920,
+        quality: 85,
+        format: "png",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceScreenshotInputSchema.safeParse({
+        deviceId: "device-1",
+        region: { x: 0, y: 0, width: 800, height: 600 },
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceScreenshotInputSchema.safeParse({
+        deviceId: "device-1",
+        monitor: 1,
+        region: { x: 0, y: 0, width: 800, height: 600 },
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceScreenshotInputSchema.safeParse({
+        deviceId: "device-1",
+        maxWidth: 100,
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceScreenshotInputSchema.safeParse({
+        deviceId: "device-1",
+        format: "webp",
       }).success,
     ).toBe(false)
   })

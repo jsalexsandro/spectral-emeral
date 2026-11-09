@@ -61,6 +61,7 @@ Next   --HTTP interno--> spectral/backend (/internal/devices/:id/commands)
 | `GET` | `/api/devices/:id` | Proprietário | Consulta um dispositivo |
 | `PATCH` | `/api/devices/:id` | Proprietário | Renomeia |
 | `DELETE` | `/api/devices/:id` | Proprietário | Revoga (soft delete) |
+| `GET` | `/api/devices/:id/screenshots/:screenshotId` | Proprietário | Serve uma captura temporária (15 min) |
 
 Toda operação de gerenciamento deriva o `userId` da sessão autenticada. O
 frontend nunca informa o proprietário.
@@ -90,7 +91,8 @@ Transporte `ws://` em desenvolvimento e `wss://` atrás de TLS em produção.
   online quando `now - lastSeenAt <= 45s`.
 - Cada heartbeat consulta a revogação de forma condicional; dispositivo revogado
   recebe `revoked_device` e o socket é fechado.
-- `maxPayload` de 256 KB e rate limit em memória por IP.
+- `maxPayload` de 4 MB por padrão (`DEVICE_WS_MAX_PAYLOAD_BYTES`), necessário
+  para transportar screenshots em base64, e rate limit em memória por IP.
 
 ### Códigos de fechamento
 
@@ -147,6 +149,7 @@ Backend --HTTP 200 { ok, result }--> Tool
 | `maximize-window` | `{ windowId }` | `ok` + `window` |
 | `restore-window` | `{ windowId }` | `ok` + `window` |
 | `close-window` | `{ windowId }` | `ok` |
+| `screenshot` | `{ monitor?, region?, maxWidth, quality, format }` | `ok` + `screenshot{ id, width, height, scale, monitor, region, format, byteLength, capturedAt }` + `imageBase64` |
 | `list-files` | `{ path?, depth?, showHidden?, maxEntries? }` | `ok` + `entries[]`, `total`, `truncated` |
 | `read-file` | `{ path, offset?, limit? }` | `ok` + `file{ content, startLine, endLine, totalLines, truncated, size }` |
 | `glob` | `{ pattern, path?, showHidden?, maxResults? }` | `ok` + `paths[]`, `total`, `truncated` |
@@ -186,6 +189,16 @@ Backend --HTTP 200 { ok, result }--> Tool
   `wmctrl -b add,hidden`, `add,maximized_vert,maximized_horz` e
   `remove,hidden,maximized_vert,maximized_horz` no Linux X11.
 - `alt+F4` e `ctrl+alt+delete` são bloqueados no contrato e no driver.
+- `screenshot`: sem `monitor`/`region` captura a tela inteira virtual; `monitor`
+  é índice 0-based; `region` é `{ x, y, width, height }` em coordenadas do
+  sistema. `maxWidth` entre 320 e 3840 (padrão 1280), `quality` entre 30 e 90
+  (padrão 70) e `format` `jpeg`/`png` (padrão `jpeg`). O driver captura em PNG
+  nativo e reduz a largura progressivamente até caber em 400 KB. O resultado
+  carrega `imageBase64` no WebSocket; o app salva os bytes em arquivo temporário
+  com TTL de 15 min, devolve apenas metadados ao histórico e anexa a imagem ao
+  modelo via `toModelOutput`. Windows usa PowerShell + .NET; macOS usa
+  `screencapture`/`sips`; Linux X11 usa `import`/`convert`/`identify`/`xrandr` e
+  Wayland retorna `unsupported_environment`.
 - `list-files`: caminho padrão é a pasta do usuário; `depth` entre 1 e 3;
   `maxEntries` entre 1 e 500 (padrão 200); não segue links simbólicos.
 - `read-file`: caminho obrigatório; `offset` a partir de 1; `limit` entre 1 e
@@ -242,12 +255,14 @@ Variáveis do backend:
 - `SPECTRAL_WS_PORT` (padrão `4001`)
 - `DEVICE_HEARTBEAT_TIMEOUT_MS` (padrão `45000`)
 - `DEVICE_COMMAND_TIMEOUT_MS` (padrão `15000`, máximo `60000`)
+- `DEVICE_WS_MAX_PAYLOAD_BYTES` (padrão `4194304`)
 - `SPECTRAL_INTERNAL_SECRET` (fallback `AUTH_SECRET`)
 
 Variáveis do app Next.js:
 
 - `SPECTRAL_BACKEND_URL` (padrão `http://localhost:4001`)
 - `SPECTRAL_INTERNAL_SECRET` (fallback `AUTH_SECRET`)
+- `SPECTRAL_SCREENSHOT_DIR` (padrão `<tmp>/spectral-screenshots`)
 
 O driver reautentica em cada reconexão com a chave privada local, usando backoff
 exponencial com jitter. Se receber `revoked_device` ou `unknown_device`, encerra
@@ -265,10 +280,11 @@ e orienta executar `--pair`. Se outra instância assumir o dispositivo
   publicamente; em produção, mantenha-o na rede privada ou atrás do proxy.
 - No Windows, `chmod 0600` é emulado de forma limitada; proteja o diretório do
   usuário com as permissões do sistema.
-- O executor lista, foca, minimiza, maximiza, restaura e fecha janelas, mas
-  ainda não captura tela. Arquivos são restritos à pasta do usuário com denylist
-  (leitura, escrita e edição); não há shell arbitrário nem execução fora da
-  allowlist.
+- O executor lista, foca, minimiza, maximiza, restaura e fecha janelas e captura
+  tela sob comando explícito. Screenshots trafegam em base64 pelo WebSocket e
+  ficam no máximo 15 minutos em disco temporário; não são persistidos no
+  histórico. Arquivos são restritos à pasta do usuário com denylist (leitura,
+  escrita e edição); não há shell arbitrário nem execução fora da allowlist.
 
 ## Próximos passos
 

@@ -37,6 +37,7 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
 | `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
 | `device-window-action` | Minimiza, maximiza, restaura ou fecha uma janela do PC | `{ deviceId, windowId, action }` | `ok` + `window` em `minimize`/`maximize`/`restore`; `ok` em `close` |
+| `device-screenshot` | Captura a tela inteira, um monitor ou uma região e envia a imagem ao modelo | `{ deviceId, monitor?, region?, maxWidth?, quality?, format? }` | `ok` + `screenshot` com id, largura, altura, escala, monitor, região, formato e tamanho; a imagem é anexada ao modelo, não ao histórico |
 | `device-list-files` | Lista arquivos e pastas do PC (somente leitura) | `{ deviceId, path?, depth?, showHidden?, maxEntries? }` | `entries[]` com nome, caminho, tipo, tamanho e modificação |
 | `device-read-file` | Lê conteúdo de texto de um arquivo (somente leitura) | `{ deviceId, path, offset?, limit? }` | `file` com `content`, linhas e `truncated` |
 | `device-glob` | Busca arquivos por padrão glob (somente leitura) | `{ deviceId, pattern, path?, showHidden?, maxResults? }` | `paths[]` de arquivos |
@@ -99,7 +100,25 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   dentro de um arquivo. O texto antigo deve aparecer exatamente uma vez no
   arquivo; se aparecer mais de uma vez, a edição é rejeitada. Máximo de 1 MB
   no arquivo resultante.
-- `device-screenshot` ainda **não** está implementada.
+- `device-screenshot` captura a tela inteira (todos os monitores), um monitor
+  pelo índice (`0` = primeiro) ou uma `region` em coordenadas do sistema. Não
+  combine `monitor` e `region`. `maxWidth` vai de 320 a 3840 (padrão 1280),
+  `quality` de 30 a 90 (padrão 70, só JPEG) e `format` aceita `jpeg` (padrão) ou
+  `png`. O driver captura em PNG nativo e reencoda reduzindo a largura até caber
+  em 400 KB.
+- O resultado da tool para o chat contém apenas metadados. Os bytes ficam em
+  armazenamento temporário do app por 15 minutos e são anexados ao modelo via
+  `toModelOutput`; `imageBase64` nunca é persistido no histórico. A imagem é
+  servida por `GET /api/devices/:id/screenshots/:screenshotId`, que exige sessão
+  e ownership do dispositivo.
+- `scale` é o fator de pixels nativos por unidade do sistema operacional (por
+  exemplo, `2` em telas Retina) e `region` é o retângulo capturado. Erros comuns:
+  `screen_permission_denied` (macOS sem Gravação de Tela),
+  `unsupported_environment` (Wayland), `dependency_missing` (ImageMagick/xrandr no
+  Linux), `monitor_not_found`, `screen_too_large` e `screen_capture_failed`.
+- Por privacidade, a captura só deve ser usada quando o usuário pedir ou para
+  confirmar uma ação autorizada. O prompt proíbe capturas em loop e exige cuidado
+  com senhas e dados sensíveis.
 
 ## Widget de abrir apps
 
@@ -127,8 +146,10 @@ carga do widget.
   quando não recebem `windowId`. O prompt exige que a IA liste as janelas antes,
   confirme antes de conteúdo sensível e proíba senhas.
 - O driver não executa shell arbitrário fora da allowlist, escreve/edita apenas
-  dentro do sandbox da pasta do usuário e não captura tela. A leitura de arquivos
-  é restrita à pasta de usuário com sandbox e denylist de caminhos sensíveis
+  dentro do sandbox da pasta do usuário e só captura tela sob comando explícito
+  da tool `device-screenshot`. Screenshots ficam no máximo 15 minutos em
+  armazenamento temporário e não entram no histórico do chat. A leitura de
+  arquivos é restrita à pasta de usuário com sandbox e denylist de caminhos sensíveis
   (`.ssh`, `.gnupg`, `.aws`, credenciais, perfis de navegador, arquivos do
   sistema, etc.).
 - O driver deve ser iniciado com privilégios de administrador (PowerShell como
@@ -160,16 +181,22 @@ carga do widget.
 - "Liste os arquivos em Documentos do casa-pc."
 - "Leia o README do projeto no casa-pc."
 - "Busque 'TODO' em src do casa-pc."
+- "Tire um print da tela do casa-pc e veja se o download terminou."
+- "Capture só a região do navegador no casa-pc."
 
 ## Referências
 
 - Contrato compartilhado: `spectral/shared/device-commands.ts`
 - Tools do chat: `lib/ai/tools/device-tools.ts`
 - Cliente do backend: `lib/devices/command-client.ts`
-- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 11`)
+- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 23`)
 - Backend: `spectral/backend/src/websocket/command-bus.ts` e `spectral/backend/src/http/internal.ts`
-- Driver: `spectral/driver/src/commands/executor.ts` e
-  `spectral/driver/src/commands/files.ts`
+- Driver: `spectral/driver/src/commands/executor.ts`,
+  `spectral/driver/src/commands/files.ts` e
+  `spectral/driver/src/commands/screen.ts`
+- Screenshot no app: `lib/devices/screenshot-store.ts`,
+  `lib/devices/screenshot-tool.ts` e
+  `app/api/devices/[id]/screenshots/[screenshotId]/route.ts`
 - Arquitetura completa: `specs/devices-connect.md`
 - Roadmap de evolução (screenshot, mouse, janelas, política, auditoria):
   `specs/devices-evolution.md`

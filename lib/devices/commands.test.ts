@@ -242,6 +242,69 @@ describe("device command contract", () => {
     }
   })
 
+  it("normalizes screenshot with defaults", () => {
+    expect(parseDeviceCommand("screenshot", {})).toEqual({
+      command: "screenshot",
+      input: { maxWidth: 1280, quality: 70, format: "jpeg" },
+    })
+
+    expect(
+      parseDeviceCommand("screenshot", {
+        monitor: 1,
+        maxWidth: 1920,
+        quality: 85,
+        format: "PNG",
+      }),
+    ).toEqual({
+      command: "screenshot",
+      input: {
+        monitor: 1,
+        maxWidth: 1920,
+        quality: 85,
+        format: "png",
+      },
+    })
+
+    expect(
+      parseDeviceCommand("screenshot", {
+        region: { x: 10.9, y: -5.2, width: 800.7, height: 600.1 },
+      }),
+    ).toEqual({
+      command: "screenshot",
+      input: {
+        region: { x: 10, y: -5, width: 800, height: 600 },
+        maxWidth: 1280,
+        quality: 70,
+        format: "jpeg",
+      },
+    })
+  })
+
+  it("rejects invalid screenshot inputs", () => {
+    expect(() =>
+      parseDeviceCommand("screenshot", { maxWidth: 100 }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", { quality: 100 }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", { monitor: -1 }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", { format: "webp" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", {
+        region: { x: 0, y: 0, width: 0, height: 100 },
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", {
+        region: { x: 0, y: 0, width: 100 },
+      }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
   it("accepts an optional window id on type-text and press-key", () => {
     expect(
       parseDeviceCommand("type-text", { text: "olá", windowId: "123:0" }),

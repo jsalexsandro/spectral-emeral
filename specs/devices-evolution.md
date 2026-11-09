@@ -1,7 +1,7 @@
 # Evolução dos dispositivos (roadmap)
 
-> **Status:** proposta. Nada aqui está implementado além do que está em
-> [`specs/chat-device.md`](./chat-device.md).
+> **Status:** roadmap vivo. Os itens marcados com ✅ já estão implementados e
+> documentados em [`specs/chat-device.md`](./chat-device.md).
 > **Escopo atual:** PC (Windows, macOS e Linux). Celular e TV Android ainda não
 > são suportados.
 
@@ -20,15 +20,18 @@ O que já existe e funciona:
   pasta padrão.
 - Tools de chat: `device-list`, `device-online-list`, `device-get-os`,
   `device-list-apps`, `device-open-url`, `device-open-app`, `device-type-text`,
-  `device-press-key`, `device-list-files`, `device-read-file`, `device-glob`,
-  `device-grep`, `device-check-admin`, `device-write-file`, `device-edit-file`
-  e `device-run-command`.
+  `device-press-key`, `device-list-windows`, `device-focus-window`,
+  `device-window-action`, `device-screenshot`, `device-list-files`,
+  `device-read-file`, `device-glob`, `device-grep`, `device-check-admin`,
+  `device-write-file`, `device-edit-file` e `device-run-command`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
 
 ## O que limita o carro chefe
 
-- **A IA é cega.** Não existe `device-screenshot`. Ela digita e torce para ter
-  acertado.
+- **A IA enxerga sob demanda, mas ainda não clica por elemento.**
+  `device-screenshot` já captura tela, monitor e região e anexa a imagem ao
+  modelo, mas a imagem é temporária (15 min) e o fluxo de mouse por coordenada
+  ainda não existe.
 - **A IA era míope.** `device-type-text` e `device-press-key` agiam sobre a
   janela em foco, sem como listar ou focar janelas. Isso foi resolvido com
   `device-list-windows` + `device-focus-window` (item 2), e `type-text`/
@@ -46,8 +49,10 @@ O que já existe e funciona:
 - **Não há política por dispositivo, aprovação real nem auditoria.** A
   confirmação é apenas texto no chat.
 - **O transporte limita o tamanho e a duração.** O WebSocket do backend usa
-  `maxPayload` de 256 KB e cada comando tem timeout máximo de 60s, com um comando
-  em voo por PC (`device_busy`).
+  `maxPayload` de 4 MB (configurável) e cada comando tem timeout máximo de 60s,
+  com um comando em voo por PC (`device_busy`). Screenshots ainda trafegam em
+  base64 e ficam em disco temporário; um canal binário e storage permanente
+  seguem pendentes.
 
 ---
 
@@ -58,23 +63,33 @@ Risco considera exposição de segurança ao liberar o recurso.
 
 ### Bloco A — Percepção (o que destrava tudo)
 
-#### 1. `device-screenshot` — captura de tela
+#### 1. `device-screenshot` — captura de tela ✅
 
+- **Status:** implementado (MVP). Contrato em
+  `spectral/shared/device-commands.ts`, driver em
+  `spectral/driver/src/commands/screen.ts`, tool em
+  `lib/ai/tools/device-tools.ts`, armazenamento temporário em
+  `lib/devices/screenshot-store.ts` e card em
+  `components/chat/tool-part-card.tsx`.
 - **O que:** capturar tela inteira, um monitor ou uma região, com escala e
-  compressão configuráveis. Retornar a imagem para o modelo e para um widget.
+  compressão configuráveis. Retornar a imagem para o modelo e para um card no
+  chat.
 - **Por quê:** é a feature que transforma "controlar PC" em "agente que
   resolve". Permite verificar se a ação anterior funcionou e corrigir o rumo.
 - **Contrato:** `device-screenshot` com
-  `{ deviceId, monitor?, region?, format?, quality?, maxWidth? }`.
-  Resultado com `imageUrl` (ou referência de armazenamento), `width`, `height`
-  e `monitors[]`.
-- **Onde mexer:** `spectral/shared/device-commands.ts`,
-  `spectral/driver/src/commands/screen.ts`, `lib/ai/tools/device-tools.ts`,
-  prompt em `lib/ai/prompts/sections/devices.ts`, widget de visualização.
-- **Atenção:** base64 de imagem não cabe no `maxPayload` de 256 KB. Salvar em
-  storage e devolver uma URL/referência, ou criar um canal binário separado.
+  `{ deviceId, monitor?, region?, format?, quality?, maxWidth? }`. Resultado
+  com `screenshot{ id, width, height, scale, monitor, region, format,
+  byteLength, capturedAt }` e `imageBase64` transiente. O histórico guarda só
+  os metadados.
+- **Transporte:** base64 pelo WebSocket, com `maxPayload` de 4 MB no backend e
+  teto de 400 KB para a imagem final. O app salva os bytes em disco temporário
+  com TTL de 15 min e os anexa ao modelo via `toModelOutput`; a imagem é servida
+  por rota autenticada.
+- **Plataformas:** Windows (PowerShell + .NET), macOS (`screencapture`/`sips`,
+  exige Gravação de Tela) e Linux X11 (`import`/`convert`/`identify`/`xrandr`).
+  Wayland retorna `unsupported_environment` nesta fase.
 - **Pronto quando:** a IA tira um print, vê a imagem, clica em um elemento e
-  confirma por um segundo print.
+  confirma por um segundo print. A parte de mouse (item 3) ainda falta.
 - **Esforço:** M · **Risco:** M (privacidade da tela).
 
 #### 2. Janelas: listar, focar e controlar ✅

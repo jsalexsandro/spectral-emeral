@@ -22,6 +22,7 @@ import {
   restoreWindow,
   type DeviceWindow,
 } from "./windows.js"
+import { DeviceScreenshotError, takeScreenshot } from "./screen.js"
 
 const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
@@ -489,9 +490,20 @@ export async function executeDeviceCommand(
           ...(await files.runCommand(command.input, options?.defaultFolder)),
           ok: true,
         }
+
+      case "screenshot": {
+        const { imageBase64, screenshot } = await takeScreenshot(
+          command.input,
+        )
+        return { ok: true, screenshot, imageBase64 }
+      }
     }
   } catch (error) {
     if (error instanceof DeviceWindowError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceScreenshotError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 
