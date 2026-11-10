@@ -12,6 +12,19 @@ import {
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
   DEVICE_CLIPBOARD_TEXT_MAX_LENGTH,
+  DEVICE_MOUSE_COORD_MIN,
+  DEVICE_MOUSE_COORD_MAX,
+  DEVICE_MOUSE_BUTTONS,
+  DEVICE_MOUSE_CLICK_COUNT_MIN,
+  DEVICE_MOUSE_CLICK_COUNT_MAX,
+  DEVICE_MOUSE_CLICK_COUNT_DEFAULT,
+  DEVICE_MOUSE_SCROLL_DIRECTIONS,
+  DEVICE_MOUSE_SCROLL_AMOUNT_MIN,
+  DEVICE_MOUSE_SCROLL_AMOUNT_MAX,
+  DEVICE_MOUSE_SCROLL_AMOUNT_DEFAULT,
+  DEVICE_MOUSE_DRAG_DURATION_MIN_MS,
+  DEVICE_MOUSE_DRAG_DURATION_MAX_MS,
+  DEVICE_MOUSE_DRAG_DURATION_DEFAULT_MS,
   DEVICE_URL_MAX_LENGTH,
   DEVICE_PATH_MAX_LENGTH,
   DEVICE_PATTERN_MAX_LENGTH,
@@ -44,6 +57,7 @@ import {
   DEVICE_SCREENSHOT_QUALITY_MAX,
   DEVICE_SCREENSHOT_QUALITY_DEFAULT,
   DEVICE_SCREENSHOT_MONITOR_MAX,
+  DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
   DEVICE_WINDOW_ID_MAX_LENGTH,
   DEVICE_WINDOW_ID_PATTERN,
   DEVICE_WINDOW_LIMIT_DEFAULT,
@@ -56,9 +70,15 @@ import {
   type DeviceCommand,
   type DeviceKey,
   type DeviceKeyModifier,
+  type DeviceMouseButton,
+  type DeviceMouseScrollDirection,
   type DeviceWindowAction,
 } from "@/lib/devices/commands"
-import { getScreenshot, saveScreenshot } from "@/lib/devices/screenshot-store"
+import {
+  getScreenshot,
+  getScreenshotMetadata,
+  saveScreenshot,
+} from "@/lib/devices/screenshot-store"
 import {
   DEVICE_SCREENSHOT_TOOL_NAME,
   type DeviceScreenshotToolOutput,
@@ -77,6 +97,10 @@ export const DEVICE_TYPE_TEXT_TOOL_NAME = "device-type-text"
 export const DEVICE_PRESS_KEY_TOOL_NAME = "device-press-key"
 export const DEVICE_READ_CLIPBOARD_TOOL_NAME = "device-read-clipboard"
 export const DEVICE_WRITE_CLIPBOARD_TOOL_NAME = "device-write-clipboard"
+export const DEVICE_MOVE_MOUSE_TOOL_NAME = "device-move-mouse"
+export const DEVICE_CLICK_TOOL_NAME = "device-click"
+export const DEVICE_SCROLL_TOOL_NAME = "device-scroll"
+export const DEVICE_DRAG_TOOL_NAME = "device-drag"
 export const DEVICE_LIST_FILES_TOOL_NAME = "device-list-files"
 export const DEVICE_READ_FILE_TOOL_NAME = "device-read-file"
 export const DEVICE_GLOB_TOOL_NAME = "device-glob"
@@ -190,6 +214,140 @@ export const deviceWriteClipboardInputSchema = z.object({
     ),
 })
 
+const deviceMouseCoordinateSchema = z
+  .number()
+  .int()
+  .min(DEVICE_MOUSE_COORD_MIN)
+  .max(DEVICE_MOUSE_COORD_MAX)
+
+const deviceMouseButtonSchema = z.enum(
+  DEVICE_MOUSE_BUTTONS as unknown as [DeviceMouseButton, ...DeviceMouseButton[]],
+)
+
+const deviceMouseScrollDirectionSchema = z.enum(
+  DEVICE_MOUSE_SCROLL_DIRECTIONS as unknown as [
+    DeviceMouseScrollDirection,
+    ...DeviceMouseScrollDirection[],
+  ],
+)
+
+const deviceMousePointSchema = z.object({
+  x: deviceMouseCoordinateSchema,
+  y: deviceMouseCoordinateSchema,
+})
+
+const screenshotIdSchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, "Identificador de captura inválido.")
+  .describe(
+    "Id da captura retornada por device-screenshot. Nas tools de mouse, x/y passam a ser normalizados de 0 a 1000. Em device-screenshot, use junto com region normalizado para recortar/ampliar.",
+  )
+
+const mouseCoordinateDescription =
+  "Com `screenshotId`: inteiro normalizado de 0 a 1000 na imagem (0 = borda esquerda/topo, 1000 = borda direita/baixo). Sem `screenshotId`: pixel nativo do sistema."
+
+function withOptionalPointPair<T extends z.ZodRawShape>(shape: T) {
+  return z.object(shape).superRefine((value, ctx) => {
+    const candidate = value as {
+      x?: number
+      y?: number
+      screenshotId?: string
+    }
+    const hasX = candidate.x !== undefined
+    const hasY = candidate.y !== undefined
+
+    if (hasX !== hasY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe "x" e "y" juntos ou omita os dois.',
+        path: ["x"],
+      })
+      return
+    }
+
+    if (candidate.screenshotId !== undefined && !hasX) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Ao usar "screenshotId", informe também "x" e "y" normalizados de 0 a 1000.',
+        path: ["screenshotId"],
+      })
+    }
+  })
+}
+
+export const deviceMoveMouseInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  x: deviceMouseCoordinateSchema.describe(mouseCoordinateDescription),
+  y: deviceMouseCoordinateSchema.describe(mouseCoordinateDescription),
+  screenshotId: screenshotIdSchema.optional(),
+})
+
+export const deviceClickInputSchema = withOptionalPointPair({
+  deviceId: deviceIdSchema,
+  x: deviceMouseCoordinateSchema.optional().describe(
+    `Coordenada X para mover o cursor antes do clique. ${mouseCoordinateDescription}`,
+  ),
+  y: deviceMouseCoordinateSchema.optional().describe(
+    `Coordenada Y para mover o cursor antes do clique. ${mouseCoordinateDescription}`,
+  ),
+  screenshotId: screenshotIdSchema.optional(),
+  button: deviceMouseButtonSchema
+    .default("left")
+    .describe("Botão do mouse: left, right ou middle."),
+  count: z
+    .number()
+    .int()
+    .min(DEVICE_MOUSE_CLICK_COUNT_MIN)
+    .max(DEVICE_MOUSE_CLICK_COUNT_MAX)
+    .default(DEVICE_MOUSE_CLICK_COUNT_DEFAULT)
+    .describe("Número de cliques: 1 (padrão), 2 ou 3."),
+})
+
+export const deviceScrollInputSchema = withOptionalPointPair({
+  deviceId: deviceIdSchema,
+  x: deviceMouseCoordinateSchema.optional().describe(
+    `Coordenada X para posicionar o cursor antes de rolar. ${mouseCoordinateDescription}`,
+  ),
+  y: deviceMouseCoordinateSchema.optional().describe(
+    `Coordenada Y para posicionar o cursor antes de rolar. ${mouseCoordinateDescription}`,
+  ),
+  screenshotId: screenshotIdSchema.optional(),
+  direction: deviceMouseScrollDirectionSchema.describe(
+    "Direção da rolagem: up, down, left ou right.",
+  ),
+  amount: z
+    .number()
+    .int()
+    .min(DEVICE_MOUSE_SCROLL_AMOUNT_MIN)
+    .max(DEVICE_MOUSE_SCROLL_AMOUNT_MAX)
+    .default(DEVICE_MOUSE_SCROLL_AMOUNT_DEFAULT)
+    .describe("Quantidade de passos de rolagem (1–50, padrão 3)."),
+})
+
+export const deviceDragInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  from: deviceMousePointSchema.describe(
+    `Ponto inicial do arrasto. ${mouseCoordinateDescription}`,
+  ),
+  to: deviceMousePointSchema.describe(
+    `Ponto final do arrasto. ${mouseCoordinateDescription}`,
+  ),
+  screenshotId: screenshotIdSchema.optional(),
+  button: deviceMouseButtonSchema
+    .default("left")
+    .describe("Botão mantido durante o arrasto: left, right ou middle."),
+  durationMs: z
+    .number()
+    .int()
+    .min(DEVICE_MOUSE_DRAG_DURATION_MIN_MS)
+    .max(DEVICE_MOUSE_DRAG_DURATION_MAX_MS)
+    .default(DEVICE_MOUSE_DRAG_DURATION_DEFAULT_MS)
+    .describe("Duração do arrasto em milissegundos (100–10.000)."),
+})
+
 export const deviceListWindowsInputSchema = z.object({
   deviceId: deviceIdSchema,
   includeMinimized: z.boolean().default(false),
@@ -242,12 +400,22 @@ export const deviceScreenshotInputSchema = z
       .max(DEVICE_SCREENSHOT_MONITOR_MAX)
       .optional()
       .describe(
-        "Índice do monitor (0 = primeiro). Sem ele, captura a tela inteira virtual.",
+        "Índice do monitor (0 = primeiro). Sem monitor, region nem windowId, captura a tela inteira virtual.",
       ),
     region: deviceScreenshotRegionSchema
       .optional()
       .describe(
-        "Retângulo da tela em coordenadas nativas do sistema operacional. Não combine com monitor.",
+        "Retângulo do alvo. Sem `screenshotId`, usa pixels nativos do sistema. Com `screenshotId`, usa coordenadas normalizadas inteiras de 0 a 1000 na captura de referência.",
+      ),
+    windowId: deviceWindowIdSchema
+      .optional()
+      .describe(
+        "Id de uma janela retornada por device-list-windows. O driver foca a janela e captura apenas os limites dela no mesmo comando.",
+      ),
+    screenshotId: screenshotIdSchema
+      .optional()
+      .describe(
+        "Captura de referência para interpretar `region` em coordenadas normalizadas 0–1000. Use para recortar e ampliar um alvo pequeno.",
       ),
     maxWidth: z
       .number()
@@ -255,7 +423,9 @@ export const deviceScreenshotInputSchema = z
       .min(DEVICE_SCREENSHOT_MAX_WIDTH_MIN)
       .max(DEVICE_SCREENSHOT_MAX_WIDTH_MAX)
       .default(DEVICE_SCREENSHOT_MAX_WIDTH_DEFAULT)
-      .describe("Largura máxima da imagem final em pixels."),
+      .describe(
+        "Largura máxima da imagem final em pixels. Em capturas de região, o servidor eleva o valor até a largura nativa da região para não perder detalhe.",
+      ),
     quality: z
       .number()
       .int()
@@ -267,10 +437,234 @@ export const deviceScreenshotInputSchema = z
       .default("jpeg")
       .describe("Formato da imagem: jpeg (padrão e menor) ou png."),
   })
-  .refine((value) => !(value.monitor !== undefined && value.region), {
-    message: "Use monitor ou region, não os dois ao mesmo tempo.",
-    path: ["region"],
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.monitor !== undefined,
+      value.region !== undefined,
+      value.windowId !== undefined,
+    ].filter(Boolean).length
+
+    if (targets > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Use apenas um alvo por captura: windowId, monitor ou region.",
+        path: ["region"],
+      })
+    }
+
+    if (value.screenshotId !== undefined && value.region === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Ao usar "screenshotId" para recorte, informe também "region" normalizado de 0 a 1000.',
+        path: ["screenshotId"],
+      })
+    }
   })
+
+type NativeMousePoint = { x: number; y: number }
+
+type ResolvedMousePoints =
+  | { ok: true; points: NativeMousePoint[] }
+  | { ok: false; code: string; error: string }
+
+type ScreenshotRegionInput = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type ResolvedScreenshotRegion =
+  | { ok: true; region: ScreenshotRegionInput | undefined }
+  | { ok: false; code: string; error: string }
+
+function clampCoordinate(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+async function resolveScreenshotRegion(
+  deviceId: string,
+  screenshotId: string | undefined,
+  region: ScreenshotRegionInput | undefined,
+): Promise<ResolvedScreenshotRegion> {
+  if (!screenshotId) {
+    return { ok: true, region }
+  }
+
+  if (!region) {
+    return {
+      ok: false,
+      code: "invalid_region",
+      error:
+        'Ao usar "screenshotId" para recorte, informe também "region" normalizado de 0 a 1000.',
+    }
+  }
+
+  const metadata = await getScreenshotMetadata(screenshotId)
+
+  if (!metadata) {
+    return {
+      ok: false,
+      code: "screenshot_not_found",
+      error:
+        "A captura de referência não existe ou expirou. Capture a tela novamente antes de recortar.",
+    }
+  }
+
+  if (metadata.deviceId !== deviceId) {
+    return {
+      ok: false,
+      code: "screenshot_device_mismatch",
+      error:
+        "A captura de referência pertence a outro dispositivo. Use o deviceId correto ou capture a tela novamente.",
+    }
+  }
+
+  const values = [region.x, region.y, region.width, region.height]
+
+  if (
+    values.some(
+      (value) =>
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value > DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+    ) ||
+    region.width <= 0 ||
+    region.height <= 0 ||
+    region.x + region.width > DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX ||
+    region.y + region.height > DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX
+  ) {
+    return {
+      ok: false,
+      code: "invalid_region",
+      error: `Com "screenshotId", use region normalizado inteiro de 0 a ${DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX}, com width/height maiores que zero e sem passar da borda.`,
+    }
+  }
+
+  const native: ScreenshotRegionInput = {
+    x: Math.round(
+      metadata.region.x +
+        (region.x * metadata.region.width) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+    ),
+    y: Math.round(
+      metadata.region.y +
+        (region.y * metadata.region.height) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+    ),
+    width: Math.max(
+      1,
+      Math.round(
+        (region.width * metadata.region.width) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+      ),
+    ),
+    height: Math.max(
+      1,
+      Math.round(
+        (region.height * metadata.region.height) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+      ),
+    ),
+  }
+
+  native.x = clampCoordinate(
+    native.x,
+    metadata.region.x,
+    metadata.region.x + metadata.region.width - 1,
+  )
+  native.y = clampCoordinate(
+    native.y,
+    metadata.region.y,
+    metadata.region.y + metadata.region.height - 1,
+  )
+  native.width = Math.min(
+    native.width,
+    metadata.region.x + metadata.region.width - native.x,
+  )
+  native.height = Math.min(
+    native.height,
+    metadata.region.y + metadata.region.height - native.y,
+  )
+
+  return { ok: true, region: native }
+}
+
+async function resolveMousePoints(
+  deviceId: string,
+  screenshotId: string | undefined,
+  points: readonly NativeMousePoint[],
+): Promise<ResolvedMousePoints> {
+  if (!screenshotId) {
+    return { ok: true, points: [...points] }
+  }
+
+  const metadata = await getScreenshotMetadata(screenshotId)
+
+  if (!metadata) {
+    return {
+      ok: false,
+      code: "screenshot_not_found",
+      error:
+        "A captura informada não existe ou expirou. Capture a tela novamente antes de usar as coordenadas.",
+    }
+  }
+
+  if (metadata.deviceId !== deviceId) {
+    return {
+      ok: false,
+      code: "screenshot_device_mismatch",
+      error:
+        "A captura pertence a outro dispositivo. Use o deviceId correto ou capture a tela novamente.",
+    }
+  }
+
+  const converted: NativeMousePoint[] = []
+
+  for (const point of points) {
+    if (
+      !Number.isInteger(point.x) ||
+      !Number.isInteger(point.y) ||
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX ||
+      point.y > DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX
+    ) {
+      return {
+        ok: false,
+        code: "invalid_coordinates",
+        error: `Com "screenshotId", use coordenadas normalizadas inteiras de 0 a ${DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX}. Recebido (${point.x}, ${point.y}).`,
+      }
+    }
+
+    const nativeX = Math.round(
+      metadata.region.x +
+        (point.x * metadata.region.width) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+    )
+    const nativeY = Math.round(
+      metadata.region.y +
+        (point.y * metadata.region.height) /
+          DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX,
+    )
+
+    converted.push({
+      x: clampCoordinate(
+        nativeX,
+        metadata.region.x,
+        metadata.region.x + metadata.region.width - 1,
+      ),
+      y: clampCoordinate(
+        nativeY,
+        metadata.region.y,
+        metadata.region.y + metadata.region.height - 1,
+      ),
+    })
+  }
+
+  return { ok: true, points: converted }
+}
 
 export const deviceListFilesInputSchema = z.object({
   deviceId: deviceIdSchema,
@@ -469,6 +863,7 @@ function toCommandToolResult(
     ...(output.result.windows ? { windows: output.result.windows } : {}),
     ...(output.result.window ? { window: output.result.window } : {}),
     ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
+    ...(output.result.clipboard ? { clipboard: output.result.clipboard } : {}),
   }
 }
 
@@ -547,6 +942,39 @@ const writeClipboardDescription = [
   "Use quando o usuário pedir para copiar um texto no PC para colar em outro lugar.",
   "Avise que a operação substitui o clipboard atual e confirme antes de sobrescrever conteúdo que o usuário possa querer manter.",
   "Limite de 100 mil caracteres; caracteres de controle não são aceitos (tab, CR e LF são permitidos).",
+].join("\n")
+
+const moveMouseDescription = [
+  "Move o cursor do mouse de um dispositivo online para uma coordenada da tela.",
+  "Prefira informar `screenshotId` junto com `x` e `y` normalizados de 0 a 1000 na imagem retornada por device-screenshot: 0 é a borda esquerda/topo e 1000 a borda direita/baixo. O servidor converte para pixels nativos; não converta manualmente.",
+  "Sem `screenshotId`, `x` e `y` precisam ser pixels nativos do sistema (em multi-monitor, podem ser negativas).",
+  "Mover o cursor não clica nem altera o conteúdo: use device-click depois, se o usuário pediu um clique.",
+  "No macOS é necessário autorizar Acessibilidade; no Wayland retorna `unsupported_environment`.",
+].join("\n")
+
+const clickDescription = [
+  "Clica em um ponto da tela de um dispositivo online.",
+  "Prefira informar `screenshotId`, `x` e `y` normalizados de 0 a 1000 na imagem de device-screenshot; o servidor converte para a tela. Sem `screenshotId`, `x` e `y` são pixels nativos.",
+  "Omita `x` e `y` (e `screenshotId`) para clicar onde o cursor está.",
+  "`button`: left (padrão), right ou middle. `count`: 1 (padrão), 2 (duplo clique) ou 3.",
+  "Sempre confirme com o usuário antes de clicar, principalmente em botões que salvam, enviam, apagam ou fecham algo. Depois do clique, capture a tela para verificar o resultado quando isso fizer sentido.",
+  "Erros comuns: `screenshot_not_found` (captura expirou; capture de novo), `screenshot_device_mismatch`, `invalid_coordinates` (normalizado fora de 0–1000 ou sem screenshotId), `permission_denied` no macOS (Acessibilidade) e `unsupported_environment` no Wayland.",
+].join("\n")
+
+const scrollDescription = [
+  "Rola a tela de um dispositivo online na direção indicada.",
+  "Opcionalmente informe `screenshotId`, `x` e `y` normalizados de 0 a 1000 para posicionar o cursor sobre a área que deve rolar; o servidor converte para a tela.",
+  "`direction`: up, down, left ou right. `amount`: 1 a 50 passos (padrão 3).",
+  "Use device-screenshot antes para confirmar a área e depois para verificar o resultado.",
+  "No macOS é necessário autorizar Acessibilidade; no Wayland retorna `unsupported_environment`.",
+].join("\n")
+
+const dragDescription = [
+  "Arrasta de um ponto a outro na tela de um dispositivo online.",
+  "Informe `from` e `to` com `x` e `y`. Com `screenshotId`, os pontos são normalizados de 0 a 1000 na imagem de device-screenshot e o servidor converte para a tela; sem ele, são pixels nativos do sistema.",
+  "`button` define o botão mantido durante o arrasto (left, right ou middle). `durationMs` controla a velocidade (100–10.000 ms, padrão 500).",
+  "Arrastar pode mover arquivos, selecionar texto ou reorganizar itens: confirme com o usuário antes e capture a tela depois para verificar.",
+  "No macOS é necessário autorizar Acessibilidade; no Wayland retorna `unsupported_environment`.",
 ].join("\n")
 
 const listFilesDescription = [
@@ -629,11 +1057,15 @@ const windowActionDescription = [
 
 const screenshotDescription = [
   "Captura e envia ao modelo uma imagem da tela de um dispositivo online.",
-  "Sem `monitor` nem `region`, captura a tela inteira (todos os monitores). Use `monitor` (índice começando em 0) para um monitor específico ou `region` para um retângulo em coordenadas nativas do sistema.",
-  "A saída inclui id, largura, altura, escala do SO, monitor, região, formato e tamanho. A imagem não é salva no histórico do chat; ela fica disponível apenas por tempo limitado e é anexada ao modelo na mesma rodada.",
-  "Use após uma ação para verificar o resultado antes de continuar. Não capture a tela em sequência sem necessidade: cada imagem consome contexto e tokens.",
+  "Alvos: sem parâmetro, captura a tela inteira (todos os monitores); `windowId` foca a janela e captura só ela; `monitor` captura um monitor (índice começa em 0); `region` captura um retângulo. Use apenas um alvo por chamada.",
+  "`region` sem `screenshotId` usa pixels nativos do sistema. Com `screenshotId`, `region` usa coordenadas normalizadas inteiras de 0 a 1000 da captura de referência: use isso para recortar e ampliar um alvo pequeno (coarse-to-fine).",
+  "A saída inclui id, largura, altura, escala do SO, monitor, região, formato e tamanho. Use esse id como `screenshotId` nas tools de mouse para enviar coordenadas normalizadas de 0 a 1000.",
+  "Em capturas de região o servidor eleva `maxWidth` até a largura nativa da região: a imagem não é reduzida e cada pixel corresponde a um pixel nativo.",
+  "Fluxo recomendado para alvos pequenos: 1) capture a tela inteira ou a janela com `windowId`; 2) localize o alvo e capture um recorte com `screenshotId` + `region` normalizado; 3) clique com `screenshotId` do recorte + `x`/`y` normalizados; 4) capture de novo para conferir se o efeito esperado ocorreu.",
+  "A imagem não é salva no histórico do chat; ela fica disponível apenas por tempo limitado e é anexada ao modelo na mesma rodada.",
+  "Use após uma ação para verificar o resultado antes de continuar. Nunca declare sucesso sem uma captura de verificação quando a ação era visual.",
   "Privacidade: só capture quando o usuário pedir ou quando for necessário para confirmar uma ação que ele autorizou. Nunca capture senhas, dados sensíveis ou conteúdo sem relação com o pedido.",
-  "Erros comuns: `screen_permission_denied` no macOS (autorize Gravação de Tela), `unsupported_environment` no Wayland, `dependency_missing` no Linux (instale ImageMagick/xrandr) e `monitor_not_found` para índice inválido.",
+  "Erros comuns: `screen_unstable` (captura uniforme: tela bloqueada ou conteúdo não renderizado; recapture), `window_bounds_unavailable`, `screen_permission_denied` no macOS (autorize Gravação de Tela), `unsupported_environment` no Wayland, `dependency_missing` no Linux (instale ImageMagick/xrandr) e `monitor_not_found` para índice inválido.",
 ].join("\n")
 
 export function createDeviceTools(userId: string) {
@@ -840,6 +1272,181 @@ export function createDeviceTools(userId: string) {
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-write-clipboard.",
+          }
+        }
+      },
+    }),
+    [DEVICE_MOVE_MOUSE_TOOL_NAME]: tool({
+      description: moveMouseDescription,
+      inputSchema: deviceMoveMouseInputSchema,
+      execute: async ({ deviceId, x, y, screenshotId }) => {
+        try {
+          const resolved = await resolveMousePoints(deviceId, screenshotId, [
+            { x, y },
+          ])
+
+          if (!resolved.ok) {
+            return resolved
+          }
+
+          const point = resolved.points[0]
+
+          if (!point) {
+            return {
+              ok: false as const,
+              code: "invalid_coordinates",
+              error: "Não foi possível resolver as coordenadas do mouse.",
+            }
+          }
+
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand("move-mouse", point),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-move-mouse.",
+          }
+        }
+      },
+    }),
+    [DEVICE_CLICK_TOOL_NAME]: tool({
+      description: clickDescription,
+      inputSchema: deviceClickInputSchema,
+      execute: async ({ deviceId, screenshotId, ...input }) => {
+        try {
+          const resolved = await resolveMousePoints(
+            deviceId,
+            screenshotId,
+            input.x !== undefined && input.y !== undefined
+              ? [{ x: input.x, y: input.y }]
+              : [],
+          )
+
+          if (!resolved.ok) {
+            return resolved
+          }
+
+          const point = input.x !== undefined ? resolved.points[0] : undefined
+
+          if (input.x !== undefined && !point) {
+            return {
+              ok: false as const,
+              code: "invalid_coordinates",
+              error: "Não foi possível resolver as coordenadas do clique.",
+            }
+          }
+
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand("click", {
+              ...input,
+              ...(point ? point : {}),
+            }),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-click.",
+          }
+        }
+      },
+    }),
+    [DEVICE_SCROLL_TOOL_NAME]: tool({
+      description: scrollDescription,
+      inputSchema: deviceScrollInputSchema,
+      execute: async ({ deviceId, screenshotId, ...input }) => {
+        try {
+          const resolved = await resolveMousePoints(
+            deviceId,
+            screenshotId,
+            input.x !== undefined && input.y !== undefined
+              ? [{ x: input.x, y: input.y }]
+              : [],
+          )
+
+          if (!resolved.ok) {
+            return resolved
+          }
+
+          const point = input.x !== undefined ? resolved.points[0] : undefined
+
+          if (input.x !== undefined && !point) {
+            return {
+              ok: false as const,
+              code: "invalid_coordinates",
+              error: "Não foi possível resolver as coordenadas da rolagem.",
+            }
+          }
+
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand("scroll", {
+              ...input,
+              ...(point ? point : {}),
+            }),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-scroll.",
+          }
+        }
+      },
+    }),
+    [DEVICE_DRAG_TOOL_NAME]: tool({
+      description: dragDescription,
+      inputSchema: deviceDragInputSchema,
+      execute: async ({ deviceId, screenshotId, ...input }) => {
+        try {
+          const resolved = await resolveMousePoints(deviceId, screenshotId, [
+            input.from,
+            input.to,
+          ])
+
+          if (!resolved.ok) {
+            return resolved
+          }
+
+          const [from, to] = resolved.points
+
+          if (!from || !to) {
+            return {
+              ok: false as const,
+              code: "invalid_coordinates",
+              error: "Não foi possível resolver as coordenadas do arrasto.",
+            }
+          }
+
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand("drag", { ...input, from, to }),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-drag.",
           }
         }
       },
@@ -1081,13 +1688,39 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceScreenshotInputSchema,
       execute: async ({
         deviceId,
+        screenshotId,
+        windowId,
+        region,
         ...input
       }): Promise<DeviceScreenshotToolOutput> => {
         try {
+          const resolvedRegion = await resolveScreenshotRegion(
+            deviceId,
+            screenshotId,
+            region,
+          )
+
+          if (!resolvedRegion.ok) {
+            return resolvedRegion
+          }
+
+          const targetRegion = resolvedRegion.region
+          const maxWidth = targetRegion
+            ? Math.max(
+                input.maxWidth,
+                Math.min(targetRegion.width, DEVICE_SCREENSHOT_MAX_WIDTH_MAX),
+              )
+            : input.maxWidth
+
           const output = await sendDeviceCommand({
             userId,
             deviceId,
-            command: parseDeviceCommand("screenshot", input),
+            command: parseDeviceCommand("screenshot", {
+              ...input,
+              maxWidth,
+              ...(targetRegion ? { region: targetRegion } : {}),
+              ...(windowId ? { windowId } : {}),
+            }),
             timeoutMs: SCREENSHOT_COMMAND_TIMEOUT_MS,
           })
 
@@ -1119,6 +1752,9 @@ export function createDeviceTools(userId: string) {
             deviceId,
             format: screenshot.format,
             base64: imageBase64,
+            width: screenshot.width,
+            height: screenshot.height,
+            region: screenshot.region,
           })
 
           return { ok: true, deviceId, screenshot }
@@ -1146,12 +1782,21 @@ export function createDeviceTools(userId: string) {
 
         const { screenshot } = output
         const stored = await getScreenshot(screenshot.id)
+        const scaleX = screenshot.region.width / screenshot.width
+        const scaleY = screenshot.region.height / screenshot.height
+        const downscaled = scaleX > 1.05 || scaleY > 1.05
         const summary = [
-          `Captura de tela de ${output.deviceId}: ${screenshot.width}x${screenshot.height}px, ${screenshot.format.toUpperCase()}, ${Math.round(screenshot.byteLength / 1024)} KB.`,
+          `Captura ${screenshot.id} de ${output.deviceId}: ${screenshot.width}x${screenshot.height}px, ${screenshot.format.toUpperCase()}, ${Math.round(screenshot.byteLength / 1024)} KB.`,
           screenshot.monitor !== null
             ? `Monitor ${screenshot.monitor}.`
-            : "Tela inteira (todos os monitores).",
+            : "Sem índice de monitor (tela inteira, janela ou região).",
           `Região de origem: x=${screenshot.region.x}, y=${screenshot.region.y}, ${screenshot.region.width}x${screenshot.region.height}. Escala do SO: ${screenshot.scale}.`,
+          `Para clicar ou arrastar, use screenshotId="${screenshot.id}" com x/y inteiros normalizados de 0 a 1000 (0 = borda esquerda/topo; 1000 = borda direita/baixo). O servidor converte para a tela; não converta manualmente.`,
+          `Para ampliar um alvo pequeno, chame device-screenshot novamente com screenshotId="${screenshot.id}" e region normalizado (x, y, width, height de 0 a 1000).`,
+          `Se precisar de pixels nativos, converta: nativoX = ${screenshot.region.x} + imagemX * ${Math.round(scaleX * 10_000) / 10_000}; nativoY = ${screenshot.region.y} + imagemY * ${Math.round(scaleY * 10_000) / 10_000}.`,
+          downscaled
+            ? `A imagem foi reduzida em relação à região nativa (fator ${Math.round(scaleX * 100) / 100}x). Para alvos pequenos, capture um recorte com region para não perder detalhe.`
+            : "A imagem não foi reduzida: cada pixel da imagem corresponde a um pixel nativo.",
         ].join(" ")
 
         if (!stored) {

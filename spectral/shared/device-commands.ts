@@ -7,6 +7,10 @@ export const DEVICE_COMMAND_NAMES = [
   "press-key",
   "read-clipboard",
   "write-clipboard",
+  "move-mouse",
+  "click",
+  "scroll",
+  "drag",
   "list-files",
   "read-file",
   "glob",
@@ -115,6 +119,24 @@ const DEVICE_KEY_SET = new Set<string>(DEVICE_KEYS)
 export const DEVICE_URL_MAX_LENGTH = 2048
 export const DEVICE_TEXT_MAX_LENGTH = 2000
 export const DEVICE_CLIPBOARD_TEXT_MAX_LENGTH = 100_000
+export const DEVICE_MOUSE_COORD_MIN = -100_000
+export const DEVICE_MOUSE_COORD_MAX = 100_000
+export const DEVICE_MOUSE_BUTTONS = ["left", "right", "middle"] as const
+export const DEVICE_MOUSE_CLICK_COUNT_MIN = 1
+export const DEVICE_MOUSE_CLICK_COUNT_MAX = 3
+export const DEVICE_MOUSE_CLICK_COUNT_DEFAULT = 1
+export const DEVICE_MOUSE_SCROLL_DIRECTIONS = [
+  "up",
+  "down",
+  "left",
+  "right",
+] as const
+export const DEVICE_MOUSE_SCROLL_AMOUNT_MIN = 1
+export const DEVICE_MOUSE_SCROLL_AMOUNT_MAX = 50
+export const DEVICE_MOUSE_SCROLL_AMOUNT_DEFAULT = 3
+export const DEVICE_MOUSE_DRAG_DURATION_MIN_MS = 100
+export const DEVICE_MOUSE_DRAG_DURATION_MAX_MS = 10_000
+export const DEVICE_MOUSE_DRAG_DURATION_DEFAULT_MS = 500
 export const DEVICE_WINDOW_ID_MAX_LENGTH = 128
 export const DEVICE_WINDOW_TITLE_MAX_LENGTH = 120
 export const DEVICE_WINDOW_PROCESS_NAME_MAX_LENGTH = 80
@@ -131,6 +153,10 @@ export const DEVICE_WINDOW_ACTIONS = [
 ] as const
 
 export type DeviceWindowAction = (typeof DEVICE_WINDOW_ACTIONS)[number]
+
+export type DeviceMouseButton = (typeof DEVICE_MOUSE_BUTTONS)[number]
+export type DeviceMouseScrollDirection =
+  (typeof DEVICE_MOUSE_SCROLL_DIRECTIONS)[number]
 
 export const DEVICE_APP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 export const DEVICE_COMMAND_TIMEOUT_MIN_MS = 1_000
@@ -177,6 +203,12 @@ export const DEVICE_SCREENSHOT_QUALITY_DEFAULT = 70
 export const DEVICE_SCREENSHOT_MAX_BYTES = 400 * 1024
 export const DEVICE_SCREENSHOT_IMAGE_MAX_LENGTH = 4_000_000
 export const DEVICE_SCREENSHOT_MONITOR_MAX = 15
+
+/**
+ * Escala usada nas coordenadas normalizadas: 0 = borda esquerda/topo,
+ * 1000 = borda direita/baixo da imagem ou região de referência.
+ */
+export const DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX = 1000
 
 export type DeviceAppInfo = {
   id: string
@@ -285,6 +317,11 @@ export type DeviceClipboardContent = {
   truncated: boolean
 }
 
+export type DeviceMousePoint = {
+  x: number
+  y: number
+}
+
 export type DeviceCommandInputMap = {
   "open-url": { url: string }
   "open-app": { appId: string }
@@ -293,6 +330,25 @@ export type DeviceCommandInputMap = {
   "type-text": { text: string; windowId?: string }
   "read-clipboard": Record<string, never>
   "write-clipboard": { text: string }
+  "move-mouse": { x: number; y: number }
+  click: {
+    x?: number
+    y?: number
+    button: DeviceMouseButton
+    count: number
+  }
+  scroll: {
+    x?: number
+    y?: number
+    direction: DeviceMouseScrollDirection
+    amount: number
+  }
+  drag: {
+    from: DeviceMousePoint
+    to: DeviceMousePoint
+    button: DeviceMouseButton
+    durationMs: number
+  }
   "press-key": {
     key: DeviceKey
     modifiers: DeviceKeyModifier[]
@@ -343,6 +399,7 @@ export type DeviceCommandInputMap = {
   screenshot: {
     monitor?: number
     region?: DeviceWindowBounds
+    windowId?: string
     maxWidth: number
     quality: number
     format: DeviceScreenshotFormat
@@ -611,6 +668,197 @@ function parseWriteClipboard(input: unknown): DeviceCommand {
   }
 
   return { command: "write-clipboard", input: { text } }
+}
+
+function readMouseEnum<T extends string>(
+  input: unknown,
+  field: string,
+  values: readonly T[],
+  code: string,
+  fallback?: T,
+): T {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    if (fallback !== undefined) {
+      return fallback
+    }
+
+    throw new DeviceCommandValidationError(
+      code,
+      `Campo "${field}" é obrigatório.`,
+    )
+  }
+
+  const value = input[field]
+
+  if (typeof value !== "string" || !values.includes(value as T)) {
+    throw new DeviceCommandValidationError(code, `Campo "${field}" inválido.`)
+  }
+
+  return value as T
+}
+
+function readMouseCoordinate(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      `Campo "${field}" deve ser um número inteiro.`,
+    )
+  }
+
+  const integer = Math.trunc(value)
+
+  if (integer < DEVICE_MOUSE_COORD_MIN || integer > DEVICE_MOUSE_COORD_MAX) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      `Campo "${field}" deve estar entre ${DEVICE_MOUSE_COORD_MIN} e ${DEVICE_MOUSE_COORD_MAX}.`,
+    )
+  }
+
+  return integer
+}
+
+function readOptionalMouseCoordinate(
+  input: unknown,
+  field: string,
+): number | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
+
+  return readMouseCoordinate(input[field], field)
+}
+
+function readMousePoint(value: unknown, field: string): DeviceMousePoint {
+  if (!isRecord(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      `Campo "${field}" deve conter "x" e "y".`,
+    )
+  }
+
+  const x = readOptionalMouseCoordinate(value, "x")
+  const y = readOptionalMouseCoordinate(value, "y")
+
+  if (x === undefined || y === undefined) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      `Campo "${field}" deve conter "x" e "y".`,
+    )
+  }
+
+  return { x, y }
+}
+
+function readOptionalMousePoint(input: unknown): DeviceMousePoint | undefined {
+  const x = readOptionalMouseCoordinate(input, "x")
+  const y = readOptionalMouseCoordinate(input, "y")
+
+  if (x === undefined && y === undefined) {
+    return undefined
+  }
+
+  if (x === undefined || y === undefined) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      'Informe "x" e "y" juntos.',
+    )
+  }
+
+  return { x, y }
+}
+
+function parseMoveMouse(input: unknown): DeviceCommand {
+  const point = readOptionalMousePoint(input)
+
+  if (!point) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      'Campos "x" e "y" são obrigatórios.',
+    )
+  }
+
+  return { command: "move-mouse", input: point }
+}
+
+function parseClick(input: unknown): DeviceCommand {
+  const point = readOptionalMousePoint(input)
+  const button = readMouseEnum(
+    input,
+    "button",
+    DEVICE_MOUSE_BUTTONS,
+    "invalid_button",
+    "left",
+  )
+  const count = readInteger(
+    input,
+    "count",
+    DEVICE_MOUSE_CLICK_COUNT_DEFAULT,
+    DEVICE_MOUSE_CLICK_COUNT_MIN,
+    DEVICE_MOUSE_CLICK_COUNT_MAX,
+  )
+
+  return {
+    command: "click",
+    input: {
+      ...(point ? point : {}),
+      button,
+      count,
+    },
+  }
+}
+
+function parseScroll(input: unknown): DeviceCommand {
+  const point = readOptionalMousePoint(input)
+  const direction = readMouseEnum(
+    input,
+    "direction",
+    DEVICE_MOUSE_SCROLL_DIRECTIONS,
+    "invalid_direction",
+  )
+  const amount = readInteger(
+    input,
+    "amount",
+    DEVICE_MOUSE_SCROLL_AMOUNT_DEFAULT,
+    DEVICE_MOUSE_SCROLL_AMOUNT_MIN,
+    DEVICE_MOUSE_SCROLL_AMOUNT_MAX,
+  )
+
+  return {
+    command: "scroll",
+    input: {
+      ...(point ? point : {}),
+      direction,
+      amount,
+    },
+  }
+}
+
+function parseDrag(input: unknown): DeviceCommand {
+  if (!isRecord(input)) {
+    throw new DeviceCommandValidationError(
+      "invalid_coordinates",
+      'Campos "from" e "to" são obrigatórios.',
+    )
+  }
+
+  const from = readMousePoint(input.from, "from")
+  const to = readMousePoint(input.to, "to")
+  const button = readMouseEnum(
+    input,
+    "button",
+    DEVICE_MOUSE_BUTTONS,
+    "invalid_button",
+    "left",
+  )
+  const durationMs = readInteger(
+    input,
+    "durationMs",
+    DEVICE_MOUSE_DRAG_DURATION_DEFAULT_MS,
+    DEVICE_MOUSE_DRAG_DURATION_MIN_MS,
+    DEVICE_MOUSE_DRAG_DURATION_MAX_MS,
+  )
+
+  return { command: "drag", input: { from, to, button, durationMs } }
 }
 
 function readOptionalWindowId(input: unknown): string | undefined {
@@ -1121,6 +1369,19 @@ function parseScreenshot(input: unknown): DeviceCommand {
     DEVICE_SCREENSHOT_MONITOR_MAX,
   )
   const region = readScreenshotRegion(input)
+  const windowId = readOptionalWindowId(input)
+
+  if (
+    (monitor !== undefined && region !== undefined) ||
+    (windowId !== undefined &&
+      (monitor !== undefined || region !== undefined))
+  ) {
+    throw new DeviceCommandValidationError(
+      "invalid_region",
+      "Use apenas um alvo por captura: windowId, monitor ou region.",
+    )
+  }
+
   const maxWidth = readInteger(
     input,
     "maxWidth",
@@ -1142,6 +1403,7 @@ function parseScreenshot(input: unknown): DeviceCommand {
     input: {
       ...(monitor !== undefined ? { monitor } : {}),
       ...(region ? { region } : {}),
+      ...(windowId ? { windowId } : {}),
       maxWidth,
       quality,
       format,
@@ -1256,6 +1518,14 @@ export function parseDeviceCommand(
       return parseReadClipboard()
     case "write-clipboard":
       return parseWriteClipboard(input)
+    case "move-mouse":
+      return parseMoveMouse(input)
+    case "click":
+      return parseClick(input)
+    case "scroll":
+      return parseScroll(input)
+    case "drag":
+      return parseDrag(input)
     case "list-files":
       return parseListFiles(input)
     case "read-file":

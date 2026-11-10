@@ -184,25 +184,82 @@ Roadmap de evolução: devices-evolution.md
    `lib/devices/commands.test.ts`, `lib/devices/command-result-clipboard.test.ts`
    e `lib/ai/tools/device-tools.test.ts`.
 
+6. Mouse (`device-move-mouse` + `device-click` + `device-scroll` + `device-drag`).
+   Status: implementado (item 3 do roadmap).
+
+   A IA move o cursor, clica, rola e arrasta em coordenadas da tela, fechando o
+   ciclo capturar → agir → verificar. O controle é por coordenada, não por
+   elemento de UI: a coordenada vem da imagem do `device-screenshot`.
+
+   - Tools: `device-move-mouse` com `{ deviceId, x, y, screenshotId? }`;
+     `device-click` com `{ deviceId, x?, y?, screenshotId?, button?, count? }`;
+     `device-scroll` com
+     `{ deviceId, x?, y?, screenshotId?, direction, amount? }`; `device-drag` com
+     `{ deviceId, from, to, screenshotId?, button?, durationMs? }`.
+   - Com `screenshotId`, `x`/`y` e `from`/`to` são inteiros normalizados de 0 a
+     1000 na imagem retornada por `device-screenshot` (0 = borda esquerda/topo,
+     1000 = borda direita/baixo); o servidor converte para nativos com
+     `region.x + normalizadoX * (region.width / 1000)` (e o equivalente em Y).
+     Sem `screenshotId`, as coordenadas são pixels nativos do sistema. `scale` é
+     a escala do SO, não o fator de redimensionamento.
+   - Para alvos pequenos, use grounding coarse-to-fine: capture a tela ou a
+     janela (`windowId`), recorte com `screenshotId` + `region` normalizado para
+     ampliar e clique com o `screenshotId` do recorte; confirme com nova captura.
+     O driver eleva `maxWidth` até a largura nativa em capturas de região. O
+     prompt também prefere atalhos confiáveis (por exemplo, `ctrl+w` para fechar
+     a aba ativa) quando o usuário não exigir o mouse.
+   - Em multi-monitor, aceita valores negativos. Limite de `-100_000` a
+     `100_000` para evitar entradas absurdas.
+   - `click`: botões `left` (padrão), `right` e `middle`; `count` de 1 a 3
+     (padrão 1). Sem `x`/`y`, clica onde o cursor está.
+   - `scroll`: direções `up`, `down`, `left` e `right`; `amount` de 1 a 50
+     (padrão 3). Sem `x`/`y`, rola na posição atual do cursor.
+   - `drag`: `from`/`to` obrigatórios, `button` (padrão `left`) e `durationMs`
+     de 100 a 10.000 ms (padrão 500). O driver interpola o movimento em passos.
+   - O prompt exige confirmação antes de clicar/arrastar e proíbe sequências de
+     cliques sem verificar o resultado. Prefira `type-text`/`press-key` com
+     `windowId` para preencher formulários em vez de clicar em cada campo.
+   - Resultado: `ok: true` (a verificação visual fica por conta de um novo
+     `device-screenshot`).
+
+   Plataformas:
+   - Windows: PowerShell + `SetCursorPos`/`mouse_event`, com
+     `SetProcessDPIAware` para que as coordenadas do mouse usem os mesmos pixels
+     físicos da captura.
+   - macOS: JXA/CoreGraphics via `osascript`; exige permissão de Acessibilidade
+     e retorna `permission_denied` quando faltar.
+   - Linux X11: `xdotool`; Wayland ou ausência de `DISPLAY` retornam
+     `unsupported_environment`, e `xdotool` ausente retorna
+     `dependency_missing`.
+   - Erros: `screenshot_not_found`, `screenshot_device_mismatch`,
+     `unsupported_environment`, `permission_denied`, `dependency_missing`,
+     `invalid_coordinates` e `mouse_action_failed`.
+
+   Prompt atualizado com regras de coordenadas, confirmação e tradução dos erros
+   (`SYSTEM_PROMPT_VERSION = 26`).
+
+   Referências: contrato em `spectral/shared/device-commands.ts`, driver em
+   `spectral/driver/src/commands/mouse.ts`, dispatch em
+   `spectral/driver/src/commands/executor.ts`, tools em
+   `lib/ai/tools/device-tools.ts` e testes em `lib/devices/commands.test.ts` e
+   `lib/ai/tools/device-tools.test.ts`.
+
 ## Próximas features
 
 Itens do roadmap ainda não implementados, em ordem recomendada (detalhes em
 `devices-evolution.md`):
 
-1. **Mouse** — `device-click`, `device-move-mouse`, `device-scroll` e
-   `device-drag`, por coordenada, fechando o ciclo capturar → clicar →
-   verificar. Risco alto: exige aprovação.
-2. **Operações de arquivo completas** — copiar, mover, renomear, apagar,
+1. **Operações de arquivo completas** — copiar, mover, renomear, apagar,
    `mkdir`, `stat`, zip/unzip.
-3. **Transferência app ↔ dispositivo** — upload e download de arquivos.
-4. **`run-command` em camadas + task runner** — allowlist maior com políticas.
-5. **Processos e ações de sistema** — listar/encerrar processos, energia,
+2. **Transferência app ↔ dispositivo** — upload e download de arquivos.
+3. **`run-command` em camadas + task runner** — allowlist maior com políticas.
+4. **Processos e ações de sistema** — listar/encerrar processos, energia,
    volume, brilho.
-6. **Produto instalável** — instalador, serviço/tray, autostart e auto-update.
-7. **Negociação de capacidades e jobs** — driver informa o que suporta e
+5. **Produto instalável** — instalador, serviço/tray, autostart e auto-update.
+6. **Negociação de capacidades e jobs** — driver informa o que suporta e
    comandos longos viram jobs.
-8. **Política, aprovação e auditoria por dispositivo** — opt-in por capacidade,
+7. **Política, aprovação e auditoria por dispositivo** — opt-in por capacidade,
    confirmação proporcional ao risco e registro de ações.
-9. **Expansão** — multi-dispositivo, roteamento por capacidade, tarefas
+8. **Expansão** — multi-dispositivo, roteamento por capacidade, tarefas
    agendadas e transferência dispositivo → dispositivo.
 

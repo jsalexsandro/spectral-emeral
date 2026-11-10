@@ -36,6 +36,10 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-read-clipboard` | Lê o texto atual da área de transferência do PC | `{ deviceId }` | `clipboard` com `text`, `length` e `truncated` (usar apenas quando o usuário pedir) |
 | `device-write-clipboard` | Substitui o texto da área de transferência do PC | `{ deviceId, text }` | `ok` (avisa que o conteúdo atual será substituído) |
+| `device-move-mouse` | Move o cursor para uma coordenada da tela do PC | `{ deviceId, x, y, screenshotId? }` | `ok` |
+| `device-click` | Clica em um ponto da tela do PC | `{ deviceId, x?, y?, screenshotId?, button?, count? }` | `ok` (requer confirmação em texto antes de executar) |
+| `device-scroll` | Rola a tela do PC na direção indicada | `{ deviceId, x?, y?, screenshotId?, direction, amount? }` | `ok` |
+| `device-drag` | Arrasta de um ponto a outro na tela do PC | `{ deviceId, from, to, screenshotId?, button?, durationMs? }` | `ok` (requer confirmação em texto antes de executar) |
 | `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
 | `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
 | `device-window-action` | Minimiza, maximiza, restaura ou fecha uma janela do PC | `{ deviceId, windowId, action }` | `ok` + `window` em `minimize`/`maximize`/`restore`; `ok` em `close` |
@@ -102,22 +106,28 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   dentro de um arquivo. O texto antigo deve aparecer exatamente uma vez no
   arquivo; se aparecer mais de uma vez, a edição é rejeitada. Máximo de 1 MB
   no arquivo resultante.
-- `device-screenshot` captura a tela inteira (todos os monitores), um monitor
-  pelo índice (`0` = primeiro) ou uma `region` em coordenadas do sistema. Não
-  combine `monitor` e `region`. `maxWidth` vai de 320 a 3840 (padrão 1280),
+- `device-screenshot` captura a tela inteira (todos os monitores), uma janela
+  por `windowId`, um monitor pelo índice (`0` = primeiro) ou uma `region`. Use
+  apenas um alvo por captura. Com `windowId`, o driver foca a janela e captura
+  os limites dela no mesmo comando. `maxWidth` vai de 320 a 3840 (padrão 1280),
   `quality` de 30 a 90 (padrão 70, só JPEG) e `format` aceita `jpeg` (padrão) ou
   `png`. O driver captura em PNG nativo e reencoda reduzindo a largura até caber
-  em 400 KB.
+  em 400 KB; em capturas de região ele eleva `maxWidth` até a largura nativa
+  para não perder detalhe.
 - O resultado da tool para o chat contém apenas metadados. Os bytes ficam em
   armazenamento temporário do app por 15 minutos e são anexados ao modelo via
   `toModelOutput`; `imageBase64` nunca é persistido no histórico. A imagem é
   servida por `GET /api/devices/:id/screenshots/:screenshotId`, que exige sessão
   e ownership do dispositivo.
 - `scale` é o fator de pixels nativos por unidade do sistema operacional (por
-  exemplo, `2` em telas Retina) e `region` é o retângulo capturado. Erros comuns:
+  exemplo, `2` em telas Retina) e `region` é o retângulo capturado. A imagem pode
+  ser redimensionada para caber em `maxWidth`; nesse caso `screenshot.width` é a
+  largura final. O driver detecta capturas 100% uniformes em alvos sem `region`
+  explícita e retorna `screen_unstable`. Erros comuns:
   `screen_permission_denied` (macOS sem Gravação de Tela),
   `unsupported_environment` (Wayland), `dependency_missing` (ImageMagick/xrandr no
-  Linux), `monitor_not_found`, `screen_too_large` e `screen_capture_failed`.
+  Linux), `monitor_not_found`, `window_bounds_unavailable`, `screen_unstable`,
+  `screen_too_large` e `screen_capture_failed`.
 - Por privacidade, a captura só deve ser usada quando o usuário pedir ou para
   confirmar uma ação autorizada. O prompt proíbe capturas em loop e exige cuidado
   com senhas e dados sensíveis.
@@ -134,6 +144,37 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   `clipboard_write_failed`, `dependency_missing` (Linux sem `xclip`/`xsel`) e
   `unsupported_environment` (Wayland sem `wl-clipboard`). Quando o clipboard
   não tem texto, a leitura tende a voltar vazia.
+- `device-move-mouse` aceita `x` e `y` inteiros entre `-100_000` e `100_000`. Com
+  `screenshotId`, as coordenadas são inteiros normalizados de 0 a 1000 na imagem
+  retornada por `device-screenshot` (0 = borda esquerda/topo, 1000 = borda
+  direita/baixo) e o servidor converte para pixels nativos. Sem `screenshotId`,
+  são pixels nativos do sistema; em multi-monitor, valores negativos são válidos.
+  Mover o cursor não clica nem altera o conteúdo.
+- A conversão usa `nativoX = region.x + normalizadoX * (region.width / 1000)` e a
+  fórmula análoga para Y, com o resultado limitado às bordas da captura. O
+  `scale` é a escala do SO, não o fator de redimensionamento. Capturas antigas sem
+  `width`/`height`/`region` são consideradas expiradas para fins de conversão.
+- Grounding coarse-to-fine: capture a tela ou a janela, localize o alvo, capture
+  um recorte com `screenshotId` + `region` normalizado para ampliar, clique com o
+  `screenshotId` do recorte e confirme com nova captura. Esse fluxo reduz o erro
+  de modelos pequenos em alvos como o “x” de uma aba.
+- `device-click` aceita `button` `left` (padrão), `right` ou `middle` e `count`
+  de 1 a 3 (padrão 1). Informe `x` e `y` juntos (com `screenshotId` opcional) para
+  mover antes de clicar; sem eles, clica onde o cursor está. O prompt exige
+  confirmação antes de clicar e proíbe sequências sem verificar o resultado.
+- `device-scroll` aceita `direction` `up`, `down`, `left` ou `right` e `amount`
+  de 1 a 50 (padrão 3). `x` e `y` opcionais (com `screenshotId`) posicionam o
+  cursor sobre a área.
+- `device-drag` recebe `from` e `to` com `x` e `y`, `button` (padrão `left`) e
+  `durationMs` de 100 a 10.000 (padrão 500). Com `screenshotId`, os dois pontos
+  são normalizados de 0 a 1000. O driver interpola o movimento em passos; confirme
+  antes e capture a tela depois.
+- Erros do mouse: `screenshot_not_found` (captura expirada ou inexistente),
+  `screenshot_device_mismatch` (captura de outro dispositivo),
+  `invalid_coordinates` (normalizado fora de 0–1000), `invalid_region`,
+  `permission_denied` (macOS sem Acessibilidade), `unsupported_environment`
+  (Wayland ou sem sessão gráfica), `dependency_missing` (Linux X11 sem `xdotool`)
+  e `mouse_action_failed`.
 
 ## Widget de abrir apps
 
@@ -198,13 +239,14 @@ carga do widget.
 - "Busque 'TODO' em src do casa-pc."
 - "Tire um print da tela do casa-pc e veja se o download terminou."
 - "Capture só a região do navegador no casa-pc."
+- "Feche a aba ativa do Chrome do casa-pc e confirme com um novo print."
 
 ## Referências
 
 - Contrato compartilhado: `spectral/shared/device-commands.ts`
 - Tools do chat: `lib/ai/tools/device-tools.ts`
 - Cliente do backend: `lib/devices/command-client.ts`
-- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 23`)
+- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 26`)
 - Backend: `spectral/backend/src/websocket/command-bus.ts` e `spectral/backend/src/http/internal.ts`
 - Driver: `spectral/driver/src/commands/executor.ts`,
   `spectral/driver/src/commands/files.ts` e

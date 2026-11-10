@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import {
+  DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
   type DeviceCommand,
   type DeviceCommandResult,
   type DeviceKey,
@@ -28,6 +29,13 @@ import {
   readClipboard,
   writeClipboard,
 } from "./clipboard.js"
+import {
+  DeviceMouseError,
+  clickMouse,
+  dragMouse,
+  moveMouse,
+  scrollMouse,
+} from "./mouse.js"
 
 const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
@@ -453,6 +461,18 @@ export async function executeDeviceCommand(
       case "write-clipboard":
         await writeClipboard(command.input.text)
         return { ok: true }
+      case "move-mouse":
+        await moveMouse(command.input)
+        return { ok: true }
+      case "click":
+        await clickMouse(command.input)
+        return { ok: true }
+      case "scroll":
+        await scrollMouse(command.input)
+        return { ok: true }
+      case "drag":
+        await dragMouse(command.input)
+        return { ok: true }
       case "list-windows":
         return { ok: true, windows: await listWindows(command.input) }
       case "focus-window": {
@@ -502,10 +522,41 @@ export async function executeDeviceCommand(
         }
 
       case "screenshot": {
-        const { imageBase64, screenshot } = await takeScreenshot(
-          command.input,
-        )
-        return { ok: true, screenshot, imageBase64 }
+        let input = command.input
+        let window: DeviceWindow | undefined
+
+        if (input.windowId) {
+          window = await focusWindow(input.windowId)
+
+          if (
+            !window.bounds ||
+            window.bounds.width <= 0 ||
+            window.bounds.height <= 0
+          ) {
+            throw new DeviceScreenshotError(
+              "window_bounds_unavailable",
+              "Não foi possível determinar os limites da janela para a captura. Traga a janela para a tela e tente de novo.",
+            )
+          }
+
+          input = {
+            ...input,
+            region: window.bounds,
+            maxWidth: Math.max(
+              input.maxWidth,
+              Math.min(window.bounds.width, DEVICE_SCREENSHOT_MAX_WIDTH_MAX),
+            ),
+          }
+        }
+
+        const { imageBase64, screenshot } = await takeScreenshot(input)
+
+        return {
+          ok: true,
+          ...(window ? { window } : {}),
+          screenshot,
+          imageBase64,
+        }
       }
     }
   } catch (error) {
@@ -518,6 +569,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceClipboardError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceMouseError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

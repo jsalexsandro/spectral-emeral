@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 24
+export const SYSTEM_PROMPT_VERSION = 27
 
 export type SystemPromptChange = {
   version: number
@@ -144,5 +144,23 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-09",
     summary:
       "Adiciona as tools device-read-clipboard e device-write-clipboard para ler e substituir o texto da área de transferência dos dispositivos, com limite de tamanho, aviso de privacidade e tradução dos erros de dependência e ambiente.",
+  },
+  {
+    version: 25,
+    date: "2026-11-09",
+    summary:
+      "Adiciona as tools de mouse device-move-mouse, device-click, device-scroll e device-drag para controlar o cursor dos dispositivos, com confirmação antes de ações destrutivas e tradução dos erros de permissão e ambiente.",
+  },
+  {
+    version: 26,
+    date: "2026-11-09",
+    summary:
+      "Corrige a conversão de coordenadas do mouse: as tools aceitam screenshotId e recebem x/y em pixels da imagem, o servidor converte para pixels nativos com a região da captura, e o prompt passa a preferir regiões estreitas e atalhos de teclado para alvos pequenos.",
+  },
+  {
+    version: 27,
+    date: "2026-11-09",
+    summary:
+      "Troca as coordenadas de mouse para normalizadas 0–1000 quando há screenshotId, adiciona captura por windowId com foco atômico, recorte coarse-to-fine com region normalizado, detecção de captura uniforme (screen_unstable), DPI awareness v2 nas janelas e verificação visual obrigatória após ações.",
   },
 ]

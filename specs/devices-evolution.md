@@ -22,17 +22,20 @@ O que já existe e funciona:
   `device-list-apps`, `device-open-url`, `device-open-app`, `device-type-text`,
   `device-press-key`, `device-list-windows`, `device-focus-window`,
   `device-window-action`, `device-screenshot`, `device-read-clipboard`,
-  `device-write-clipboard`, `device-list-files`,
+  `device-write-clipboard`, `device-move-mouse`, `device-click`,
+  `device-scroll`, `device-drag`, `device-list-files`,
   `device-read-file`, `device-glob`, `device-grep`, `device-check-admin`,
   `device-write-file`, `device-edit-file` e `device-run-command`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
 
 ## O que limita o carro chefe
 
-- **A IA enxerga sob demanda, mas ainda não clica por elemento.**
-  `device-screenshot` já captura tela, monitor e região e anexa a imagem ao
-  modelo, mas a imagem é temporária (15 min) e o fluxo de mouse por coordenada
-  ainda não existe.
+- **A IA enxerga e clica, mas ainda não por elemento.**
+  `device-screenshot` captura tela, monitor e região e anexa a imagem ao
+  modelo; o mouse por coordenada (`move-mouse`/`click`/`scroll`/`drag`) fecha o
+  ciclo capturar → agir → verificar. As tools de mouse aceitam `screenshotId` e
+  recebem coordenadas normalizadas 0–1000, mas o clique ainda depende de
+  coordenada calculada, não de um elemento de UI. A imagem é temporária (15 min).
 - **A IA era míope.** `device-type-text` e `device-press-key` agiam sobre a
   janela em foco, sem como listar ou focar janelas. Isso foi resolvido com
   `device-list-windows` + `device-focus-window` (item 2), e `type-text`/
@@ -42,8 +45,8 @@ O que já existe e funciona:
   `tasklist`, `systeminfo` etc., e o denylist bloqueia `node`, `git`, `python`,
   `npm` e shell. Ou seja: não dá para "criar um script e executar", que é
   justamente a promessa do produto.
-- **Não há mouse nem operações de arquivo básicas** (copiar, mover,
-  renomear, apagar, upload/download).
+- **Não há operações de arquivo básicas** (copiar, mover, renomear, apagar,
+  upload/download). O mouse MVP já está disponível por coordenada.
 - **O driver não é um produto instalável.** Hoje é `npm run dev:driver` em um
   terminal aberto. Sem instalador, serviço/tray, autostart e auto-update, a
   adoção fica travada.
@@ -90,7 +93,8 @@ Risco considera exposição de segurança ao liberar o recurso.
   exige Gravação de Tela) e Linux X11 (`import`/`convert`/`identify`/`xrandr`).
   Wayland retorna `unsupported_environment` nesta fase.
 - **Pronto quando:** a IA tira um print, vê a imagem, clica em um elemento e
-  confirma por um segundo print. A parte de mouse (item 3) ainda falta.
+  confirma por um segundo print. Com o item 3 implementado, o ciclo está
+  disponível por coordenada.
 - **Esforço:** M · **Risco:** M (privacidade da tela).
 
 #### 2. Janelas: listar, focar e controlar ✅
@@ -120,15 +124,41 @@ Risco considera exposição de segurança ao liberar o recurso.
   `close-window`. `close` é gracioso (`WM_CLOSE`/botão de fechar/`wmctrl -c`) e
   não usa força bruta. Nesta versão `close` não exige confirmação textual.
 
-#### 3. Mouse — `device-click`, `device-move-mouse`, `device-scroll`, `device-drag`
+#### 3. Mouse — `device-click`, `device-move-mouse`, `device-scroll`, `device-drag` ✅
 
+- **Status:** implementado (MVP por coordenada). Contrato em
+  `spectral/shared/device-commands.ts`, driver em
+  `spectral/driver/src/commands/mouse.ts`, dispatch em
+  `spectral/driver/src/commands/executor.ts`, tools em
+  `lib/ai/tools/device-tools.ts` e prompt com regras de confirmação.
 - **O que:** controle de mouse por coordenada (e, no futuro, por elemento).
+  `move-mouse`, `click` (left/right/middle, 1 a 3 cliques), `scroll`
+  (up/down/left/right, 1 a 50 passos) e `drag` (`from`/`to`, 100–10.000 ms).
 - **Por quê:** combinado com screenshot, fecha o ciclo completo de automação de
   GUI (clicar, verificar, corrigir).
-- **Onde mexer:** driver (API nativa por plataforma), contrato, tools, prompt.
+- **Coordenadas:** as tools aceitam `screenshotId`; nesse caso `x`/`y` e
+  `from`/`to` são inteiros normalizados de 0 a 1000 na imagem (0 = borda
+  esquerda/topo, 1000 = borda direita/baixo) e o servidor converte com
+  `region.x + normalizadoX * (region.width / 1000)` (e o equivalente em Y). Sem
+  `screenshotId`, são pixels nativos do sistema; aceita valores negativos em
+  multi-monitor, limitados a `-100_000..100_000`. Para alvos pequenos, use o
+  fluxo coarse-to-fine: capture a tela/janela, recorte com `screenshotId` +
+  `region` normalizado e clique com o `screenshotId` do recorte, verificando com
+  nova captura.
+- **Onde mexer:** driver (API nativa por plataforma), contrato, tools e prompt.
+  Windows usa `SetCursorPos`/`mouse_event` via PowerShell com
+  `SetProcessDPIAware`; macOS usa CoreGraphics via `osascript` (exige
+  Acessibilidade e trabalha em pontos); Linux X11 usa `xdotool`; Wayland e
+  ausência de `DISPLAY` retornam `unsupported_environment`.
+- **Erros:** `screenshot_not_found`, `screenshot_device_mismatch`,
+  `permission_denied`, `unsupported_environment`, `dependency_missing`,
+  `invalid_coordinates` e `mouse_action_failed`.
 - **Pronto quando:** um fluxo de clicar/arrastar/rolar for executado e verificado
-  por screenshot.
-- **Esforço:** M · **Risco:** alto (ações destrutivas) — exige aprovação.
+  por screenshot. O driver e as tools estão prontos; falta validar em cada
+  sistema, incluindo fechar abas do Chrome por atalho ou por clique na barra de
+  abas com `screenshotId`.
+- **Esforço:** M · **Risco:** alto (ações destrutivas) — exige confirmação no
+  prompt.
 
 #### 4. Clipboard — `device-read-clipboard` / `device-write-clipboard` ✅
 
@@ -336,8 +366,8 @@ Risco considera exposição de segurança ao liberar o recurso.
 ## Sequência recomendada
 
 **Fase 1 — "a IA enxerga e acerta"** (maior impacto por esforço)
-Itens 1, 2, 3, 4 → screenshot + janelas + mouse + clipboard. Já permite
-demonstrar automação real de GUI.
+Itens 1, 2, 3, 4 → screenshot + janelas + mouse + clipboard. ✅ Implementado;
+já permite demonstrar automação real de GUI.
 
 **Fase 2 — "confiança para soltar o poder"**
 Itens 7, 15, 16, 14 → `run-command` em camadas + política por dispositivo +

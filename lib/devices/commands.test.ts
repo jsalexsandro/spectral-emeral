@@ -278,6 +278,21 @@ describe("device command contract", () => {
         format: "jpeg",
       },
     })
+
+    expect(
+      parseDeviceCommand("screenshot", {
+        windowId: "123:0",
+        maxWidth: 1600,
+      }),
+    ).toEqual({
+      command: "screenshot",
+      input: {
+        windowId: "123:0",
+        maxWidth: 1600,
+        quality: 70,
+        format: "jpeg",
+      },
+    })
   })
 
   it("rejects invalid screenshot inputs", () => {
@@ -301,6 +316,24 @@ describe("device command contract", () => {
     expect(() =>
       parseDeviceCommand("screenshot", {
         region: { x: 0, y: 0, width: 100 },
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", {
+        windowId: "123:0",
+        region: { x: 0, y: 0, width: 100, height: 100 },
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", {
+        windowId: "123:0",
+        monitor: 0,
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("screenshot", {
+        monitor: 0,
+        region: { x: 0, y: 0, width: 100, height: 100 },
       }),
     ).toThrow(DeviceCommandValidationError)
   })
@@ -367,5 +400,80 @@ describe("device command contract", () => {
     expect(() =>
       parseDeviceCommand("write-clipboard", { text: "a\u0007b" }),
     ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("normalizes mouse commands", () => {
+    expect(parseDeviceCommand("move-mouse", { x: 120, y: -40 })).toEqual({
+      command: "move-mouse",
+      input: { x: 120, y: -40 },
+    })
+
+    expect(parseDeviceCommand("click", {})).toEqual({
+      command: "click",
+      input: { button: "left", count: 1 },
+    })
+
+    expect(
+      parseDeviceCommand("click", {
+        x: 10,
+        y: 20,
+        button: "right",
+        count: 2,
+      }),
+    ).toEqual({
+      command: "click",
+      input: { x: 10, y: 20, button: "right", count: 2 },
+    })
+
+    expect(
+      parseDeviceCommand("scroll", { direction: "down", amount: 5 }),
+    ).toEqual({
+      command: "scroll",
+      input: { direction: "down", amount: 5 },
+    })
+
+    expect(
+      parseDeviceCommand("drag", {
+        from: { x: 0, y: 0 },
+        to: { x: 100, y: 50 },
+        durationMs: 900,
+      }),
+    ).toEqual({
+      command: "drag",
+      input: {
+        from: { x: 0, y: 0 },
+        to: { x: 100, y: 50 },
+        button: "left",
+        durationMs: 900,
+      },
+    })
+  })
+
+  it("rejects invalid mouse input", () => {
+    expect(() => parseDeviceCommand("move-mouse", { x: 1 })).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() =>
+      parseDeviceCommand("drag", {
+        from: { x: 0, y: 0 },
+        to: { x: 100_001, y: 50 },
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("scroll", { direction: "diagonal" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("click", { x: 1, count: 4 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    try {
+      parseDeviceCommand("move-mouse", { x: 100_001, y: 0 })
+      throw new Error("esperava erro de validação")
+    } catch (error) {
+      expect(error).toBeInstanceOf(DeviceCommandValidationError)
+      expect((error as DeviceCommandValidationError).code).toBe(
+        "invalid_coordinates",
+      )
+    }
   })
 })

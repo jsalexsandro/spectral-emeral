@@ -145,6 +145,10 @@ Backend --HTTP 200 { ok, result }--> Tool
 | `press-key` | `{ key, modifiers?, windowId? }` | `ok` + `window` |
 | `read-clipboard` | `{}` | `ok` + `clipboard{ text, length, truncated }` |
 | `write-clipboard` | `{ text }` | `ok` |
+| `move-mouse` | `{ x, y }` | `ok` |
+| `click` | `{ x?, y?, button, count }` | `ok` |
+| `scroll` | `{ x?, y?, direction, amount }` | `ok` |
+| `drag` | `{ from, to, button, durationMs }` | `ok` |
 | `list-windows` | `{ includeMinimized?, limit? }` | `ok` + `windows[{ id, title, processId, processName, bounds, focused, minimized }]` |
 | `focus-window` | `{ windowId }` | `ok` + `window` |
 | `minimize-window` | `{ windowId }` | `ok` + `window` |
@@ -185,6 +189,25 @@ Backend --HTTP 200 { ok, result }--> Tool
   Wayland e `xclip` com fallback para `xsel` no Linux X11. Wayland sem
   `wl-clipboard` retorna `unsupported_environment`; X11 sem `xclip`/`xsel`
   retorna `dependency_missing`.
+- `move-mouse`: `x` e `y` obrigatórios, inteiros entre `-100_000` e `100_000`,
+  em pixels nativos do sistema. O espaço de coordenadas é o mesmo de
+  `screenshot` (`region`/`scale`); valores negativos existem em multi-monitor.
+  As tools de chat aceitam `screenshotId` e recebem coordenadas normalizadas de
+  0 a 1000 na imagem, convertendo para nativos antes de enviar o comando; o
+  contrato do driver continua em pixels nativos.
+- `click`: `x`/`y` opcionais, mas sempre juntos; sem eles clica na posição
+  atual do cursor. `button` é `left` (padrão), `right` ou `middle`; `count` vai
+  de 1 a 3 (padrão 1).
+- `scroll`: `x`/`y` opcionais (sempre juntos); `direction` é `up`, `down`,
+  `left` ou `right`; `amount` vai de 1 a 50 (padrão 3).
+- `drag`: `from` e `to` obrigatórios com `x` e `y`; `button` padrão `left`;
+  `durationMs` entre 100 e 10.000 (padrão 500). O driver interpola o movimento
+  em passos para o arrasto ser reconhecido pelo sistema.
+- Mouse usa APIs nativas: `SetCursorPos`/`mouse_event` no Windows,
+  CoreGraphics via `osascript` no macOS (exige Acessibilidade e retorna
+  `permission_denied` sem ela) e `xdotool` no Linux X11. Wayland ou ausência de
+  `DISPLAY` retornam `unsupported_environment`; `xdotool` ausente retorna
+  `dependency_missing`. Falhas genéricas viram `mouse_action_failed`.
 - `list-windows`: `limit` entre 1 e 30 (padrão 20); `includeMinimized` padrão
   `false`; título truncado em 120 e nome do processo em 80 caracteres.
 - `focus-window`: `windowId` obrigatório no padrão `^[A-Za-z0-9:._-]+$`.
@@ -203,14 +226,20 @@ Backend --HTTP 200 { ok, result }--> Tool
   `wmctrl -b add,hidden`, `add,maximized_vert,maximized_horz` e
   `remove,hidden,maximized_vert,maximized_horz` no Linux X11.
 - `alt+F4` e `ctrl+alt+delete` são bloqueados no contrato e no driver.
-- `screenshot`: sem `monitor`/`region` captura a tela inteira virtual; `monitor`
-  é índice 0-based; `region` é `{ x, y, width, height }` em coordenadas do
-  sistema. `maxWidth` entre 320 e 3840 (padrão 1280), `quality` entre 30 e 90
+- `screenshot`: sem alvo captura a tela inteira virtual; `windowId` foca a
+  janela e captura os limites dela; `monitor` é índice 0-based; `region` é
+  `{ x, y, width, height }` em coordenadas do sistema. Use apenas um alvo por
+  captura. `maxWidth` entre 320 e 3840 (padrão 1280), `quality` entre 30 e 90
   (padrão 70) e `format` `jpeg`/`png` (padrão `jpeg`). O driver captura em PNG
-  nativo e reduz a largura progressivamente até caber em 400 KB. O resultado
-  carrega `imageBase64` no WebSocket; o app salva os bytes em arquivo temporário
-  com TTL de 15 min, devolve apenas metadados ao histórico e anexa a imagem ao
-  modelo via `toModelOutput`. Windows usa PowerShell + .NET; macOS usa
+  nativo e reduz a largura progressivamente até caber em 400 KB; em capturas de
+  região ele eleva `maxWidth` até a largura nativa para preservar detalhe.
+  `width` e `height` no resultado são da imagem final (após o redimensionamento),
+  enquanto `region` permanece em coordenadas do sistema; no macOS a região sem
+  `region` explícita é normalizada para pontos dividindo pelos `scale`. Capturas
+  sem `region` explícita que saem 100% uniformes retornam `screen_unstable`. O
+  resultado carrega `imageBase64` no WebSocket; o app salva os bytes em arquivo
+  temporário com TTL de 15 min, devolve apenas metadados ao histórico e anexa a
+  imagem ao modelo via `toModelOutput`. Windows usa PowerShell + .NET; macOS usa
   `screencapture`/`sips`; Linux X11 usa `import`/`convert`/`identify`/`xrandr` e
   Wayland retorna `unsupported_environment`.
 - `list-files`: caminho padrão é a pasta do usuário; `depth` entre 1 e 3;
@@ -236,6 +265,10 @@ Backend --HTTP 200 { ok, result }--> Tool
 - O clipboard pode conter dados sensíveis: a leitura deve ser pedida pelo
   usuário e a escrita deve avisar que substitui o conteúdo atual. Nenhum dos dois
   comandos persiste o texto no histórico além do resultado da tool.
+- Ações de mouse são por coordenada e podem ser destrutivas: o prompt exige
+  confirmação antes de `click`/`drag` e proíbe cliques em sequência sem verificar
+  com um novo `screenshot`. O driver não valida o alvo na tela; a segurança vem
+  da combinação screenshot → confirmação → ação → verificação.
 - Janelas são listadas/focadas com APIs nativas: PowerShell + P/Invoke no
   Windows, System Events no macOS (exige Acessibilidade) e `wmctrl`/`xdotool`
   no Linux X11. Wayland não permite enumerar/controlar janelas globalmente e

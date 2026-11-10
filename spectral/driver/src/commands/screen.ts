@@ -111,10 +111,18 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public class SpectralScreenshotDpi {
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+
+  public static void EnableDpiAwareness() {
+    try {
+      if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return;
+    } catch {}
+    try { SetProcessDPIAware(); } catch {}
+  }
 }
 '@
-[void][SpectralScreenshotDpi]::SetProcessDPIAware()
+[void][SpectralScreenshotDpi]::EnableDpiAwareness()
 
 $screens = [System.Windows.Forms.Screen]::AllScreens
 $region = $null
@@ -140,6 +148,21 @@ try {
   $graphics.Dispose()
 }
 
+# Uma captura 100% uniforme costuma indicar tela bloqueada, janela fechada ou
+# ambiente sem sessão gráfica. Sinaliza para o driver pedir uma nova captura.
+$uniform = $false
+try {
+  $seen = @{}
+  $stepX = [Math]::Max(1, [Math]::Floor($region.Width / 16))
+  $stepY = [Math]::Max(1, [Math]::Floor($region.Height / 16))
+  for ($sx = 0; $sx -lt $region.Width; $sx += $stepX) {
+    for ($sy = 0; $sy -lt $region.Height; $sy += $stepY) {
+      $seen[$bitmap.GetPixel($sx, $sy).ToArgb()] = $true
+    }
+  }
+  $uniform = $seen.Count -le 1
+} catch {}
+
 $scale = 1.0
 try {
   $screenGraphics = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
@@ -152,7 +175,7 @@ $width = $bitmap.Width
 $height = $bitmap.Height
 $bitmap.Dispose()
 
-@{ width = $width; height = $height; scale = $scale; monitor = $monitor; x = $region.X; y = $region.Y } | ConvertTo-Json -Compress
+@{ width = $width; height = $height; scale = $scale; monitor = $monitor; x = $region.X; y = $region.Y; uniform = $uniform } | ConvertTo-Json -Compress
 `
 
 const WINDOWS_ENCODE_SCRIPT = `
@@ -264,6 +287,15 @@ async function captureWindows(
     throw new DeviceScreenshotError(
       "screen_capture_failed",
       "A captura retornou uma imagem vazia.",
+    )
+  }
+
+  // Só sinaliza uniformidade em capturas sem região explícita: um recorte
+  // estreito pode ser legitimamente de uma área lisa (página em branco, fundo).
+  if (parsed.uniform === true && input.region === undefined) {
+    throw new DeviceScreenshotError(
+      "screen_unstable",
+      "A captura saiu uniforme (sem conteúdo visível). Verifique se a tela está desbloqueada e se a janela alvo continua aberta; depois capture novamente.",
     )
   }
 
@@ -430,18 +462,19 @@ async function captureMacos(
   const scaleFromRegion = input.region
     ? Math.max(1, Math.round((width / input.region.width) * 100) / 100)
     : 1
+  const scale = scaleFromDpi > 0 ? Math.max(1, scaleFromDpi) : scaleFromRegion
 
   return {
     sourcePath,
     sourceWidth: width,
     sourceHeight: height,
-    scale: scaleFromDpi > 0 ? Math.max(1, scaleFromDpi) : scaleFromRegion,
+    scale,
     monitor: input.monitor ?? null,
-    region: {
-      x: input.region?.x ?? 0,
-      y: input.region?.y ?? 0,
-      width: input.region?.width ?? width,
-      height: input.region?.height ?? height,
+    region: input.region ?? {
+      x: 0,
+      y: 0,
+      width: Math.max(1, Math.round(width / scale)),
+      height: Math.max(1, Math.round(height / scale)),
     },
   }
 }
@@ -602,6 +635,28 @@ async function captureLinux(
       "screen_capture_failed",
       "A captura do Linux retornou uma imagem vazia.",
     )
+  }
+
+  try {
+    const output = await commandOutput("identify", [
+      "-format",
+      "%k",
+      sourcePath,
+    ])
+    const colors = Number.parseInt(output.trim(), 10)
+
+    // Só sinaliza uniformidade em capturas sem região explícita: um recorte
+    // estreito pode ser legitimamente de uma área lisa (página em branco).
+    if (Number.isFinite(colors) && colors <= 1 && input.region === undefined) {
+      throw new DeviceScreenshotError(
+        "screen_unstable",
+        "A captura saiu uniforme (sem conteúdo visível). Verifique se a tela está desbloqueada e capture novamente.",
+      )
+    }
+  } catch (error) {
+    if (error instanceof DeviceScreenshotError) {
+      throw error
+    }
   }
 
   return {

@@ -186,6 +186,17 @@ public class SpectralWindows {
   public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
   [DllImport("user32.dll")]
   public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+  [DllImport("user32.dll")]
+  public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+  [DllImport("user32.dll")]
+  public static extern bool SetProcessDPIAware();
+
+  public static void EnableDpiAwareness() {
+    try {
+      if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return;
+    } catch {}
+    try { SetProcessDPIAware(); } catch {}
+  }
 
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
@@ -292,6 +303,7 @@ public class SpectralWindows {
 `
 
 const WINDOWS_LIST_SCRIPT = `${WINDOWS_WINDOW_API}
+[void][SpectralWindows]::EnableDpiAwareness()
 $items = [SpectralWindows]::GetWindows()
 $processNames = @{}
 Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $processNames[$_.Id] = $_.ProcessName }
@@ -302,6 +314,7 @@ $items | Select-Object id,title,processId,processName,x,y,width,height,focused,m
 `
 
 const WINDOWS_FOCUS_SCRIPT = `${WINDOWS_WINDOW_API}
+[void][SpectralWindows]::EnableDpiAwareness()
 $handle = [long]$env:SPECTRAL_WINDOW_ID
 $focused = [SpectralWindows]::Focus($handle)
 if (-not $focused) {
@@ -319,6 +332,7 @@ if (-not $focused) { exit 3 }
 `
 
 const WINDOWS_ACTION_SCRIPT = `${WINDOWS_WINDOW_API}
+[void][SpectralWindows]::EnableDpiAwareness()
 $handle = [long]$env:SPECTRAL_WINDOW_ID
 switch ($env:SPECTRAL_WINDOW_ACTION) {
   'minimize' { [SpectralWindows]::Minimize($handle) }
