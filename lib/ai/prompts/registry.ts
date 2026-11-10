@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 27
+export const SYSTEM_PROMPT_VERSION = 28
 
 export type SystemPromptChange = {
   version: number
@@ -162,5 +162,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-09",
     summary:
       "Troca as coordenadas de mouse para normalizadas 0–1000 quando há screenshotId, adiciona captura por windowId com foco atômico, recorte coarse-to-fine com region normalizado, detecção de captura uniforme (screen_unstable), DPI awareness v2 nas janelas e verificação visual obrigatória após ações.",
+  },
+  {
+    version: 28,
+    date: "2026-11-10",
+    summary:
+      "Adiciona o caminho determinístico por UI Automation: device-inspect-ui retorna controles com runtimeId, bounds nativo e ações suportadas, e device-ui-action executa invoke/select/toggle/expand/collapse/focus sem mover o cursor. O prompt passa a preferir UIA para controles nativos e mantém captura + clique como fallback.",
   },
 ]

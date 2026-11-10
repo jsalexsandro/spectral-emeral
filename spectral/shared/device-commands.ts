@@ -11,6 +11,8 @@ export const DEVICE_COMMAND_NAMES = [
   "click",
   "scroll",
   "drag",
+  "inspect-ui",
+  "ui-action",
   "list-files",
   "read-file",
   "glob",
@@ -154,6 +156,31 @@ export const DEVICE_WINDOW_ACTIONS = [
 
 export type DeviceWindowAction = (typeof DEVICE_WINDOW_ACTIONS)[number]
 
+export const DEVICE_UI_ACTIONS = [
+  "invoke",
+  "select",
+  "toggle",
+  "expand",
+  "collapse",
+  "focus",
+] as const
+
+export type DeviceUiAction = (typeof DEVICE_UI_ACTIONS)[number]
+
+const DEVICE_UI_ACTION_SET = new Set<string>(DEVICE_UI_ACTIONS)
+
+export const DEVICE_UI_FIND_MAX_LENGTH = 120
+export const DEVICE_UI_ROLE_MAX_LENGTH = 40
+export const DEVICE_UI_ROLE_PATTERN = /^[A-Za-z][A-Za-z0-9]{0,39}$/
+export const DEVICE_UI_RUNTIME_ID_MAX_LENGTH = 256
+export const DEVICE_UI_RUNTIME_ID_PATTERN = /^[0-9]+(?:\.[0-9]+)*$/
+export const DEVICE_UI_RESULTS_MIN = 1
+export const DEVICE_UI_RESULTS_MAX = 100
+export const DEVICE_UI_RESULTS_DEFAULT = 40
+export const DEVICE_UI_DEPTH_MIN = 1
+export const DEVICE_UI_DEPTH_MAX = 12
+export const DEVICE_UI_DEPTH_DEFAULT = 10
+
 export type DeviceMouseButton = (typeof DEVICE_MOUSE_BUTTONS)[number]
 export type DeviceMouseScrollDirection =
   (typeof DEVICE_MOUSE_SCROLL_DIRECTIONS)[number]
@@ -239,6 +266,47 @@ export type DeviceWindow = {
   bounds: DeviceWindowBounds | null
   focused: boolean
   minimized: boolean
+}
+
+export type DeviceUiElementPathItem = {
+  name: string
+  role: string
+}
+
+export type DeviceUiElement = {
+  /**
+   * Identificador de runtime do UI Automation. Vale apenas enquanto o elemento
+   * existir; use imediatamente em `ui-action`. Pode ser null quando o provedor
+   * de acessibilidade não expõe um runtime id.
+   */
+  runtimeId: string | null
+  name: string
+  role: string
+  bounds: DeviceWindowBounds | null
+  center: DeviceMousePoint | null
+  enabled: boolean
+  focused: boolean
+  selected: boolean | null
+  expanded: boolean | null
+  offscreen: boolean
+  actionable: boolean
+  actions: DeviceUiAction[]
+  automationId: string
+  path: DeviceUiElementPathItem[]
+}
+
+export type DeviceUiInspection = {
+  windowId: string
+  windowTitle: string
+  elements: DeviceUiElement[]
+  scanned: number
+  truncated: boolean
+}
+
+export type DeviceUiActionResult = {
+  windowId: string
+  action: DeviceUiAction
+  element: DeviceUiElement
 }
 
 export type DeviceScreenshot = {
@@ -360,6 +428,19 @@ export type DeviceCommandInputMap = {
   "maximize-window": { windowId: string }
   "restore-window": { windowId: string }
   "close-window": { windowId: string }
+  "inspect-ui": {
+    windowId: string
+    find?: string
+    role?: string
+    maxResults: number
+    depth: number
+    includeOffscreen: boolean
+  }
+  "ui-action": {
+    windowId: string
+    runtimeId: string
+    action: DeviceUiAction
+  }
   "list-files": {
     path?: string
     depth: number
@@ -438,6 +519,8 @@ export type DeviceCommandSuccess = {
    */
   imageBase64?: string
   clipboard?: DeviceClipboardContent
+  ui?: DeviceUiInspection
+  uiAction?: DeviceUiActionResult
 }
 
 export type DeviceCommandFailure = {
@@ -937,6 +1020,151 @@ function parseWindowAction(
   }
 
   return { command, input: { windowId } }
+}
+
+function readOptionalUiString(
+  input: unknown,
+  field: string,
+  maxLength: number,
+  code: string,
+): string | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
+
+  if (typeof input[field] !== "string") {
+    throw new DeviceCommandValidationError(
+      code,
+      `Campo "${field}" deve ser um texto.`,
+    )
+  }
+
+  const value = input[field].trim()
+
+  if (value.length === 0) {
+    return undefined
+  }
+
+  if (value.length > maxLength) {
+    throw new DeviceCommandValidationError(
+      code,
+      `Campo "${field}" deve ter no máximo ${maxLength} caracteres.`,
+    )
+  }
+
+  return value
+}
+
+function parseInspectUi(input: unknown): DeviceCommand {
+  const windowId = readOptionalWindowId(input)
+
+  if (!windowId) {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      'Campo "windowId" é obrigatório.',
+    )
+  }
+
+  const find = readOptionalUiString(
+    input,
+    "find",
+    DEVICE_UI_FIND_MAX_LENGTH,
+    "invalid_ui_filter",
+  )
+  const rawRole = readOptionalUiString(
+    input,
+    "role",
+    DEVICE_UI_ROLE_MAX_LENGTH,
+    "invalid_ui_role",
+  )
+  let role: string | undefined
+
+  if (rawRole) {
+    const normalized = rawRole.replace(/^ControlType\./i, "")
+
+    if (!DEVICE_UI_ROLE_PATTERN.test(normalized)) {
+      throw new DeviceCommandValidationError(
+        "invalid_ui_role",
+        "O papel do elemento deve conter apenas letras e números, como Button ou TabItem.",
+      )
+    }
+
+    role = normalized
+  }
+
+  const maxResults = readInteger(
+    input,
+    "maxResults",
+    DEVICE_UI_RESULTS_DEFAULT,
+    DEVICE_UI_RESULTS_MIN,
+    DEVICE_UI_RESULTS_MAX,
+  )
+  const depth = readInteger(
+    input,
+    "depth",
+    DEVICE_UI_DEPTH_DEFAULT,
+    DEVICE_UI_DEPTH_MIN,
+    DEVICE_UI_DEPTH_MAX,
+  )
+  const includeOffscreen = readBoolean(input, "includeOffscreen", false)
+
+  return {
+    command: "inspect-ui",
+    input: {
+      windowId,
+      ...(find ? { find } : {}),
+      ...(role ? { role } : {}),
+      maxResults,
+      depth,
+      includeOffscreen,
+    },
+  }
+}
+
+function parseUiAction(input: unknown): DeviceCommand {
+  const windowId = readOptionalWindowId(input)
+
+  if (!windowId) {
+    throw new DeviceCommandValidationError(
+      "invalid_window",
+      'Campo "windowId" é obrigatório.',
+    )
+  }
+
+  const runtimeId = readOptionalUiString(
+    input,
+    "runtimeId",
+    DEVICE_UI_RUNTIME_ID_MAX_LENGTH,
+    "invalid_runtime_id",
+  )
+
+  if (!runtimeId || !DEVICE_UI_RUNTIME_ID_PATTERN.test(runtimeId)) {
+    throw new DeviceCommandValidationError(
+      "invalid_runtime_id",
+      "Informe o runtimeId retornado por inspect-ui para o elemento alvo.",
+    )
+  }
+
+  const rawAction =
+    isRecord(input) && input.action !== undefined && input.action !== null
+      ? input.action
+      : "invoke"
+
+  if (typeof rawAction !== "string" || !DEVICE_UI_ACTION_SET.has(rawAction)) {
+    throw new DeviceCommandValidationError(
+      "invalid_ui_action",
+      `Ação inválida. Use uma de: ${DEVICE_UI_ACTIONS.join(", ")}.`,
+    )
+  }
+
+  return {
+    command: "ui-action",
+    input: {
+      windowId,
+      runtimeId,
+      action: rawAction as DeviceUiAction,
+    },
+  }
 }
 
 function readOptionalPath(input: unknown): string | undefined {
@@ -1526,6 +1754,10 @@ export function parseDeviceCommand(
       return parseScroll(input)
     case "drag":
       return parseDrag(input)
+    case "inspect-ui":
+      return parseInspectUi(input)
+    case "ui-action":
+      return parseUiAction(input)
     case "list-files":
       return parseListFiles(input)
     case "read-file":

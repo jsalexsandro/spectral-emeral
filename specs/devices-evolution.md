@@ -174,6 +174,40 @@ Risco considera exposição de segurança ao liberar o recurso.
   (`xclip`/`xsel`) e Wayland (`wl-clipboard`). Imagens e arquivos no clipboard
   ficam para depois.
 
+#### 4b. UI Automation — inspecionar e agir sem cursor ✅
+
+- **Status:** implementado no Windows (MVP determinístico). Contrato em
+  `spectral/shared/device-commands.ts`, driver em
+  `spectral/driver/src/commands/ui.ts`, dispatch em
+  `spectral/driver/src/commands/executor.ts`, tools
+  `device-inspect-ui`/`device-ui-action` e prompt v28.
+- **O que:** inspecionar a árvore de acessibilidade de uma janela e executar
+  ações em controles por `runtimeId`, sem mover o cursor nem estimar pixels.
+- **Por quê:** o grounding visual de alvos pequenos (ex.: o “x” de uma aba de
+  36×36 px) errava na primeira tentativa. A árvore de UI Automation entrega
+  nome, papel, bounds e centro exatos, e a ação via pattern é determinística.
+- **Contrato:** `inspect-ui` com
+  `{ windowId, find?, role?, maxResults, depth, includeOffscreen }` retorna
+  `ui{ windowId, windowTitle, elements[], scanned, truncated }`; cada elemento
+  traz `runtimeId`, `name`, `role`, `bounds`, `center`, `enabled`, `focused`,
+  `selected`, `expanded`, `actions`, `automationId` e `path`. `ui-action` com
+  `{ windowId, runtimeId, action }` executa `invoke`, `select`, `toggle`,
+  `expand`, `collapse` ou `focus` e retorna `uiAction` com o estado do elemento.
+- **Plataformas:** Windows via PowerShell + UIAutomationClient
+  (`AutomationElement.FromHandle`, `RawViewWalker`, DPI awareness v2).
+  macOS (`AXUIElement`) e Linux (AT-SPI) retornam `unsupported_platform` nesta
+  fase; o caminho visual continua como fallback.
+- **Erros:** `window_not_found`, `element_not_found`, `pattern_not_supported`,
+  `action_failed`, `ui_inspection_failed` e `unsupported_platform`.
+- **Limites:** `runtimeId` é temporário e precisa ser reencontrado enumerando a
+  árvore na hora da ação; a busca é limitada a 4.000 nós na inspeção e 8.000 na
+  ação. Controles sem nome e sem AutomationId são omitidos para reduzir ruído.
+- **Pronto quando:** a IA localizar o “Fechar” da aba ativa do Chrome por
+  inspeção e selecionar/fechar a aba por `ui-action` sem mover o cursor,
+  confirmando o estado depois. Instalar/validar em macOS e Linux fica pendente.
+- **Esforço:** M · **Risco:** alto para `invoke` destrutivo — exige autorização
+  explícita no prompt.
+
 ### Bloco B — Controle real do PC
 
 #### 5. Operações de arquivo completas

@@ -43,6 +43,8 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-list-windows` | Lista as janelas abertas do PC | `{ deviceId, includeMinimized?, limit? }` | `windows[]` com id, título, processo, bounds, foco e minimizada |
 | `device-focus-window` | Foca uma janela específica do PC | `{ deviceId, windowId }` | `ok` + `window` |
 | `device-window-action` | Minimiza, maximiza, restaura ou fecha uma janela do PC | `{ deviceId, windowId, action }` | `ok` + `window` em `minimize`/`maximize`/`restore`; `ok` em `close` |
+| `device-inspect-ui` | Inspeciona a árvore de acessibilidade (UI Automation) de uma janela | `{ deviceId, windowId, find?, role?, maxResults?, depth?, includeOffscreen? }` | `ui` com `windowTitle`, `elements[]` (runtimeId, nome, papel, bounds, centro, estado, ações), `scanned` e `truncated` |
+| `device-ui-action` | Executa uma ação de acessibilidade em um elemento sem mover o cursor | `{ deviceId, windowId, runtimeId, action? }` | `uiAction` com `windowId`, `action` e o estado do elemento depois da ação (ou último conhecido se ele foi removido) |
 | `device-screenshot` | Captura a tela inteira, um monitor ou uma região e envia a imagem ao modelo | `{ deviceId, monitor?, region?, maxWidth?, quality?, format? }` | `ok` + `screenshot` com id, largura, altura, escala, monitor, região, formato e tamanho; a imagem é anexada ao modelo, não ao histórico |
 | `device-list-files` | Lista arquivos e pastas do PC (somente leitura) | `{ deviceId, path?, depth?, showHidden?, maxEntries? }` | `entries[]` com nome, caminho, tipo, tamanho e modificação |
 | `device-read-file` | Lê conteúdo de texto de um arquivo (somente leitura) | `{ deviceId, path, offset?, limit? }` | `file` com `content`, linhas e `truncated` |
@@ -87,6 +89,33 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   fechar via Acessibilidade e no Linux usa `wmctrl -c`. O aplicativo pode abrir
   um diálogo para salvar alterações e continuar aberto; não há força bruta nem
   encerramento por processo.
+- `device-inspect-ui` percorre a árvore de UI Automation no Windows e retorna
+  controles com nome ou AutomationId. `find` filtra por trecho do nome ou
+  AutomationId, `role` filtra pelo papel sem o prefixo `ControlType`
+  (`Button`, `TabItem`, `MenuItem`, `Edit`, `CheckBox` etc.), `maxResults` vai de
+  1 a 100 (padrão 40), `depth` de 1 a 12 (padrão 10) e `includeOffscreen` inclui
+  controles fora da área visível. Cada elemento traz `runtimeId` serializado
+  (`int[]` unido por `.`), `bounds` e `center` em pixels nativos, estado
+  (`focused`, `selected`, `expanded`) e a lista `actions` suportadas. O driver
+  usa DPI awareness v2 para que os bounds batam com a captura de tela.
+- `device-ui-action` recebe o `runtimeId` e a mesma `windowId` da inspeção.
+  Ações: `invoke` (InvokePattern), `select` (SelectionItemPattern), `toggle`
+  (TogglePattern), `expand`/`collapse` (ExpandCollapsePattern) e `focus`
+  (SetFocus). Para abas use `select`: `focus` só concentra o foco de teclado e
+  não ativa a aba. O driver reencontra o elemento enumerando a árvore no momento
+  da ação; o `runtimeId` é temporário e não deve ser reutilizado depois de
+  mudanças. Em navegadores, títulos de abas mudam com frequência e podem
+  recriar o elemento; se vier `element_not_found`, inspecione de novo
+  imediatamente antes de agir. Erros: `window_not_found`, `element_not_found`,
+  `pattern_not_supported`, `action_failed` e `ui_inspection_failed`. macOS e
+  Linux retornam `unsupported_platform` nesta fase e o caminho visual continua
+  disponível como fallback.
+- O caminho determinístico (`device-inspect-ui` + `device-ui-action`) é preferido
+  para controles nativos; a captura + `device-click` fica para canvas, jogos,
+  aplicativos sem acessibilidade e quando a árvore não expõe o alvo.
+- Ações destrutivas por `invoke` (fechar, excluir, enviar, salvar, sair, fechar
+  aba/janela) exigem autorização explícita do usuário, assim como as tools de
+  mouse e janela. O driver não fecha nada por conta própria.
 - `device-list-files` lista a pasta do usuário por padrão, com `depth` de 1 a 3
   e no máximo 200 itens. Não segue links simbólicos.
 - `device-read-file` lê até 2000 linhas / 64 KB por chamada, com `offset` e
@@ -222,6 +251,11 @@ carga do widget.
 - `device-window-action` (incluindo `close`) não exige confirmação textual nesta
   versão. O fechamento continua gracioso, então o aplicativo ainda pode pedir
   para salvar alterações.
+- `device-ui-action` com `invoke` em controles destrutivos (fechar, excluir,
+  enviar, salvar, sair, fechar aba/janela) exige autorização explícita do
+  usuário no pedido original ou confirmação em texto antes de executar. Ações
+  não destrutivas (`select`, `toggle`, `expand`, `collapse`, `focus`) podem ser
+  usadas para navegar e inspecionar.
 - No futuro, haverá um modo/opção `requireApproval: false` (autônomo) para
   desativar confirmações.
 

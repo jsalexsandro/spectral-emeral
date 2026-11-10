@@ -19,6 +19,8 @@ import {
   DEVICE_LIST_WINDOWS_TOOL_NAME,
   DEVICE_FOCUS_WINDOW_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
+  DEVICE_INSPECT_UI_TOOL_NAME,
+  DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_SCREENSHOT_TOOL_NAME,
   DEVICE_READ_CLIPBOARD_TOOL_NAME,
   DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
@@ -46,6 +48,8 @@ import {
   deviceListWindowsInputSchema,
   deviceFocusWindowInputSchema,
   deviceWindowActionInputSchema,
+  deviceInspectUiInputSchema,
+  deviceUiActionInputSchema,
   selectOnlineDevices,
   toDeviceToolSummary,
 } from "./device-tools"
@@ -124,6 +128,8 @@ describe("device tools", () => {
         DEVICE_LIST_WINDOWS_TOOL_NAME,
         DEVICE_FOCUS_WINDOW_TOOL_NAME,
         DEVICE_WINDOW_ACTION_TOOL_NAME,
+        DEVICE_INSPECT_UI_TOOL_NAME,
+        DEVICE_UI_ACTION_TOOL_NAME,
         DEVICE_SCREENSHOT_TOOL_NAME,
         DEVICE_READ_CLIPBOARD_TOOL_NAME,
         DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
@@ -334,6 +340,102 @@ describe("device tools", () => {
       deviceWindowActionInputSchema.safeParse({
         deviceId: "device-1",
         action: "close",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-inspect-ui", () => {
+    const parsed = deviceInspectUiInputSchema.safeParse({
+      deviceId: "device-1",
+      windowId: "66500",
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success ? parsed.data : null).toEqual({
+      deviceId: "device-1",
+      windowId: "66500",
+      maxResults: 40,
+      depth: 10,
+      includeOffscreen: false,
+    })
+
+    expect(
+      deviceInspectUiInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        find: "Fechar",
+        role: "Button",
+        maxResults: 10,
+        depth: 8,
+        includeOffscreen: true,
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceInspectUiInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        role: "ControlType.Button",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceInspectUiInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        depth: 13,
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-ui-action", () => {
+    const parsed = deviceUiActionInputSchema.safeParse({
+      deviceId: "device-1",
+      windowId: "66500",
+      runtimeId: "42.123.456",
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success ? parsed.data : null).toEqual({
+      deviceId: "device-1",
+      windowId: "66500",
+      runtimeId: "42.123.456",
+      action: "invoke",
+    })
+
+    for (const action of [
+      "invoke",
+      "select",
+      "toggle",
+      "expand",
+      "collapse",
+      "focus",
+    ] as const) {
+      expect(
+        deviceUiActionInputSchema.safeParse({
+          deviceId: "device-1",
+          windowId: "66500",
+          runtimeId: "42.123.456",
+          action,
+        }).success,
+      ).toBe(true)
+    }
+
+    expect(
+      deviceUiActionInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        runtimeId: "../42",
+        action: "invoke",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceUiActionInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        runtimeId: "42.123",
+        action: "explode",
       }).success,
     ).toBe(false)
   })

@@ -64,6 +64,17 @@ import {
   DEVICE_WINDOW_LIMIT_MAX,
   DEVICE_WINDOW_LIMIT_MIN,
   DEVICE_WINDOW_ACTIONS,
+  DEVICE_UI_ACTIONS,
+  DEVICE_UI_FIND_MAX_LENGTH,
+  DEVICE_UI_ROLE_MAX_LENGTH,
+  DEVICE_UI_RESULTS_MIN,
+  DEVICE_UI_RESULTS_MAX,
+  DEVICE_UI_RESULTS_DEFAULT,
+  DEVICE_UI_DEPTH_MIN,
+  DEVICE_UI_DEPTH_MAX,
+  DEVICE_UI_DEPTH_DEFAULT,
+  DEVICE_UI_RUNTIME_ID_MAX_LENGTH,
+  DEVICE_UI_RUNTIME_ID_PATTERN,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   parseDeviceCommand,
@@ -72,6 +83,7 @@ import {
   type DeviceKeyModifier,
   type DeviceMouseButton,
   type DeviceMouseScrollDirection,
+  type DeviceUiAction,
   type DeviceWindowAction,
 } from "@/lib/devices/commands"
 import {
@@ -112,6 +124,8 @@ export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
+export const DEVICE_INSPECT_UI_TOOL_NAME = "device-inspect-ui"
+export const DEVICE_UI_ACTION_TOOL_NAME = "device-ui-action"
 
 const SCREENSHOT_COMMAND_TIMEOUT_MS = 30_000
 
@@ -377,6 +391,76 @@ export const deviceWindowActionInputSchema = z.object({
   action: deviceWindowActionSchema.describe(
     "Ação a aplicar na janela: minimize, maximize, restore ou close.",
   ),
+})
+
+const deviceUiRoleSchema = z
+  .string()
+  .min(1)
+  .max(DEVICE_UI_ROLE_MAX_LENGTH)
+  .regex(
+    /^[A-Za-z][A-Za-z0-9]{0,39}$/,
+    "Use o papel sem o prefixo ControlType, como Button ou TabItem.",
+  )
+
+const deviceUiRuntimeIdSchema = z
+  .string()
+  .min(1)
+  .max(DEVICE_UI_RUNTIME_ID_MAX_LENGTH)
+  .regex(DEVICE_UI_RUNTIME_ID_PATTERN, "runtimeId inválido.")
+
+export const deviceInspectUiInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  windowId: deviceWindowIdSchema.describe(
+    "Id da janela retornado por device-list-windows.",
+  ),
+  find: z
+    .string()
+    .min(1)
+    .max(DEVICE_UI_FIND_MAX_LENGTH)
+    .optional()
+    .describe(
+      "Filtra por trecho do nome ou AutomationId do controle, sem diferenciar maiúsculas.",
+    ),
+  role: deviceUiRoleSchema.optional().describe(
+    "Filtra pelo papel do controle, como Button, TabItem, MenuItem, Edit ou CheckBox.",
+  ),
+  maxResults: z
+    .number()
+    .int()
+    .min(DEVICE_UI_RESULTS_MIN)
+    .max(DEVICE_UI_RESULTS_MAX)
+    .default(DEVICE_UI_RESULTS_DEFAULT)
+    .describe("Número máximo de elementos retornados (1–100, padrão 40)."),
+  depth: z
+    .number()
+    .int()
+    .min(DEVICE_UI_DEPTH_MIN)
+    .max(DEVICE_UI_DEPTH_MAX)
+    .default(DEVICE_UI_DEPTH_DEFAULT)
+    .describe("Profundidade máxima da árvore de acessibilidade (1–12, padrão 10)."),
+  includeOffscreen: z
+    .boolean()
+    .default(false)
+    .describe("Inclui controles fora da área visível da janela."),
+})
+
+const deviceUiActionSchema = z.enum(
+  DEVICE_UI_ACTIONS as unknown as [DeviceUiAction, ...DeviceUiAction[]],
+)
+
+export const deviceUiActionInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  windowId: deviceWindowIdSchema.describe(
+    "Id da janela usado na inspeção que retornou o runtimeId.",
+  ),
+  runtimeId: deviceUiRuntimeIdSchema.describe(
+    "runtimeId exato retornado por device-inspect-ui. Vale apenas enquanto o elemento existir.",
+  ),
+  action: deviceUiActionSchema
+    .default("invoke")
+    .describe(
+      "Ação de acessibilidade: invoke, select, toggle, expand, collapse ou focus.",
+    ),
 })
 
 const deviceScreenshotRegionSchema = z.object({
@@ -864,6 +948,8 @@ function toCommandToolResult(
     ...(output.result.window ? { window: output.result.window } : {}),
     ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
     ...(output.result.clipboard ? { clipboard: output.result.clipboard } : {}),
+    ...(output.result.ui ? { ui: output.result.ui } : {}),
+    ...(output.result.uiAction ? { uiAction: output.result.uiAction } : {}),
   }
 }
 
@@ -1053,6 +1139,26 @@ const windowActionDescription = [
   "`restore` desfaz a minimização e o estado maximizado, devolvendo a janela ao tamanho normal.",
   "`close` envia um pedido de fechamento gracioso: o aplicativo pode abrir um diálogo para salvar alterações em vez de encerrar imediatamente. Não há força bruta nem encerramento por processo.",
   "Use apenas em janelas que o usuário pediu para controlar; nunca feche janelas do sistema ou aplicativos sem relação com o pedido.",
+].join("\n")
+
+const inspectUiDescription = [
+  "Inspeciona a árvore de acessibilidade (UI Automation) de uma janela e retorna os controles com nome, papel, limites e centro exato.",
+  "Use esta tool antes de clicar em abas, botões, menus, campos e outros controles nativos: ela evita estimar pixels a partir da captura.",
+  "Informe o `windowId` retornado por device-list-windows. `find` filtra por trecho do nome ou AutomationId; `role` filtra pelo papel (Button, TabItem, MenuItem, Edit, CheckBox, etc.).",
+  "Cada elemento traz `runtimeId`, `bounds` e `center` em pixels nativos, estado (focado/selecionado/expandido) e `actions` suportadas.",
+  "Use o `runtimeId` em device-ui-action. O runtimeId é temporário: se a inspeção falhar com `element_not_found`, inspecione de novo antes de agir.",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`: use captura de tela + device-click como fallback.",
+].join("\n")
+
+const uiActionDescription = [
+  "Executa uma ação de acessibilidade em um controle retornado por device-inspect-ui, sem mover o cursor nem depender de coordenadas visuais.",
+  "Ações: `invoke` (pressionar botão/item), `select` (selecionar aba/item), `toggle` (marcar/desmarcar), `expand`/`collapse` (abrir/fechar) e `focus` (focar o controle).",
+  "Para abas, use `select`: `focus` apenas concentra o foco de teclado e não ativa a aba.",
+  "Use o `runtimeId` exato do elemento e a mesma `windowId` usada na inspeção. Escolha uma ação presente em `actions`; se vier `pattern_not_supported`, use outra ação ou device-click como fallback.",
+  "Em navegadores, títulos de abas mudam com frequência e podem recriar o elemento. Se vier `element_not_found`, inspecione de novo imediatamente antes de agir.",
+  "Confirme com o usuário antes de `invoke` em controles destrutivos (fechar, excluir, enviar, salvar, sair) e nunca feche abas ou janelas reais sem autorização explícita.",
+  "O resultado retorna o estado do elemento depois da ação (focado, selecionado, expandido). Quando o elemento sumir porque a ação o removeu (ex.: fechar aba), o resultado traz o último estado conhecido.",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
 ].join("\n")
 
 const screenshotDescription = [
@@ -1680,6 +1786,159 @@ export function createDeviceTools(userId: string) {
                 ? error.message
                 : "Erro desconhecido ao executar device-window-action.",
           }
+        }
+      },
+    }),
+    [DEVICE_INSPECT_UI_TOOL_NAME]: tool({
+      description: inspectUiDescription,
+      inputSchema: deviceInspectUiInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runDeviceCommand(userId, deviceId, {
+            command: "inspect-ui",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-inspect-ui.",
+          }
+        }
+      },
+      toModelOutput: async ({ output }) => {
+        if (!output.ok) {
+          return {
+            type: "text",
+            value: [
+              `Falha ao inspecionar a interface: ${output.code ?? "command_failed"}.`,
+              output.error ?? "O dispositivo não detalhou o erro.",
+            ].join(" "),
+          }
+        }
+
+        const ui = output.ui
+
+        if (!ui) {
+          return {
+            type: "text",
+            value:
+              "O dispositivo respondeu sem os dados da inspeção de interface.",
+          }
+        }
+
+        const lines = [
+          `Janela ${ui.windowId} "${ui.windowTitle}": ${ui.elements.length} elemento(s) retornado(s), ${ui.scanned} nó(s) varrido(s)${ui.truncated ? ", resultado truncado" : ""}.`,
+        ]
+
+        for (const element of ui.elements) {
+          const states = [
+            element.enabled ? "habilitado" : "desabilitado",
+            element.focused ? "focado" : null,
+            element.selected === true
+              ? "selecionado"
+              : element.selected === false
+                ? "não selecionado"
+                : null,
+            element.expanded === true
+              ? "expandido"
+              : element.expanded === false
+                ? "colapsado"
+                : null,
+            element.offscreen ? "fora da tela" : null,
+          ].filter((value): value is string => value !== null)
+          const runtime = element.runtimeId
+            ? `runtimeId=${element.runtimeId}`
+            : "sem runtimeId"
+          const center = element.center
+            ? `centro=${element.center.x},${element.center.y}`
+            : "sem centro"
+          const actions =
+            element.actions.length > 0
+              ? `ações=${element.actions.join("|")}`
+              : "sem ações de acessibilidade"
+
+          lines.push(
+            `- [${element.role || "?"}] "${element.name}" (${runtime}; ${center}; ${actions}; ${states.join(", ")})`,
+          )
+        }
+
+        lines.push(
+          "Use device-ui-action com o runtimeId para agir sem mover o cursor. Se o alvo não estiver na lista, refine find/role ou aumente depth/maxResults.",
+        )
+
+        return { type: "text", value: lines.join("\n") }
+      },
+    }),
+    [DEVICE_UI_ACTION_TOOL_NAME]: tool({
+      description: uiActionDescription,
+      inputSchema: deviceUiActionInputSchema,
+      execute: async ({ deviceId, windowId, runtimeId, action }) => {
+        try {
+          return await runDeviceCommand(
+            userId,
+            deviceId,
+            parseDeviceCommand("ui-action", { windowId, runtimeId, action }),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-ui-action.",
+          }
+        }
+      },
+      toModelOutput: async ({ output }) => {
+        if (!output.ok) {
+          return {
+            type: "text",
+            value: [
+              `Falha ao executar a ação de interface: ${output.code ?? "command_failed"}.`,
+              output.error ?? "O dispositivo não detalhou o erro.",
+            ].join(" "),
+          }
+        }
+
+        const result = output.uiAction
+
+        if (!result) {
+          return {
+            type: "text",
+            value: "O dispositivo respondeu sem os dados da ação de interface.",
+          }
+        }
+
+        const states = [
+          result.element.enabled ? "habilitado" : "desabilitado",
+          result.element.focused ? "focado" : null,
+          result.element.selected === true
+            ? "selecionado"
+            : result.element.selected === false
+              ? "não selecionado"
+              : null,
+          result.element.expanded === true
+            ? "expandido"
+            : result.element.expanded === false
+              ? "colapsado"
+              : null,
+        ].filter((value): value is string => value !== null)
+
+        return {
+          type: "text",
+          value: [
+            `Ação "${result.action}" aplicada em [${result.element.role || "?"}] "${result.element.name}" na janela ${result.windowId}.`,
+            result.element.runtimeId
+              ? `runtimeId=${result.element.runtimeId}.`
+              : "O elemento não expõe runtimeId.",
+            `Estado após a ação (ou último conhecido, se o elemento foi removido): ${states.join(", ")}.`,
+            "Confirme o efeito esperado: capture a tela ou inspecione a interface de novo quando a ação puder ter mudado a árvore.",
+          ].join(" "),
         }
       },
     }),

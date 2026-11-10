@@ -36,6 +36,7 @@ import {
   moveMouse,
   scrollMouse,
 } from "./mouse.js"
+import { DeviceUiError, inspectUi, performUiAction } from "./ui.js"
 
 const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
@@ -473,6 +474,10 @@ export async function executeDeviceCommand(
       case "drag":
         await dragMouse(command.input)
         return { ok: true }
+      case "inspect-ui":
+        return { ok: true, ui: await inspectUi(command.input) }
+      case "ui-action":
+        return { ok: true, uiAction: await performUiAction(command.input) }
       case "list-windows":
         return { ok: true, windows: await listWindows(command.input) }
       case "focus-window": {
@@ -573,6 +578,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceMouseError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceUiError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

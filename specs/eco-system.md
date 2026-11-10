@@ -500,6 +500,9 @@ rodando em segundo plano e, ao voltar, a mensagem já está lá (inclusive parci
       `onEnd` com `isAborted` salvar a parcial (comportamento atual)
 
 
+### Passo 14 — Continuidade e adição de Ferramentas complexas para o Driver de controle, deixar a ferramenta mais funcional.
+
+   veja em @eco-device.md
   
  
 

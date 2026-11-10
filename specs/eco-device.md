@@ -244,6 +244,45 @@ Roadmap de evolução: devices-evolution.md
    `lib/ai/tools/device-tools.ts` e testes em `lib/devices/commands.test.ts` e
    `lib/ai/tools/device-tools.test.ts`.
 
+7. UI Automation (`device-inspect-ui` + `device-ui-action`).
+   Status: implementado no Windows (MVP determinístico).
+
+   A IA inspeciona a árvore de acessibilidade de uma janela e age em controles
+   por `runtimeId`, sem mover o cursor e sem estimar pixels. É o caminho preferido
+   para abas, botões, menus, campos e checkboxes; a captura + clique continua
+   como fallback para canvas, jogos e apps sem acessibilidade.
+
+   - Tools: `device-inspect-ui` com
+     `{ deviceId, windowId, find?, role?, maxResults?, depth?, includeOffscreen? }`
+     retorna `ui{ windowId, windowTitle, elements[], scanned, truncated }`;
+     `device-ui-action` com `{ deviceId, windowId, runtimeId, action? }` executa
+     `invoke`, `select`, `toggle`, `expand`, `collapse` ou `focus` e retorna
+     `uiAction{ windowId, action, element }` com o estado depois da ação.
+   - Cada elemento traz `runtimeId` (runtime id do UIA serializado por `.`),
+     `name`, `role` sem o prefixo `ControlType`, `bounds`/`center` em pixels
+     nativos, `enabled`, `focused`, `selected`, `expanded`, `actions`,
+     `automationId` e `path` de ancestrais.
+   - O `runtimeId` é temporário: o driver reencontra o elemento enumerando a
+     árvore no momento da ação. Se o elemento sumiu, retorna
+     `element_not_found` e a IA precisa inspecionar de novo.
+   - `invoke` em controles destrutivos (fechar, excluir, enviar, salvar, sair)
+     exige autorização explícita do usuário. Ações de navegação (`select`,
+     `toggle`, `expand`, `collapse`, `focus`) são livres.
+   - Plataformas: Windows via PowerShell + UIAutomationClient, com DPI awareness
+     v2 para alinhar os bounds à captura. macOS (AXUIElement) e Linux (AT-SPI)
+     retornam `unsupported_platform` nesta fase.
+   - Erros: `window_not_found`, `element_not_found`, `pattern_not_supported`,
+     `action_failed`, `ui_inspection_failed` e `unsupported_platform`.
+
+   Prompt atualizado para preferir o caminho determinístico e manter o visual
+   como fallback (`SYSTEM_PROMPT_VERSION = 28`).
+
+   Referências: contrato em `spectral/shared/device-commands.ts`, driver em
+   `spectral/driver/src/commands/ui.ts`, dispatch em
+   `spectral/driver/src/commands/executor.ts`, tools em
+   `lib/ai/tools/device-tools.ts` e testes em `lib/devices/commands.test.ts` e
+   `lib/ai/tools/device-tools.test.ts`.
+
 ## Próximas features
 
 Itens do roadmap ainda não implementados, em ordem recomendada (detalhes em

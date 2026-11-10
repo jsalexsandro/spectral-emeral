@@ -1,5 +1,9 @@
 import { z } from "zod"
-import type { DeviceCommand } from "../../../shared/device-commands.js"
+import {
+  DEVICE_UI_ACTIONS,
+  type DeviceCommand,
+  type DeviceUiAction,
+} from "../../../shared/device-commands.js"
 
 export const authenticateMessageSchema = z.object({
   type: z.literal("device:authenticate"),
@@ -36,6 +40,60 @@ const deviceWindowSchema = z.object({
     .nullable(),
   focused: z.boolean(),
   minimized: z.boolean(),
+})
+
+const deviceUiActionSchema = z.enum(
+  DEVICE_UI_ACTIONS as unknown as [DeviceUiAction, ...DeviceUiAction[]],
+)
+
+const deviceUiBoundsSchema = z.object({
+  x: z.number().int(),
+  y: z.number().int(),
+  width: z.number().int().nonnegative(),
+  height: z.number().int().nonnegative(),
+})
+
+const deviceUiElementSchema = z.object({
+  runtimeId: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(/^[0-9]+(?:\.[0-9]+)*$/)
+    .nullable(),
+  name: z.string().max(200),
+  role: z.string().max(40),
+  bounds: deviceUiBoundsSchema.nullable(),
+  center: z.object({ x: z.number().int(), y: z.number().int() }).nullable(),
+  enabled: z.boolean(),
+  focused: z.boolean(),
+  selected: z.boolean().nullable(),
+  expanded: z.boolean().nullable(),
+  offscreen: z.boolean(),
+  actionable: z.boolean(),
+  actions: z.array(deviceUiActionSchema).max(8),
+  automationId: z.string().max(120),
+  path: z
+    .array(
+      z.object({
+        name: z.string().max(80),
+        role: z.string().max(40),
+      }),
+    )
+    .max(8),
+})
+
+const deviceUiInspectionSchema = z.object({
+  windowId: z.string().min(1).max(128),
+  windowTitle: z.string().max(300),
+  elements: z.array(deviceUiElementSchema).max(100),
+  scanned: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+})
+
+const deviceUiActionResultSchema = z.object({
+  windowId: z.string().min(1).max(128),
+  action: deviceUiActionSchema,
+  element: deviceUiElementSchema,
 })
 
 export const commandResultMessageSchema = z.object({
@@ -136,6 +194,8 @@ export const commandResultMessageSchema = z.object({
           truncated: z.boolean(),
         })
         .optional(),
+      ui: deviceUiInspectionSchema.optional(),
+      uiAction: deviceUiActionResultSchema.optional(),
       screenshot: z
         .object({
           id: z.string().min(1).max(128),

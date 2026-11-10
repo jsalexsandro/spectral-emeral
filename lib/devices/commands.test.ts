@@ -449,6 +449,91 @@ describe("device command contract", () => {
     })
   })
 
+  it("normalizes inspect-ui with defaults and filters", () => {
+    expect(
+      parseDeviceCommand("inspect-ui", { windowId: " 66500 " }),
+    ).toEqual({
+      command: "inspect-ui",
+      input: {
+        windowId: "66500",
+        maxResults: 40,
+        depth: 10,
+        includeOffscreen: false,
+      },
+    })
+
+    expect(
+      parseDeviceCommand("inspect-ui", {
+        windowId: "66500",
+        find: "  Fechar ",
+        role: " ControlType.Button ",
+        maxResults: 5,
+        depth: 8,
+        includeOffscreen: true,
+      }),
+    ).toEqual({
+      command: "inspect-ui",
+      input: {
+        windowId: "66500",
+        find: "Fechar",
+        role: "Button",
+        maxResults: 5,
+        depth: 8,
+        includeOffscreen: true,
+      },
+    })
+
+    expect(() => parseDeviceCommand("inspect-ui", {})).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() =>
+      parseDeviceCommand("inspect-ui", {
+        windowId: "66500",
+        role: "ControlType.But;ton",
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("inspect-ui", { windowId: "66500", depth: 13 }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("normalizes ui-action", () => {
+    expect(
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: " 42.123.456 ",
+      }),
+    ).toEqual({
+      command: "ui-action",
+      input: { windowId: "66500", runtimeId: "42.123.456", action: "invoke" },
+    })
+
+    expect(
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "select",
+      }),
+    ).toEqual({
+      command: "ui-action",
+      input: { windowId: "66500", runtimeId: "42.123.456", action: "select" },
+    })
+
+    expect(() =>
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42; rm -rf /",
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123",
+        action: "explode",
+      }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
   it("rejects invalid mouse input", () => {
     expect(() => parseDeviceCommand("move-mouse", { x: 1 })).toThrow(
       DeviceCommandValidationError,
