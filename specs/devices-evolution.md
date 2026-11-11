@@ -57,6 +57,12 @@ O que já existe e funciona:
   com um comando em voo por PC (`device_busy`). Screenshots ainda trafegam em
   base64 e ficam em disco temporário; um canal binário e storage permanente
   seguem pendentes.
+- **Apps web complexos ficam fora do alcance do UIA.** WhatsApp Web, painéis e
+  SPAs têm DOM profundo (além do `depth` 12) e carregamento assíncrono; a árvore
+  do Chrome não garante nomes estáveis nos itens e, quando o controle não expõe
+  `ValuePattern`, digitar ainda depende de `SendKeys` no primeiro plano. É o que
+  motiva o item 4c (Playwright), já que o caminho por acessibilidade foi feito
+  para apps nativos.
 
 ---
 
@@ -180,33 +186,84 @@ Risco considera exposição de segurança ao liberar o recurso.
   `spectral/shared/device-commands.ts`, driver em
   `spectral/driver/src/commands/ui.ts`, dispatch em
   `spectral/driver/src/commands/executor.ts`, tools
-  `device-inspect-ui`/`device-ui-action` e prompt v28.
+  `device-inspect-ui`/`device-ui-action` e prompt v29.
 - **O que:** inspecionar a árvore de acessibilidade de uma janela e executar
   ações em controles por `runtimeId`, sem mover o cursor nem estimar pixels.
 - **Por quê:** o grounding visual de alvos pequenos (ex.: o “x” de uma aba de
   36×36 px) errava na primeira tentativa. A árvore de UI Automation entrega
   nome, papel, bounds e centro exatos, e a ação via pattern é determinística.
 - **Contrato:** `inspect-ui` com
-  `{ windowId, find?, role?, maxResults, depth, includeOffscreen }` retorna
-  `ui{ windowId, windowTitle, elements[], scanned, truncated }`; cada elemento
-  traz `runtimeId`, `name`, `role`, `bounds`, `center`, `enabled`, `focused`,
-  `selected`, `expanded`, `actions`, `automationId` e `path`. `ui-action` com
-  `{ windowId, runtimeId, action }` executa `invoke`, `select`, `toggle`,
-  `expand`, `collapse` ou `focus` e retorna `uiAction` com o estado do elemento.
+  `{ windowId, find?, role?, maxResults, depth, includeOffscreen, waitMs }`
+  retorna `ui{ windowId, windowTitle, elements[], scanned, waitedMs, truncated }`;
+  cada elemento traz `runtimeId`, `name`, `role`, `value`, `bounds`, `center`,
+  `enabled`, `focused`, `selected`, `expanded`, `actions`, `automationId` e
+  `path`. `value` é null em campos de senha.
+  `ui-action` com `{ windowId, runtimeId, action, waitMs, value? }` executa
+  `invoke`, `select`, `toggle`, `expand`, `collapse`, `focus` ou `setValue` e
+  retorna `uiAction` com o estado do elemento, `waitedMs` e, quando aplicável,
+  `hint`.
+- **Resiliência:** `waitMs` (0–10000) faz a enumeração repetir a cada ~150 ms até
+  o alvo aparecer. O padrão é 1500 ms na ação e 0 na inspeção; `inspect-ui`
+  também aceita espera quando o conteúdo renderiza depois. `setValue` usa
+  `ValuePattern.SetValue` e escreve direto em campos de texto, sem depender de
+  `SendKeys` na janela em foco. Campos com `ValuePattern.IsPassword` são
+  bloqueados: `setValue` retorna `password_field_blocked` e o `value` do
+  elemento vem null. Quando `focus` é aplicado a um controle com
+  `SelectionItemPattern` (aba, item de lista), a resposta traz
+  `hint` recomendando `select`.
 - **Plataformas:** Windows via PowerShell + UIAutomationClient
   (`AutomationElement.FromHandle`, `RawViewWalker`, DPI awareness v2).
   macOS (`AXUIElement`) e Linux (AT-SPI) retornam `unsupported_platform` nesta
   fase; o caminho visual continua como fallback.
 - **Erros:** `window_not_found`, `element_not_found`, `pattern_not_supported`,
-  `action_failed`, `ui_inspection_failed` e `unsupported_platform`.
+  `action_failed`, `invalid_ui_value`, `password_field_blocked`,
+  `ui_inspection_failed` e `unsupported_platform`.
 - **Limites:** `runtimeId` é temporário e precisa ser reencontrado enumerando a
   árvore na hora da ação; a busca é limitada a 4.000 nós na inspeção e 8.000 na
-  ação. Controles sem nome e sem AutomationId são omitidos para reduzir ruído.
+  ação, por tentativa. Controles sem nome e sem AutomationId são omitidos para
+  reduzir ruído. `setValue` cobre `ValuePattern`; editores sem esse pattern
+  (canvas, alguns apps Electron) continuam dependendo de foco + teclado.
 - **Pronto quando:** a IA localizar o “Fechar” da aba ativa do Chrome por
   inspeção e selecionar/fechar a aba por `ui-action` sem mover o cursor,
   confirmando o estado depois. Instalar/validar em macOS e Linux fica pendente.
 - **Esforço:** M · **Risco:** alto para `invoke` destrutivo — exige autorização
   explícita no prompt.
+
+#### 4c. Automação de navegador — Playwright
+
+- **Status:** planejado. Complementa o 4b: UIA para apps nativos, Playwright para
+  páginas web.
+- **O que:** controlar o navegador por seletor (DOM), não por pixel: navegar,
+  preencher campos, clicar, ler texto e esperar elementos.
+- **Por quê:** apps web complexos (WhatsApp Web, painéis, SPAs) são hostis ao
+  caminho atual. O DOM é fundo (além do `depth` 12), virtualizado e assíncrono; a
+  árvore de acessibilidade do Chrome não garante nome estável nos itens; e
+  digitar depende de `SendKeys` no primeiro plano, sem espera entre a ação e o
+  carregamento. Isso gera `element_not_found` em sequência e o loop de inspeção.
+  Playwright entrega seletor estável, `fill`/`type` determinístico e auto-wait.
+- **Contrato (proposto):** `browser-open` (headless e perfil), `browser-goto`,
+  `browser-find` (elementos com seletor, texto, role e bounds), `browser-action`
+  (`click`, `fill`, `press`, `select`, `wait`) e `browser-text`. Em paralelo,
+  `ui-action` ganha `setValue` (ValuePattern) para reduzir a dependência de
+  `SendKeys` também no caminho UIA.
+- **Onde mexer:** `spectral/driver/src/commands/browser.ts` (novo), contrato em
+  `spectral/shared/device-commands.ts`, dispatch no `executor.ts`, tools em
+  `lib/ai/tools/device-tools.ts`, prompt e specs. O navegador roda no driver, no
+  PC do usuário — nunca no servidor.
+- **Plataformas:** Windows primeiro. macOS e Linux retornam
+  `unsupported_platform` até a fase seguinte.
+- **Erros:** `browser_not_launched`, `browser_selector_not_found`,
+  `browser_timeout`, `browser_navigation_failed` e `unsupported_platform`.
+- **Limites:** sessão isolada por padrão, sem perfil nem cookies do usuário;
+  usar o perfil real é opt-in explícito. Enviar mensagem, submeter formulário ou
+  concluir compra exige confirmação do usuário, como no `invoke` destrutivo do
+  4b. Downloads passam pelo sandbox do item 6. O runtime do Playwright e os
+  navegadores pesam centenas de MB, o que afeta o instalador do item 10.
+- **Pronto quando:** a IA abrir o WhatsApp Web, procurar um contato, escrever
+  uma mensagem e enviar para o próprio número, confirmando o envio, sem usar
+  coordenadas nem keystrokes no primeiro plano.
+- **Esforço:** G · **Risco:** alto (sessão autenticada; enviar mensagem ou
+  comprar em nome do usuário).
 
 ### Bloco B — Controle real do PC
 
@@ -412,7 +469,7 @@ Itens 10, 11, 12, 13 → instalador/tray/autostart, auto-update, capabilities e
 jobs. Sem isso o resto não chega no usuário comum.
 
 **Fase 4 — expansão**
-Itens 5, 6, 8, 9, 17–22.
+Itens 4c, 5, 6, 8, 9, 17–22.
 
 Se fosse escolher **só três** para começar: **screenshot**, **listar/focar
 janelas** e **política de aprovação por dispositivo**. As duas primeiras
