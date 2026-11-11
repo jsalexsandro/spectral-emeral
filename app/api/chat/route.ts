@@ -18,7 +18,7 @@ import { parseModelKey } from "@/lib/ai/models"
 import { buildSystemPrompt } from "@/lib/ai/prompts"
 import { sendChatMessageSchema } from "@/lib/validations/chat"
 
-export const maxDuration = 120
+export const maxDuration = 240
 
 const modelErrorStatus = {
   unknown_model: 400,
@@ -26,7 +26,7 @@ const modelErrorStatus = {
   missing_api_key: 403,
 } as const
 
-const AGENT_TIMEOUT_MS = 120_000
+const AGENT_TIMEOUT_MS = 240_000
 
 export async function POST(request: Request) {
   const session = await auth()
@@ -158,7 +158,13 @@ export async function POST(request: Request) {
       abortSignal: request.signal,
       timeout: { totalMs: AGENT_TIMEOUT_MS },
       onError: (error) => {
-        console.error("agent_error", { chatId, error })
+        console.error(
+          JSON.stringify({
+            event: "agent_error",
+            chatId,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        )
         return "Não foi possível gerar a resposta."
       },
       onStepEnd: (step) => {
@@ -166,18 +172,38 @@ export async function POST(request: Request) {
         inputTokens += step.usage.inputTokens ?? 0
         outputTokens += step.usage.outputTokens ?? 0
 
-        console.info("agent_step_end", {
-          chatId,
-          step: stepCount,
-          finishReason: step.finishReason,
-          inputTokens: step.usage.inputTokens,
-          outputTokens: step.usage.outputTokens,
-          toolCalls: step.toolCalls.map((call) => call.toolName),
-        })
+        console.info(
+          JSON.stringify({
+            event: "agent_step_end",
+            chatId,
+            step: stepCount,
+            finishReason: step.finishReason,
+            inputTokens: step.usage.inputTokens ?? null,
+            outputTokens: step.usage.outputTokens ?? null,
+            totalOutputTokens: outputTokens,
+            contextTokens: step.usage.inputTokens ?? null,
+            toolCalls: step.toolCalls.map((call) => call.toolName),
+          }),
+        )
       },
       onEnd: async ({ responseMessage, isAborted, outcome }) => {
         try {
           const responseText = getMessageText(responseMessage)
+
+          console.info(
+            JSON.stringify({
+              event: "agent_end",
+              chatId,
+              steps: stepCount,
+              aborted: isAborted,
+              outcome: outcome.status,
+              promptVersion: systemPrompt.version,
+              inputTokens,
+              outputTokens,
+              textLength: responseText.length,
+              emptyResponse: responseText.length === 0,
+            }),
+          )
 
           if (!responseText && responseMessage.parts.length === 0) {
             return
@@ -196,20 +222,19 @@ export async function POST(request: Request) {
             outputTokens: outputTokens || null,
           })
           await touchChat(chatId)
-
-          console.info("agent_end", {
-            chatId,
-            steps: stepCount,
-            aborted: isAborted,
-            outcome: outcome.status,
-          })
         } catch (error) {
           console.error("Falha ao salvar resposta do assistente:", error)
         }
       },
     })
   } catch (error) {
-    console.error("chat_route_error", { chatId, error })
+    console.error(
+      JSON.stringify({
+        event: "chat_route_error",
+        chatId,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    )
     return Response.json({ error: "internal_error" }, { status: 500 })
   }
 }

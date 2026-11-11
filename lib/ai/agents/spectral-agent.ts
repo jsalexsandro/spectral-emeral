@@ -3,16 +3,29 @@ import {
   isStepCount,
   pruneMessages,
   type LanguageModel,
-  type StepResult,
-  type StopCondition,
-  type ToolSet,
 } from "ai"
 import { getChatTools } from "@/lib/ai/tools"
 import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 
-export const MAX_AGENT_STEPS = 12
-export const MAX_AGENT_TOKENS = 150_000
+/**
+ * O SDK envia o contexto inteiro a cada passo, então somar `input + output`
+ * de todos os passos estoura qualquer orçamento em poucas iterações e o loop
+ * era cortado antes de o modelo escrever a resposta final (mensagem vazia).
+ * Agora o orçamento acumulado considera apenas tokens de saída; o contexto é
+ * medido pelo `inputTokens` do último passo, que já reflete o prompt atual.
+ */
+export const MAX_AGENT_STEPS = 24
+export const MAX_AGENT_OUTPUT_TOKENS = 80_000
+export const MAX_AGENT_CONTEXT_TOKENS = 100_000
 export const MAX_RENDER_HTML_CALLS = 2
+
+export const WRAP_UP_INSTRUCTION = [
+  "Você está no passo de encerramento desta execução.",
+  "Não chame mais nenhuma ferramenta.",
+  "Responda agora, em texto, com o que você já sabe: resuma o que foi feito,",
+  "o que funcionou e o que ficou pendente. Se a tarefa não terminou, diga",
+  "exatamente em que ponto parou e qual é o próximo passo.",
+].join(" ")
 
 const MAX_CONTEXT_MESSAGES = 40
 
@@ -22,10 +35,6 @@ export type AgentRuntimeContext = {
   startedAt: number
   theme?: string | null
   resolvedTheme?: string | null
-  lastPlan?: {
-    title?: string
-    steps: Array<{ title: string; status: string }>
-  }
 }
 
 type CreateSpectralAgentInput = {
@@ -34,21 +43,15 @@ type CreateSpectralAgentInput = {
   runtimeContext: AgentRuntimeContext
 }
 
-function totalTokens(steps: Array<StepResult<ToolSet, AgentRuntimeContext>>) {
-  return steps.reduce((total, step) => {
-    const input = step.usage.inputTokens ?? 0
-    const output = step.usage.outputTokens ?? 0
-
-    return total + input + output
-  }, 0)
-}
-
-const budgetExceeded: StopCondition<ToolSet, AgentRuntimeContext> = ({
-  steps,
-}) => totalTokens(steps) >= MAX_AGENT_TOKENS
-
 type StepWithToolCalls = {
   toolCalls: ReadonlyArray<{ toolName: string }>
+}
+
+export type StepWithUsage = StepWithToolCalls & {
+  usage: {
+    inputTokens?: number | null
+    outputTokens?: number | null
+  }
 }
 
 export function countRenderHtmlCalls(steps: readonly StepWithToolCalls[]) {
@@ -61,37 +64,39 @@ export function countRenderHtmlCalls(steps: readonly StepWithToolCalls[]) {
   )
 }
 
-const renderHtmlLimitReached: StopCondition<ToolSet, AgentRuntimeContext> = ({
-  steps,
-}) => countRenderHtmlCalls(steps) >= MAX_RENDER_HTML_CALLS
+export function totalOutputTokens(steps: readonly StepWithUsage[]) {
+  return steps.reduce((total, step) => total + (step.usage.outputTokens ?? 0), 0)
+}
 
-const MAX_CONSECUTIVE_FAILED_PLANS = 3
+function lastContextTokens(steps: readonly StepWithUsage[]) {
+  const last = steps[steps.length - 1]
 
-// Stop condition auxiliada pelo contexto de runtime: para quando há muitas
-// falhas de plano sem progresso. Desabilitada por padrão pois o StopCondition
-// do SDK não expõe runtimeContext; reativar quando o cliente enviar lastPlan
-// no corpo de /api/chat.
-const repeatedPlanFailures = ({
-  steps,
-  runtimeContext,
-}: {
-  steps: StepResult<ToolSet, AgentRuntimeContext>[]
-  runtimeContext?: AgentRuntimeContext
-}) => {
-  const rc = runtimeContext
-  if (!rc?.lastPlan) {
+  return last?.usage.inputTokens ?? 0
+}
+
+/**
+ * Decide se o próximo passo deve ser o encerramento (sem ferramentas, somente
+ * texto). Isso evita o corte silencioso que deixava a resposta vazia: quando o
+ * limite chega perto, o modelo ainda tem uma chance de escrever a conclusão.
+ */
+export function shouldWrapUpAgent(steps: readonly StepWithUsage[]) {
+  if (steps.length === 0) {
     return false
   }
 
-  const failedSteps = rc.lastPlan.steps.filter(
-    (step) => step.status === "failed",
-  ).length
+  if (steps.length >= MAX_AGENT_STEPS - 1) {
+    return true
+  }
 
-  const hasProgress = rc.lastPlan.steps.some(
-    (step) => step.status === "done" || step.status === "current",
-  )
+  if (totalOutputTokens(steps) >= MAX_AGENT_OUTPUT_TOKENS) {
+    return true
+  }
 
-  return !hasProgress && failedSteps >= MAX_CONSECUTIVE_FAILED_PLANS
+  if (lastContextTokens(steps) >= MAX_AGENT_CONTEXT_TOKENS) {
+    return true
+  }
+
+  return countRenderHtmlCalls(steps) >= MAX_RENDER_HTML_CALLS
 }
 
 export function createSpectralAgent({
@@ -108,14 +113,18 @@ export function createSpectralAgent({
       theme: runtimeContext.theme,
       resolvedTheme: runtimeContext.resolvedTheme,
     }),
-    stopWhen: [
-      isStepCount(MAX_AGENT_STEPS),
-      budgetExceeded,
-      renderHtmlLimitReached,
-      repeatedPlanFailures as StopCondition<ToolSet, AgentRuntimeContext>,
-    ],
+    // O limite duro fica acima do passo de encerramento: em condições normais
+    // o loop termina sozinho quando o wrap-up responde apenas com texto.
+    stopWhen: [isStepCount(MAX_AGENT_STEPS + 1)],
     runtimeContext,
-    prepareStep: ({ messages }) => {
+    prepareStep: ({ steps, messages }) => {
+      if (shouldWrapUpAgent(steps)) {
+        return {
+          activeTools: [],
+          instructions: WRAP_UP_INSTRUCTION,
+        }
+      }
+
       if (messages.length <= MAX_CONTEXT_MESSAGES) {
         return {}
       }
