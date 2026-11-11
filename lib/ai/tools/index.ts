@@ -1,6 +1,7 @@
 import type { ToolSet } from "ai"
 import { RUN_ACTION_TOOL_NAME } from "@/lib/ai/actions/catalog"
 import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
+import type { ChatExecutionMode } from "@/lib/devices/execution-policy"
 import { GET_THEME_TOOL_NAME, getThemeTool } from "./get-theme"
 import { createDeviceTools } from "./device-tools"
 import { fetchUrlTool } from "./fetch-url"
@@ -12,14 +13,16 @@ import { UPDATE_PLAN_TOOL_NAME, updatePlanTool } from "./update-plan"
 
 type GetChatToolsInput = {
   userId: string
+  chatId?: string
+  executionMode?: ChatExecutionMode
   theme?: string | null
   resolvedTheme?: string | null
 }
 
 export function getChatTools({
   userId,
-  theme,
-  resolvedTheme,
+  chatId,
+  executionMode,
 }: GetChatToolsInput): ToolSet {
   return {
     fetchUrl: fetchUrlTool,
@@ -29,6 +32,6 @@ export function getChatTools({
     [GET_THEME_TOOL_NAME]: getThemeTool,
     ...createProviderTools(userId),
     ...createModelTools(userId),
-    ...createDeviceTools(userId),
+    ...createDeviceTools(userId, { chatId, executionMode }),
   }
 }

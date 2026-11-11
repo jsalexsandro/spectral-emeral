@@ -5,6 +5,20 @@ import {
   createDeviceTools,
 } from "./device-tools"
 
+// Estes testes verificam a montagem do comando, não a política (que exige DB).
+vi.mock("@/lib/devices/tool-approval", () => ({
+  assertDeviceCommandAllowed: async () => ({
+    ok: true,
+    risk: "write",
+    policy: { level: "full" },
+  }),
+  readDeviceToolCommand: () => undefined,
+}))
+
+vi.mock("@/lib/devices/audit", () => ({
+  recordDeviceAudit: async () => {},
+}))
+
 beforeEach(() => {
   vi.stubEnv("SPECTRAL_INTERNAL_SECRET", "test-secret")
 })

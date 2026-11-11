@@ -12,6 +12,20 @@ import {
   deviceClickInputSchema,
 } from "./device-tools"
 
+// Estes testes verificam a montagem do comando, não a política (que exige DB).
+vi.mock("@/lib/devices/tool-approval", () => ({
+  assertDeviceCommandAllowed: async () => ({
+    ok: true,
+    risk: "input",
+    policy: { level: "full" },
+  }),
+  readDeviceToolCommand: () => undefined,
+}))
+
+vi.mock("@/lib/devices/audit", () => ({
+  recordDeviceAudit: async () => {},
+}))
+
 const screenshotId = "shot_mouse_1"
 let directory: string
 

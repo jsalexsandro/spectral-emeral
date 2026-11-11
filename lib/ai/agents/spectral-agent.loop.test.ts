@@ -69,6 +69,7 @@ function createAgent(results: unknown[]) {
       userId: "user-1",
       chatId: "chat-1",
       startedAt: Date.now(),
+      executionMode: "ask",
     },
   })
 

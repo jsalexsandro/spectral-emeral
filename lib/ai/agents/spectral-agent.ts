@@ -5,6 +5,8 @@ import {
   type LanguageModel,
 } from "ai"
 import { getChatTools } from "@/lib/ai/tools"
+import { resolveDeviceToolApproval } from "@/lib/devices/tool-approval"
+import type { ChatExecutionMode } from "@/lib/devices/execution-policy"
 import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
 
 /**
@@ -33,6 +35,7 @@ export type AgentRuntimeContext = {
   userId: string
   chatId: string
   startedAt: number
+  executionMode: ChatExecutionMode
   theme?: string | null
   resolvedTheme?: string | null
 }
@@ -110,9 +113,25 @@ export function createSpectralAgent({
     instructions,
     tools: getChatTools({
       userId: runtimeContext.userId,
+      chatId: runtimeContext.chatId,
+      executionMode: runtimeContext.executionMode,
       theme: runtimeContext.theme,
       resolvedTheme: runtimeContext.resolvedTheme,
     }),
+    // Toda tool de dispositivo passa por aqui antes de executar. A política
+    // vive no app (teto por device + modo da sessão), nunca no texto do chat.
+    toolApproval: async ({ toolCall }) =>
+      resolveDeviceToolApproval({
+        userId: runtimeContext.userId,
+        chatId: runtimeContext.chatId,
+        executionMode: runtimeContext.executionMode,
+        toolName: toolCall.toolName,
+        input: toolCall.input,
+      }),
+    // Assina os pedidos de aprovação: sem isso, um cliente malicioso poderia
+    // forjar a resposta de aprovação de um comando que nunca foi autorizado.
+    experimental_toolApprovalSecret:
+      process.env.SPECTRAL_TOOL_APPROVAL_SECRET ?? process.env.AUTH_SECRET,
     // O limite duro fica acima do passo de encerramento: em condições normais
     // o loop termina sozinho quando o wrap-up responde apenas com texto.
     stopWhen: [isStepCount(MAX_AGENT_STEPS + 1)],

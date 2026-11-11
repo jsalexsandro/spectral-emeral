@@ -1,6 +1,7 @@
 import { Chat } from "@ai-sdk/react"
 import {
   DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   type ChatOnFinishCallback,
   type UIMessage,
 } from "ai"
@@ -46,6 +47,10 @@ export function getOrCreateChat(
     id: chatId,
     messages,
     transport: new DefaultChatTransport<UIMessage>({ api: "/api/chat" }),
+    // Sem isso, responder a um pedido de aprovação não reenvia as mensagens
+    // e o agente fica parado esperando para sempre.
+    sendAutomaticallyWhen:
+      lastAssistantMessageIsCompleteWithApprovalResponses,
     onFinish: (event) => {
       finishHandler(chatId, event)
     },

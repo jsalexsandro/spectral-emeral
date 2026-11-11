@@ -141,6 +141,7 @@ export async function POST(request: Request) {
         userId: session.user.id,
         chatId,
         startedAt: Date.now(),
+        executionMode: parsed.data.executionMode,
         theme: parsed.data.theme ?? null,
         resolvedTheme: parsed.data.resolvedTheme ?? null,
       },

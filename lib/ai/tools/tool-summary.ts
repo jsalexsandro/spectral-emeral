@@ -22,6 +22,8 @@ const DEVICE_READ_FILE = "device-read-file"
 const DEVICE_WRITE_FILE = "device-write-file"
 const DEVICE_EDIT_FILE = "device-edit-file"
 const DEVICE_RUN_COMMAND = "device-run-command"
+const DEVICE_ENV = "device-env"
+const DEVICE_SHELL = "device-shell"
 const DEVICE_SCREENSHOT = "device-screenshot"
 
 type InputRecord = Record<string, unknown>
@@ -278,6 +280,21 @@ export function summarizeToolInput(
     case DEVICE_RUN_COMMAND: {
       const command = readString(record, "command")
       summary = command ? `"${truncate(command, 50)}"` : ""
+      break
+    }
+
+    case DEVICE_ENV:
+      summary = "ambiente da máquina"
+      break
+
+    case DEVICE_SHELL: {
+      const script = readString(record, "script")
+      const shell = readString(record, "shell")
+
+      summary = joinParts([
+        shell && shell !== "auto" ? shell : undefined,
+        script ? `"${truncate(script, 60)}"` : undefined,
+      ])
       break
     }
 

@@ -49,6 +49,17 @@ import {
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
+  DEVICE_SHELL_KINDS,
+  DEVICE_SHELL_SCRIPT_MAX_LENGTH,
+  DEVICE_SHELL_STDIN_MAX_LENGTH,
+  DEVICE_SHELL_TIMEOUT_MIN_MS,
+  DEVICE_SHELL_TIMEOUT_MAX_MS,
+  DEVICE_SHELL_TIMEOUT_DEFAULT_MS,
+  DEVICE_SHELL_OUTPUT_MIN_BYTES,
+  DEVICE_SHELL_OUTPUT_MAX_BYTES,
+  DEVICE_SHELL_OUTPUT_DEFAULT_BYTES,
+  DEVICE_SHELL_ENV_NAME_MAX_LENGTH,
+  DEVICE_SHELL_ENV_VALUE_MAX_LENGTH,
   DEVICE_SCREENSHOT_FORMATS,
   DEVICE_SCREENSHOT_MAX_WIDTH_MIN,
   DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
@@ -91,6 +102,17 @@ import {
   type DeviceWindowAction,
 } from "@/lib/devices/commands"
 import {
+  classifyDeviceToolRisk,
+  parseDeviceExecutionPolicy,
+  type ChatExecutionMode,
+  type DeviceExecutionLevel,
+} from "@/lib/devices/execution-policy"
+import { recordDeviceAudit } from "@/lib/devices/audit"
+import {
+  assertDeviceCommandAllowed,
+  readDeviceToolCommand,
+} from "@/lib/devices/tool-approval"
+import {
   getScreenshot,
   getScreenshotMetadata,
   saveScreenshot,
@@ -125,6 +147,8 @@ export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
 export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
 export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
 export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
+export const DEVICE_ENV_TOOL_NAME = "device-env"
+export const DEVICE_SHELL_TOOL_NAME = "device-shell"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
@@ -174,6 +198,10 @@ export const deviceListAppsInputSchema = z.object({
 })
 
 export const deviceGetOsInputSchema = z.object({
+  deviceId: deviceIdSchema,
+})
+
+export const deviceEnvInputSchema = z.object({
   deviceId: deviceIdSchema,
 })
 
@@ -871,6 +899,51 @@ export const deviceRunCommandInputSchema = z.object({
   cwd: z.string().max(DEVICE_PATH_MAX_LENGTH).optional(),
 })
 
+export const deviceShellInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  script: z
+    .string()
+    .min(1)
+    .max(DEVICE_SHELL_SCRIPT_MAX_LENGTH)
+    .describe("Script completo a executar. Não é interpolado numa linha de comando."),
+  shell: z
+    .enum(DEVICE_SHELL_KINDS)
+    .default("auto")
+    .describe(
+      "Shell desejado. `auto` usa pwsh, depois powershell e por fim cmd no Windows.",
+    ),
+  cwd: z
+    .string()
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .optional()
+    .describe("Diretório de trabalho. Precisa estar dentro do home ou da pasta padrão do dispositivo."),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(DEVICE_SHELL_TIMEOUT_MIN_MS)
+    .max(DEVICE_SHELL_TIMEOUT_MAX_MS)
+    .default(DEVICE_SHELL_TIMEOUT_DEFAULT_MS),
+  env: z
+    .record(
+      z.string().max(DEVICE_SHELL_ENV_NAME_MAX_LENGTH),
+      z.string().max(DEVICE_SHELL_ENV_VALUE_MAX_LENGTH),
+    )
+    .optional()
+    .describe("Variáveis de ambiente extras (máximo 32)."),
+  stdin: z
+    .string()
+    .max(DEVICE_SHELL_STDIN_MAX_LENGTH)
+    .optional()
+    .describe("Texto enviado para a entrada padrão do script."),
+  maxOutputBytes: z
+    .number()
+    .int()
+    .min(DEVICE_SHELL_OUTPUT_MIN_BYTES)
+    .max(DEVICE_SHELL_OUTPUT_MAX_BYTES)
+    .default(DEVICE_SHELL_OUTPUT_DEFAULT_BYTES)
+    .describe("Teto de saída por stream. Acima disso, cabeça e cauda são mantidas."),
+})
+
 type DeviceRow = {
   id: string
   name: string
@@ -878,6 +951,8 @@ type DeviceRow = {
   platform: string
   architecture: string | null
   lastSeenAt: Date | null
+  executionPolicy?: unknown
+  notes?: string | null
 }
 
 export type DeviceToolSummary = {
@@ -888,6 +963,27 @@ export type DeviceToolSummary = {
   architecture: string | null
   status: DeviceStatus
   lastSeenAt: string | null
+  executionLevel: DeviceExecutionLevel
+  notes: string | null
+}
+
+/** Notas são enviadas ao modelo quando o dispositivo é listado; corte defensivo. */
+const DEVICE_NOTES_PROMPT_MAX_LENGTH = 4_000
+
+function toPromptNotes(notes: string | null | undefined): string | null {
+  if (!notes) {
+    return null
+  }
+
+  const trimmed = notes.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  return trimmed.length > DEVICE_NOTES_PROMPT_MAX_LENGTH
+    ? `${trimmed.slice(0, DEVICE_NOTES_PROMPT_MAX_LENGTH)}…`
+    : trimmed
 }
 
 export function toDeviceToolSummary(
@@ -902,6 +998,8 @@ export function toDeviceToolSummary(
     architecture: device.architecture,
     status: isDeviceOnline(device.lastSeenAt, now) ? "online" : "offline",
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
+    executionLevel: parseDeviceExecutionPolicy(device.executionPolicy).level,
+    notes: toPromptNotes(device.notes),
   }
 }
 
@@ -922,6 +1020,8 @@ async function listOwnedDevices(userId: string): Promise<DeviceToolSummary[]> {
       platform: devices.platform,
       architecture: devices.architecture,
       lastSeenAt: devices.lastSeenAt,
+      executionPolicy: devices.executionPolicy,
+      notes: devices.notes,
     })
     .from(devices)
     .where(and(eq(devices.userId, userId), isNull(devices.revokedAt)))
@@ -973,6 +1073,8 @@ function toCommandToolResult(
     ...(output.result.write ? { write: output.result.write } : {}),
     ...(output.result.edit ? { edit: output.result.edit } : {}),
     ...(output.result.run ? { run: output.result.run } : {}),
+    ...(output.result.env ? { env: output.result.env } : {}),
+    ...(output.result.shell ? { shell: output.result.shell } : {}),
     ...(output.result.windows ? { windows: output.result.windows } : {}),
     ...(output.result.window ? { window: output.result.window } : {}),
     ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
@@ -982,12 +1084,88 @@ function toCommandToolResult(
   }
 }
 
+export type DeviceToolContext = {
+  chatId?: string
+  executionMode?: ChatExecutionMode
+}
+
 async function runDeviceCommand(
   userId: string,
   deviceId: string,
   command: DeviceCommand,
+  context?: DeviceToolContext,
 ) {
+  const executionMode = context?.executionMode ?? "ask"
+  const toolName = `device-${command.command}`
+  const risk = classifyDeviceToolRisk(toolName, command.input)
+
+  if (!risk || risk === "read") {
+    const output = await sendDeviceCommand({ userId, deviceId, command })
+    return toCommandToolResult(deviceId, output)
+  }
+
+  let policyLevel: "read-only" | "trusted" | "full"
+
+  try {
+    const guard = await assertDeviceCommandAllowed({
+      userId,
+      deviceId,
+      executionMode,
+      toolName,
+      input: command.input,
+    })
+
+    policyLevel = guard.policy.level
+
+    if (!guard.ok) {
+      await recordDeviceAudit({
+        deviceId,
+        userId,
+        chatId: context?.chatId,
+        toolName,
+        command: readDeviceToolCommand(toolName, command.input),
+        risk,
+        decision: "denied",
+        policy: guard.policy.level,
+        mode: executionMode,
+        errorCode: guard.code,
+      })
+
+      return { ok: false as const, code: guard.code, error: guard.error }
+    }
+  } catch {
+    return {
+      ok: false as const,
+      code: "policy_unavailable",
+      error:
+        "Não foi possível verificar a política do dispositivo. Nenhum comando foi enviado.",
+    }
+  }
+
+  const startedAt = Date.now()
   const output = await sendDeviceCommand({ userId, deviceId, command })
+  const durationMs = Date.now() - startedAt
+  const failed = !output.ok || !output.result.ok
+
+  await recordDeviceAudit({
+    deviceId,
+    userId,
+    chatId: context?.chatId,
+    toolName,
+    command: readDeviceToolCommand(toolName, command.input),
+    risk,
+    decision: failed ? "failed" : "executed",
+    policy: policyLevel,
+    mode: executionMode,
+    durationMs,
+    exitCode: output.ok && output.result.ok ? output.result.shell?.exitCode ?? null : null,
+    errorCode: !output.ok
+      ? output.code
+      : output.result.ok
+        ? null
+        : output.result.code ?? "command_failed",
+  })
+
   return toCommandToolResult(deviceId, output)
 }
 
@@ -1029,6 +1207,24 @@ const getOsDescription = [
   "Retorna informações do sistema operacional do dispositivo: plataforma, tipo, release, versão e arquitetura.",
   "Use quando o usuário precisar saber a versão do Windows, macOS ou Linux, ou quando a plataforma da listagem não for suficiente.",
   "Requer um dispositivo online e o deviceId retornado por device-list.",
+].join("\n")
+
+const envDescription = [
+  "Retorna o retrato do ambiente da máquina: plataforma, arquitetura, usuário, home, temp, diretório atual, shell padrão, shells instalados, runtimes (node, python, git, docker, etc.), elevação e locale.",
+  "Use ANTES de montar qualquer script para não adivinhar caminhos, shell ou ferramentas instaladas.",
+  "`capabilities` lista os comandos que este driver realmente executa nesta plataforma; não tente comandos fora dela.",
+  "Requer um dispositivo online e o deviceId retornado por device-list.",
+].join("\n")
+
+const shellDescription = [
+  "Executa um script de shell na máquina do usuário e retorna exitCode, stdout, stderr e duração.",
+  "É a primitiva poderosa do plano de execução: use para rodar build, testes, git, scripts e qualquer fluxo que não tenha tool dedicada.",
+  "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`.",
+  "Informe `cwd` dentro do home ou da pasta padrão do dispositivo. Variáveis de ambiente do driver não são herdadas; use `env` se precisar de algo específico.",
+  "A saída é limitada por `maxOutputBytes` (padrão 64 KB por stream, máximo 512 KB) com cabeça e cauda; `truncated` indica corte.",
+  "Timeout padrão 30s (máximo 60s). Ao estourar, a árvore de processos é encerrada e `timedOut` vem true.",
+  "A ação passa pela política do dispositivo: comandos longos ou destrutivos podem exigir aprovação no chat. Nunca rode scripts que fecham janelas/apps sem o usuário pedir.",
+  "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -1206,7 +1402,14 @@ const screenshotDescription = [
   "Erros comuns: `screen_unstable` (captura uniforme: tela bloqueada ou conteúdo não renderizado; recapture), `window_bounds_unavailable`, `screen_permission_denied` no macOS (autorize Gravação de Tela), `unsupported_environment` no Wayland, `dependency_missing` no Linux (instale ImageMagick/xrandr) e `monitor_not_found` para índice inválido.",
 ].join("\n")
 
-export function createDeviceTools(userId: string) {
+export function createDeviceTools(
+  userId: string,
+  context?: DeviceToolContext,
+) {
+  const executionContext = context ?? {}
+  const runCommand = (deviceId: string, command: DeviceCommand) =>
+    runDeviceCommand(userId, deviceId, command, executionContext)
+
   return {
     [DEVICE_LIST_TOOL_NAME]: tool({
       description: listDescription,
@@ -1247,7 +1450,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceOpenUrlInputSchema,
       execute: async ({ deviceId, url }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "open-url",
             input: { url },
           })
@@ -1268,7 +1471,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceOpenAppInputSchema,
       execute: async ({ deviceId, appId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "open-app",
             input: { appId },
           })
@@ -1289,7 +1492,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceListAppsInputSchema,
       execute: async ({ deviceId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "list-apps",
             input: {},
           })
@@ -1310,7 +1513,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceGetOsInputSchema,
       execute: async ({ deviceId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "get-os",
             input: {},
           })
@@ -1326,12 +1529,54 @@ export function createDeviceTools(userId: string) {
         }
       },
     }),
+    [DEVICE_ENV_TOOL_NAME]: tool({
+      description: envDescription,
+      inputSchema: deviceEnvInputSchema,
+      execute: async ({ deviceId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "get-env",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-env.",
+          }
+        }
+      },
+    }),
+    [DEVICE_SHELL_TOOL_NAME]: tool({
+      description: shellDescription,
+      inputSchema: deviceShellInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(
+            deviceId,
+            parseDeviceCommand("shell", input),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-shell.",
+          }
+        }
+      },
+    }),
     [DEVICE_TYPE_TEXT_TOOL_NAME]: tool({
       description: typeTextDescription,
       inputSchema: deviceTypeTextInputSchema,
       execute: async ({ deviceId, text, windowId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "type-text",
             input: { text, ...(windowId ? { windowId } : {}) },
           })
@@ -1352,7 +1597,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: devicePressKeyInputSchema,
       execute: async ({ deviceId, key, modifiers, windowId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "press-key",
             input: {
               key,
@@ -1377,7 +1622,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceReadClipboardInputSchema,
       execute: async ({ deviceId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "read-clipboard",
             input: {},
           })
@@ -1398,7 +1643,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceWriteClipboardInputSchema,
       execute: async ({ deviceId, text }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "write-clipboard",
             input: { text },
           })
@@ -1437,8 +1682,7 @@ export function createDeviceTools(userId: string) {
             }
           }
 
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand("move-mouse", point),
           )
@@ -1481,8 +1725,7 @@ export function createDeviceTools(userId: string) {
             }
           }
 
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand("click", {
               ...input,
@@ -1528,8 +1771,7 @@ export function createDeviceTools(userId: string) {
             }
           }
 
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand("scroll", {
               ...input,
@@ -1572,8 +1814,7 @@ export function createDeviceTools(userId: string) {
             }
           }
 
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand("drag", { ...input, from, to }),
           )
@@ -1594,7 +1835,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceListFilesInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "list-files",
             input,
           })
@@ -1615,7 +1856,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceReadFileInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "read-file",
             input,
           })
@@ -1636,7 +1877,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceGlobInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "glob",
             input,
           })
@@ -1657,7 +1898,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceGrepInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "grep",
             input,
           })
@@ -1678,7 +1919,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceCheckAdminInputSchema,
       execute: async ({ deviceId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "check-admin",
             input: {},
           })
@@ -1699,7 +1940,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceWriteFileInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "write-file",
             input,
           })
@@ -1720,7 +1961,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceEditFileInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "edit-file",
             input,
           })
@@ -1741,7 +1982,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceRunCommandInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "run-command",
             input,
           })
@@ -1762,7 +2003,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceListWindowsInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "list-windows",
             input,
           })
@@ -1783,7 +2024,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceFocusWindowInputSchema,
       execute: async ({ deviceId, windowId }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "focus-window",
             input: { windowId },
           })
@@ -1804,8 +2045,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceWindowActionInputSchema,
       execute: async ({ deviceId, windowId, action }) => {
         try {
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand(`${action}-window`, { windowId }),
           )
@@ -1826,7 +2066,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceInspectUiInputSchema,
       execute: async ({ deviceId, ...input }) => {
         try {
-          return await runDeviceCommand(userId, deviceId, {
+          return await runCommand(deviceId, {
             command: "inspect-ui",
             input,
           })
@@ -1914,8 +2154,7 @@ export function createDeviceTools(userId: string) {
       inputSchema: deviceUiActionInputSchema,
       execute: async ({ deviceId, windowId, runtimeId, action, value, waitMs }) => {
         try {
-          return await runDeviceCommand(
-            userId,
+          return await runCommand(
             deviceId,
             parseDeviceCommand("ui-action", {
               windowId,
