@@ -10,3 +10,4 @@ export const DEVICE_ONLINE_WINDOW_MS = 45_000
 export const CHALLENGE_TTL_MS = 30_000
 
 export const DEVICE_NAME_MAX_LENGTH = 80
+export const DEVICE_NOTES_MAX_LENGTH = 8_000

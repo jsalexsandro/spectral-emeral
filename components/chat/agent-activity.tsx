@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   getToolName,
   isToolUIPart,
@@ -64,11 +64,13 @@ function groupActivity(parts: UIMessage["parts"]): ActivityGroup[] {
 type AgentActivityProps = {
   parts: UIMessage["parts"]
   isStreaming?: boolean
+  onApprovalResponse?: (approvalId: string, approved: boolean) => void
 }
 
 export function AgentActivity({
   parts,
   isStreaming = false,
+  onApprovalResponse,
 }: AgentActivityProps) {
   const [open, setOpen] = useState(false)
   const groups = groupActivity(parts)
@@ -76,12 +78,13 @@ export function AgentActivity({
     (total, group) => total + group.parts.length,
     0,
   )
+  const hasPendingApproval = groups.some((group) =>
+    group.parts.some((part) => part.state === "approval-requested"),
+  )
 
-  useEffect(() => {
-    if (isStreaming) {
-      setOpen(true)
-    }
-  }, [isStreaming])
+  // Abre sozinho durante a execução e enquanto houver aprovação pendente. É
+  // valor derivado, não estado espelhado por efeito.
+  const expanded = open || isStreaming || hasPendingApproval
 
   if (groups.length === 0) {
     return null
@@ -89,7 +92,7 @@ export function AgentActivity({
 
   return (
     <details
-      open={open}
+      open={expanded}
       onToggle={(event) => setOpen(event.currentTarget.open)}
       className="group rounded-xl border border-border/70 bg-background/40"
     >
@@ -117,7 +120,13 @@ export function AgentActivity({
                 return <AgentPlanPart key={key} part={part} />
               }
 
-              return <ToolPartCard key={key} part={part} />
+              return (
+                <ToolPartCard
+                  key={key}
+                  part={part}
+                  onApprovalResponse={onApprovalResponse}
+                />
+              )
             })}
           </div>
         ))}

@@ -36,6 +36,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DeviceSummary } from "@/lib/devices/types"
+import {
+  DEVICE_EXECUTION_LEVELS,
+  EXECUTION_LEVEL_DESCRIPTIONS,
+  EXECUTION_LEVEL_LABELS,
+  type DeviceExecutionLevel,
+} from "@/lib/devices/execution-policy"
+import { DEVICE_NOTES_MAX_LENGTH } from "@/lib/devices/constants"
 import { cn } from "@/lib/utils"
 
 const POLL_INTERVAL_MS = 10_000
@@ -114,7 +121,10 @@ export function DevicesSection() {
     DeviceSummary | null
   >(null)
   const [folderValue, setFolderValue] = useState("")
-  const [isSavingFolder, setIsSavingFolder] = useState(false)
+  const [levelValue, setLevelValue] =
+    useState<DeviceExecutionLevel>("read-only")
+  const [notesValue, setNotesValue] = useState("")
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const requestId = useRef(0)
   const isMounted = useRef(true)
@@ -299,19 +309,19 @@ export function DevicesSection() {
   function openDeviceSettings(device: DeviceSummary) {
     setDeviceSettingsDevice(device)
     setFolderValue(device.defaultWorkingDirectory ?? "")
+    setLevelValue(device.executionPolicy.level)
+    setNotesValue(device.notes ?? "")
     setDeviceSettingsOpen(true)
   }
 
-  async function handleSaveFolder(event: React.FormEvent) {
+  async function handleSaveSettings(event: React.FormEvent) {
     event.preventDefault()
 
-    if (!deviceSettingsDevice || isSavingFolder) {
+    if (!deviceSettingsDevice || isSavingSettings) {
       return
     }
 
-    const value = folderValue.trim() || null
-
-    setIsSavingFolder(true)
+    setIsSavingSettings(true)
 
     try {
       const response = await fetch(
@@ -319,7 +329,11 @@ export function DevicesSection() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ defaultWorkingDirectory: value }),
+          body: JSON.stringify({
+            defaultWorkingDirectory: folderValue.trim() || null,
+            executionLevel: levelValue,
+            notes: notesValue.trim() || null,
+          }),
         },
       )
 
@@ -328,7 +342,7 @@ export function DevicesSection() {
         | null
 
       if (!response.ok || !data?.device) {
-        throw new Error("Falha ao salvar pasta padrão")
+        throw new Error("Falha ao salvar configurações")
       }
 
       setDevices((current) =>
@@ -336,13 +350,15 @@ export function DevicesSection() {
           device.id === data.device?.id ? data.device : device,
         ),
       )
-      toast.success("Pasta padrão atualizada.")
+      toast.success("Configurações atualizadas.")
       setDeviceSettingsDevice(data.device)
       setFolderValue(data.device.defaultWorkingDirectory ?? "")
+      setLevelValue(data.device.executionPolicy.level)
+      setNotesValue(data.device.notes ?? "")
     } catch {
-      toast.error("Não foi possível salvar a pasta padrão.")
+      toast.error("Não foi possível salvar as configurações.")
     } finally {
-      setIsSavingFolder(false)
+      setIsSavingSettings(false)
     }
   }
 
@@ -454,6 +470,10 @@ export function DevicesSection() {
                     <span className="font-mono">
                       {device.defaultWorkingDirectory ?? "não definida"}
                     </span>
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <span className="font-semibold">Execução:</span>{" "}
+                    {EXECUTION_LEVEL_LABELS[device.executionPolicy.level]}
                   </p>
                 </div>
 
@@ -654,6 +674,7 @@ export function DevicesSection() {
           if (!open) {
             setDeviceSettingsDevice(null)
             setFolderValue("")
+            setNotesValue("")
           }
         }}
       >
@@ -664,7 +685,11 @@ export function DevicesSection() {
               Informações básicas e preferências de {deviceSettingsDevice?.name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <form
+            id="device-settings-form"
+            onSubmit={handleSaveSettings}
+            className="space-y-4"
+          >
             {deviceSettingsDevice && (
               <>
                 <div className="space-y-1">
@@ -714,7 +739,7 @@ export function DevicesSection() {
                   </p>
                 </div>
 
-                <form onSubmit={handleSaveFolder} className="space-y-2">
+                <div className="space-y-2">
                   <Label htmlFor="settings-device-folder">Pasta padrão</Label>
                   <Input
                     id="settings-device-folder"
@@ -728,18 +753,74 @@ export function DevicesSection() {
                     Usada como diretório padrão para executar comandos quando
                     nenhum caminho for informado. Deixe em branco para remover.
                   </p>
-                </form>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Nível de execução</Label>
+                  <div className="space-y-1.5">
+                    {DEVICE_EXECUTION_LEVELS.map((level) => {
+                      const isSelected = levelValue === level
+
+                      return (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setLevelValue(level)}
+                          aria-pressed={isSelected}
+                          className={cn(
+                            "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+                            isSelected
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50",
+                          )}
+                        >
+                          <span className="text-sm font-medium">
+                            {EXECUTION_LEVEL_LABELS[level]}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {EXECUTION_LEVEL_DESCRIPTIONS[level]}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    O modo escolhido no chat nunca ultrapassa este teto. O nível
+                    se aplica a todos os chats com este dispositivo.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="settings-device-notes">Notas do dispositivo</Label>
+                  <textarea
+                    id="settings-device-notes"
+                    value={notesValue}
+                    onChange={(event) => setNotesValue(event.target.value)}
+                    maxLength={DEVICE_NOTES_MAX_LENGTH}
+                    rows={4}
+                    placeholder="Ex: não mexer na pasta D:\Clientes; usar pnpm; senha fica no gerenciador."
+                    className="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Contexto fixo que o agente lê antes de operar esta máquina.
+                    Não inclua segredos: as notas são enviadas ao modelo.
+                  </p>
+                </div>
               </>
             )}
-          </div>
+          </form>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDeviceSettingsOpen(false)}>
               Fechar
             </Button>
-            <Button type="submit" form="settings-folder-form" disabled={isSavingFolder}>
-              {isSavingFolder && <Loader2 className="animate-spin" />}
-              Salvar pasta
+            <Button
+              type="submit"
+              form="device-settings-form"
+              disabled={isSavingSettings}
+            >
+              {isSavingSettings && <Loader2 className="animate-spin" />}
+              Salvar
             </Button>
           </DialogFooter>
         </DialogContent>

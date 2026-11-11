@@ -1,4 +1,4 @@
-import { Check, Globe, ImageIcon, Loader2, X } from "lucide-react"
+import { Check, Globe, ImageIcon, Loader2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react"
 import {
   getToolName,
   type DynamicToolUIPart,
@@ -9,9 +9,18 @@ import {
   readDeviceScreenshotToolOutput,
 } from "@/lib/devices/screenshot-tool"
 import { summarizeToolInput } from "@/lib/ai/tools/tool-summary"
+import { Button } from "@/components/ui/button"
 
 type ToolPartCardProps = {
   part: ToolUIPart | DynamicToolUIPart
+  onApprovalResponse?: (approvalId: string, approved: boolean) => void
+}
+
+type ApprovalInfo = {
+  id: string
+  approved?: boolean
+  requestReason?: string
+  reason?: string
 }
 
 function formatInputJson(input: unknown): string | null {
@@ -28,24 +37,93 @@ function formatInputJson(input: unknown): string | null {
   }
 }
 
-export function ToolPartCard({ part }: ToolPartCardProps) {
+export function ToolPartCard({ part, onApprovalResponse }: ToolPartCardProps) {
   const toolName = getToolName(part)
   const state = part.state as string
   const isError = part.state === "output-error"
   const isPending =
-    state === "input-streaming" ||
-    state === "input-available" ||
-    state === "approval-requested" ||
-    state === "approval-responded"
+    state === "input-streaming" || state === "input-available"
   const input = (part as { input?: unknown }).input
   const summary = summarizeToolInput(toolName, input)
   const inputJson = formatInputJson(input)
+  const approval = (part as { approval?: ApprovalInfo }).approval
   const screenshotOutput =
     toolName === DEVICE_SCREENSHOT_TOOL_NAME
       ? readDeviceScreenshotToolOutput(
           (part as { output?: unknown }).output,
         )
       : null
+
+  if (state === "approval-requested" && approval?.id) {
+    return (
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-2.5 py-2 text-xs">
+        <div className="flex items-start gap-2">
+          <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Aprovação necessária: {toolName}</p>
+            {summary && (
+              <p className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground">
+                {summary}
+              </p>
+            )}
+            {inputJson && (
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px] break-words whitespace-pre-wrap text-muted-foreground">
+                {inputJson}
+              </pre>
+            )}
+            {approval.requestReason && (
+              <p className="mt-1.5 text-muted-foreground">
+                {approval.requestReason}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => onApprovalResponse?.(approval.id, true)}
+              >
+                Permitir
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => onApprovalResponse?.(approval.id, false)}
+              >
+                Negar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (state === "approval-responded" && approval?.id) {
+    const approved = approval.approved === true
+
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-2 text-xs">
+        {approved ? (
+          <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+        ) : (
+          <ShieldX className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        )}
+        <div className="min-w-0">
+          <p className="font-medium">
+            {approved ? "Aprovado" : "Negado"}: {toolName}
+          </p>
+          {summary && (
+            <p className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground">
+              {summary}
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   if (isPending || isError) {
     return (

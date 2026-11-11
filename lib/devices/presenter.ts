@@ -1,5 +1,6 @@
 import type { DeviceSummary } from "./types"
 import { isDeviceOnline } from "./types"
+import { parseDeviceExecutionPolicy } from "./execution-policy"
 
 type DeviceRow = {
   id: string
@@ -11,6 +12,8 @@ type DeviceRow = {
   lastSeenAt: Date | null
   createdAt: Date
   defaultWorkingDirectory: string | null
+  executionPolicy: unknown
+  notes: string | null
 }
 
 export function toDeviceSummary(device: DeviceRow): DeviceSummary {
@@ -25,5 +28,7 @@ export function toDeviceSummary(device: DeviceRow): DeviceSummary {
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
     createdAt: device.createdAt.toISOString(),
     defaultWorkingDirectory: device.defaultWorkingDirectory ?? null,
+    executionPolicy: parseDeviceExecutionPolicy(device.executionPolicy),
+    notes: device.notes ?? null,
   }
 }

@@ -1,4 +1,5 @@
 import { DEVICE_ONLINE_WINDOW_MS } from "./constants"
+import type { DeviceExecutionPolicy } from "./execution-policy"
 
 export type DeviceStatus = "online" | "offline"
 
@@ -13,6 +14,8 @@ export type DeviceSummary = {
   lastSeenAt: string | null
   createdAt: string
   defaultWorkingDirectory: string | null
+  executionPolicy: DeviceExecutionPolicy
+  notes: string | null
 }
 
 export type PairingStatus = "pending" | "paired" | "expired"

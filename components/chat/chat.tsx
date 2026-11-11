@@ -25,8 +25,14 @@ import {
 import { aiModels, getModelKey } from "@/lib/ai/models"
 import type { ProviderId } from "@/lib/ai/providers"
 import { RENDER_HTML_TOOL_NAME } from "@/lib/ai/ui/html-policy"
+import {
+  DEFAULT_CHAT_EXECUTION_MODE,
+  isChatExecutionMode,
+  type ChatExecutionMode,
+} from "@/lib/devices/execution-policy"
 import { getOrCreateChat, rememberChatModel } from "@/lib/chat-runtime"
 import { AgentActivity } from "./agent-activity"
+import { ExecutionModeChip } from "./execution-mode-chip"
 import { MarkdownMessage } from "./markdown-message"
 import { ModelSelect } from "./model-select"
 
@@ -43,6 +49,13 @@ type ChatSessionProps = ChatProps & {
 }
 
 const MAX_TEXTAREA_HEIGHT = 240
+const EXECUTION_MODE_STORAGE_PREFIX = "spectral:execution-mode:"
+
+const EXECUTION_MODE_CYCLE: Record<ChatExecutionMode, ChatExecutionMode> = {
+  ask: "auto",
+  auto: "full",
+  full: "ask",
+}
 
 const hiddenMessageToolNames = new Set<string>([
   RUN_ACTION_TOOL_NAME,
@@ -110,6 +123,17 @@ function ChatSession({
   instantPreferences,
 }: ChatSessionProps) {
   const [message, setMessage] = useState("")
+  const [executionMode, setExecutionMode] = useState<ChatExecutionMode>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_CHAT_EXECUTION_MODE
+    }
+
+    const stored = window.localStorage.getItem(
+      `${EXECUTION_MODE_STORAGE_PREFIX}${chatId}`,
+    )
+
+    return isChatExecutionMode(stored) ? stored : DEFAULT_CHAT_EXECUTION_MODE
+  })
   const [model, setModel] = useState(() => {
     if (
       initialModel &&
@@ -133,7 +157,14 @@ function ChatSession({
   const resolvedTheme = getResolvedTheme()
   const { isDraft, refreshChats } = useChatSession()
 
-  const { messages, sendMessage, status, error, stop } = useChat<UIMessage>({
+  const {
+    messages,
+    sendMessage,
+    status,
+    error,
+    stop,
+    addToolApprovalResponse,
+  } = useChat<UIMessage>({
     chat,
   })
 
@@ -142,6 +173,17 @@ function ChatSession({
   useEffect(() => {
     rememberChatModel(chatId, model)
   }, [chatId, model])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      `${EXECUTION_MODE_STORAGE_PREFIX}${chatId}`,
+      executionMode,
+    )
+  }, [chatId, executionMode])
+
+  const cycleExecutionMode = useCallback(() => {
+    setExecutionMode((current) => EXECUTION_MODE_CYCLE[current])
+  }, [])
 
   // Assim que um chat novo começa a responder ele já aparece na sidebar,
   // permitindo sair e voltar sem perder o stream.
@@ -157,6 +199,28 @@ function ChatSession({
   const isBusy = status === "submitted" || status === "streaming"
   const canSend = message.trim().length > 0 && model.length > 0 && !isBusy
   const hasMessages = messages.length > 0
+
+  const requestBody = useMemo(
+    () => ({
+      chatId,
+      model,
+      theme,
+      resolvedTheme,
+      executionMode,
+    }),
+    [chatId, model, theme, resolvedTheme, executionMode],
+  )
+
+  const handleApprovalResponse = useCallback(
+    (approvalId: string, approved: boolean) => {
+      void addToolApprovalResponse({
+        id: approvalId,
+        approved,
+        options: { body: requestBody },
+      })
+    },
+    [addToolApprovalResponse, requestBody],
+  )
 
   const sendText = useCallback(
     (text: string): ActionResult => {
@@ -179,18 +243,13 @@ function ChatSession({
       void sendMessage(
         { text: content },
         {
-          body: {
-            chatId,
-            model,
-            theme,
-            resolvedTheme,
-          },
+          body: requestBody,
         },
       )
 
       return { ok: true }
     },
-    [chatId, isBusy, model, sendMessage, theme, resolvedTheme],
+    [isBusy, model, sendMessage, requestBody],
   )
 
   useEffect(() => {
@@ -223,6 +282,12 @@ function ChatSession({
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Tab" && event.shiftKey) {
+      event.preventDefault()
+      cycleExecutionMode()
+      return
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
       event.currentTarget.form?.requestSubmit()
@@ -273,6 +338,7 @@ function ChatSession({
                         key={`${item.id}-activity`}
                         parts={item.parts}
                         isStreaming={isStreaming}
+                        onApprovalResponse={handleApprovalResponse}
                       />
                       {item.parts.map((part, index) => {
                         if (part.type === "text" && part.text.trim()) {
@@ -367,6 +433,12 @@ function ChatSession({
                   instantPreferences={instantPreferences}
                 />
               </div>
+              <div className="sm:order-3">
+                <ExecutionModeChip
+                  mode={executionMode}
+                  onCycle={cycleExecutionMode}
+                />
+              </div>
               <button
                 type={isBusy ? "button" : "submit"}
                 aria-label={isBusy ? "Parar resposta" : "Enviar mensagem"}
@@ -384,7 +456,8 @@ function ChatSession({
             </div>
           </div>
           <p className="mt-2 hidden text-center text-xs text-muted-foreground sm:block">
-            Enter para enviar · Shift+Enter para quebrar linha
+            Enter para enviar · Shift+Enter para quebrar linha · Shift+Tab
+            alterna o modo de execução
           </p>
           {error && (
             <p className="mt-2 text-center text-xs text-destructive">
