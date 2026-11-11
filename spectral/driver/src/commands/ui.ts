@@ -21,6 +21,7 @@ const UI_NAME_MAX_LENGTH = 200
 const UI_ROLE_MAX_LENGTH = 40
 const UI_AUTOMATION_ID_MAX_LENGTH = 120
 const UI_PATH_ITEM_MAX_LENGTH = 80
+const UI_HINT_MAX_LENGTH = 300
 const UI_PATH_MAX_DEPTH = 4
 const UI_RUNTIME_ID_PATTERN = /^[0-9]+(?:\.[0-9]+)*$/
 const UI_ACTION_SET = new Set<string>(DEVICE_UI_ACTIONS)
@@ -173,6 +174,7 @@ function normalizeElement(value: unknown): DeviceUiElement | null {
     runtimeId: normalizeRuntimeId(value.runtimeId),
     name,
     role,
+    value: typeof value.value === "string" ? clampText(value.value, 200) : null,
     bounds,
     center,
     enabled: readBoolean(value.enabled),
@@ -270,6 +272,11 @@ function toUiError(error: unknown, label: string): DeviceUiError {
       return new DeviceUiError(
         "action_failed",
         `O elemento não concluiu a ação.${suffix}`,
+      )
+    case 8:
+      return new DeviceUiError(
+        "password_field_blocked",
+        "O controle é um campo de senha: o driver não lê nem escreve esse tipo de valor. Peça ao usuário para digitar a senha manualmente.",
       )
     case 2:
       return new DeviceUiError("invalid_ui_action", "Ação de UI inválida.")
@@ -379,6 +386,14 @@ function Get-UiActions($element) {
   try {
     if ($element.Current.IsKeyboardFocusable) { $actions.Add('focus') }
   } catch {}
+  $value = Get-UiPattern $element ([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($null -ne $value) {
+    $readOnly = $false
+    $isPassword = $false
+    try { $readOnly = [bool]$value.Current.IsReadOnly } catch {}
+    try { $isPassword = [bool]$value.Current.IsPassword } catch {}
+    if (-not $readOnly -and -not $isPassword) { $actions.Add('setValue') }
+  }
   return ,$actions.ToArray()
 }
 
@@ -443,11 +458,20 @@ function Get-UiSnapshot($element) {
       y = [int]($bounds.y + [Math]::Floor($bounds.height / 2))
     }
   }
+  $value = $null
+  $valuePattern = Get-UiPattern $element ([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($null -ne $valuePattern) {
+    try {
+      $isPassword = [bool]$valuePattern.Current.IsPassword
+      if (-not $isPassword) { $value = Get-UiText $valuePattern.Current.Value 200 }
+    } catch {}
+  }
   $actions = Get-UiActions $element
   return [ordered]@{
     runtimeId = (Get-UiRuntimeId $element)
     name = $name
     role = (Get-UiRole $element)
+    value = $value
     bounds = $bounds
     center = $center
     enabled = $enabled
@@ -532,20 +556,35 @@ function Visit-UiElement($element, $level) {
 
 $windowTitle = ''
 try { $windowTitle = Get-UiText $root.Current.Name 300 } catch {}
-try { $child = $walker.GetFirstChild($root) } catch { $child = $null }
-while ($null -ne $child) {
-  Visit-UiElement $child 1
-  if ($script:found.Count -ge $maxResults -or $script:scanned -ge $maxNodes) {
-    $script:truncated = $true
-    break
+
+$waitMs = [int]$env:SPECTRAL_UI_WAIT_MS
+$deadline = [DateTime]::UtcNow.AddMilliseconds($waitMs)
+$waitedMs = 0
+
+while ($true) {
+  $script:found = New-Object System.Collections.Generic.List[object]
+  $script:scanned = 0
+  $script:truncated = $false
+  try { $child = $walker.GetFirstChild($root) } catch { $child = $null }
+  while ($null -ne $child) {
+    Visit-UiElement $child 1
+    if ($script:found.Count -ge $maxResults -or $script:scanned -ge $maxNodes) {
+      $script:truncated = $true
+      break
+    }
+    try { $child = $walker.GetNextSibling($child) } catch { $child = $null }
   }
-  try { $child = $walker.GetNextSibling($child) } catch { $child = $null }
+  if ($script:found.Count -gt 0) { break }
+  if ([DateTime]::UtcNow -ge $deadline) { break }
+  Start-Sleep -Milliseconds 150
+  $waitedMs += 150
 }
 
 [ordered]@{
   windowTitle = $windowTitle
   elements = @($script:found.ToArray())
   scanned = $script:scanned
+  waitedMs = $waitedMs
   truncated = $script:truncated
 } | ConvertTo-Json -Depth 10 -Compress
 `
@@ -595,11 +634,22 @@ function Find-UiElement($element) {
 }
 
 $target = $null
-try { $child = $walker.GetFirstChild($root) } catch { $child = $null }
-while ($null -ne $child -and $null -eq $target) {
-  $target = Find-UiElement $child
+$waitMs = [int]$env:SPECTRAL_UI_WAIT_MS
+$deadline = [DateTime]::UtcNow.AddMilliseconds($waitMs)
+$waitedMs = 0
+
+while ($true) {
+  $script:scanned = 0
+  try { $child = $walker.GetFirstChild($root) } catch { $child = $null }
+  while ($null -ne $child -and $null -eq $target) {
+    $target = Find-UiElement $child
+    if ($null -ne $target) { break }
+    try { $child = $walker.GetNextSibling($child) } catch { $child = $null }
+  }
   if ($null -ne $target) { break }
-  try { $child = $walker.GetNextSibling($child) } catch { $child = $null }
+  if ([DateTime]::UtcNow -ge $deadline) { break }
+  Start-Sleep -Milliseconds 150
+  $waitedMs += 150
 }
 if ($null -eq $target) { exit 5 }
 
@@ -631,6 +681,14 @@ try {
     $pattern.Collapse()
   } elseif ($action -eq 'focus') {
     $target.SetFocus()
+  } elseif ($action -eq 'setValue') {
+    $pattern = Require-UiPattern $target ([System.Windows.Automation.ValuePattern]::Pattern)
+    $isPassword = $false
+    try { $isPassword = [bool]$pattern.Current.IsPassword } catch {}
+    if ($isPassword) { exit 8 }
+    $value = $env:SPECTRAL_UI_VALUE
+    if ($null -eq $value) { $value = '' }
+    $pattern.SetValue([string]$value)
   } else {
     exit 2
   }
@@ -644,6 +702,14 @@ Start-Sleep -Milliseconds 180
 $after = $before
 try { $after = Get-UiSnapshot $target } catch {}
 
+$hint = $null
+if ($action -eq 'focus') {
+  $selection = Get-UiPattern $target ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+  if ($null -ne $selection) {
+    $hint = 'Elemento selecionável: use a ação select para ativá-lo; focus apenas move o foco de teclado.'
+  }
+}
+
 $windowTitle = ''
 try { $windowTitle = Get-UiText $root.Current.Name 300 } catch {}
 
@@ -651,6 +717,8 @@ try { $windowTitle = Get-UiText $root.Current.Name 300 } catch {}
   windowTitle = $windowTitle
   action = $action
   element = $after
+  waitedMs = $waitedMs
+  hint = $hint
 } | ConvertTo-Json -Depth 10 -Compress
 `
 
@@ -671,7 +739,7 @@ async function inspectWindowsUi(
         WINDOWS_INSPECT_UI_SCRIPT,
       ],
       {
-        timeout: UI_EXEC_TIMEOUT_MS,
+        timeout: UI_EXEC_TIMEOUT_MS + input.waitMs,
         windowsHide: true,
         maxBuffer: UI_MAX_BUFFER_BYTES,
         env: {
@@ -682,6 +750,7 @@ async function inspectWindowsUi(
           SPECTRAL_UI_MAX_RESULTS: String(input.maxResults),
           SPECTRAL_UI_DEPTH: String(input.depth),
           SPECTRAL_UI_INCLUDE_OFFSCREEN: input.includeOffscreen ? "1" : "0",
+          SPECTRAL_UI_WAIT_MS: String(input.waitMs),
         },
       },
     )
@@ -704,6 +773,7 @@ async function inspectWindowsUi(
     windowTitle: clampText(root.windowTitle, 300),
     elements,
     scanned: Math.max(0, toInteger(root.scanned)),
+    waitedMs: Math.max(0, toInteger(root.waitedMs)),
     truncated: readBoolean(root.truncated),
   }
 }
@@ -725,7 +795,7 @@ async function actOnWindowsUi(
         WINDOWS_UI_ACTION_SCRIPT,
       ],
       {
-        timeout: UI_ACTION_TIMEOUT_MS,
+        timeout: UI_ACTION_TIMEOUT_MS + input.waitMs,
         windowsHide: true,
         maxBuffer: UI_MAX_BUFFER_BYTES,
         env: {
@@ -733,6 +803,8 @@ async function actOnWindowsUi(
           SPECTRAL_UI_WINDOW_ID: input.windowId,
           SPECTRAL_UI_RUNTIME_ID: input.runtimeId,
           SPECTRAL_UI_ACTION: input.action,
+          SPECTRAL_UI_WAIT_MS: String(input.waitMs),
+          SPECTRAL_UI_VALUE: input.value ?? "",
         },
       },
     )
@@ -745,6 +817,7 @@ async function actOnWindowsUi(
   const raw = parseJsonOutput(stdout, "executar a ação na interface")
   const root = isRecord(raw) ? raw : {}
   const element = normalizeElement(root.element)
+  const hint = clampText(root.hint, UI_HINT_MAX_LENGTH)
 
   if (!element) {
     throw new DeviceUiError(
@@ -757,6 +830,8 @@ async function actOnWindowsUi(
     windowId: input.windowId,
     action: input.action,
     element,
+    waitedMs: Math.max(0, toInteger(root.waitedMs)),
+    ...(hint ? { hint } : {}),
   }
 }
 

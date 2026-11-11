@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 28
+export const SYSTEM_PROMPT_VERSION = 29
 
 export type SystemPromptChange = {
   version: number
@@ -168,5 +168,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-10",
     summary:
       "Adiciona o caminho determinístico por UI Automation: device-inspect-ui retorna controles com runtimeId, bounds nativo e ações suportadas, e device-ui-action executa invoke/select/toggle/expand/collapse/focus sem mover o cursor. O prompt passa a preferir UIA para controles nativos e mantém captura + clique como fallback.",
+  },
+  {
+    version: 29,
+    date: "2026-11-10",
+    summary:
+      "Torna o caminho UIA resiliente a apps assíncronos: inspect-ui e ui-action aceitam waitMs e reenumeram a árvore até o alvo aparecer, ui-action ganha setValue (ValuePattern) para campos de texto e devolve hint quando focus é usado num elemento selecionável que exige select.",
   },
 ]

@@ -163,6 +163,7 @@ export const DEVICE_UI_ACTIONS = [
   "expand",
   "collapse",
   "focus",
+  "setValue",
 ] as const
 
 export type DeviceUiAction = (typeof DEVICE_UI_ACTIONS)[number]
@@ -180,6 +181,10 @@ export const DEVICE_UI_RESULTS_DEFAULT = 40
 export const DEVICE_UI_DEPTH_MIN = 1
 export const DEVICE_UI_DEPTH_MAX = 12
 export const DEVICE_UI_DEPTH_DEFAULT = 10
+export const DEVICE_UI_WAIT_MIN_MS = 0
+export const DEVICE_UI_WAIT_MAX_MS = 10_000
+export const DEVICE_UI_WAIT_DEFAULT_MS = 1_500
+export const DEVICE_UI_VALUE_MAX_LENGTH = 4_096
 
 export type DeviceMouseButton = (typeof DEVICE_MOUSE_BUTTONS)[number]
 export type DeviceMouseScrollDirection =
@@ -282,6 +287,8 @@ export type DeviceUiElement = {
   runtimeId: string | null
   name: string
   role: string
+  /** Texto atual do controle quando ele expõe ValuePattern; null caso contrário. */
+  value: string | null
   bounds: DeviceWindowBounds | null
   center: DeviceMousePoint | null
   enabled: boolean
@@ -300,6 +307,11 @@ export type DeviceUiInspection = {
   windowTitle: string
   elements: DeviceUiElement[]
   scanned: number
+  /**
+   * Tempo total gasto esperando o alvo aparecer. Zero quando a primeira
+   * varredura já encontrou o resultado.
+   */
+  waitedMs: number
   truncated: boolean
 }
 
@@ -307,6 +319,13 @@ export type DeviceUiActionResult = {
   windowId: string
   action: DeviceUiAction
   element: DeviceUiElement
+  /** Tempo gasto reenumerando a árvore até o runtimeId aparecer. */
+  waitedMs: number
+  /**
+   * Correção sugerida quando a ação escolhida não é a ideal para o controle,
+   * como `focus` num elemento que só ativa com `select`.
+   */
+  hint?: string
 }
 
 export type DeviceScreenshot = {
@@ -435,11 +454,14 @@ export type DeviceCommandInputMap = {
     maxResults: number
     depth: number
     includeOffscreen: boolean
+    waitMs: number
   }
   "ui-action": {
     windowId: string
     runtimeId: string
     action: DeviceUiAction
+    waitMs: number
+    value?: string
   }
   "list-files": {
     path?: string
@@ -1107,6 +1129,13 @@ function parseInspectUi(input: unknown): DeviceCommand {
     DEVICE_UI_DEPTH_MAX,
   )
   const includeOffscreen = readBoolean(input, "includeOffscreen", false)
+  const waitMs = readInteger(
+    input,
+    "waitMs",
+    0,
+    DEVICE_UI_WAIT_MIN_MS,
+    DEVICE_UI_WAIT_MAX_MS,
+  )
 
   return {
     command: "inspect-ui",
@@ -1117,6 +1146,7 @@ function parseInspectUi(input: unknown): DeviceCommand {
       maxResults,
       depth,
       includeOffscreen,
+      waitMs,
     },
   }
 }
@@ -1157,14 +1187,65 @@ function parseUiAction(input: unknown): DeviceCommand {
     )
   }
 
+  const action = rawAction as DeviceUiAction
+  const waitMs = readInteger(
+    input,
+    "waitMs",
+    DEVICE_UI_WAIT_DEFAULT_MS,
+    DEVICE_UI_WAIT_MIN_MS,
+    DEVICE_UI_WAIT_MAX_MS,
+  )
+  const value = readUiActionValue(input, action)
+
   return {
     command: "ui-action",
     input: {
       windowId,
       runtimeId,
-      action: rawAction as DeviceUiAction,
+      action,
+      waitMs,
+      ...(value === undefined ? {} : { value }),
     },
   }
+}
+
+function readUiActionValue(
+  input: unknown,
+  action: DeviceUiAction,
+): string | undefined {
+  if (!isRecord(input) || input.value === undefined || input.value === null) {
+    if (action === "setValue") {
+      throw new DeviceCommandValidationError(
+        "invalid_ui_value",
+        'Campo "value" é obrigatório quando action é "setValue".',
+      )
+    }
+
+    return undefined
+  }
+
+  if (typeof input.value !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_ui_value",
+      'Campo "value" deve ser um texto.',
+    )
+  }
+
+  if (input.value.length > DEVICE_UI_VALUE_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_ui_value",
+      `Campo "value" excede ${DEVICE_UI_VALUE_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (action !== "setValue") {
+    throw new DeviceCommandValidationError(
+      "invalid_ui_value",
+      'Campo "value" só é aceito com action "setValue".',
+    )
+  }
+
+  return input.value
 }
 
 function readOptionalPath(input: unknown): string | undefined {

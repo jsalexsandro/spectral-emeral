@@ -62,6 +62,7 @@ const deviceUiElementSchema = z.object({
     .nullable(),
   name: z.string().max(200),
   role: z.string().max(40),
+  value: z.string().max(200).nullable(),
   bounds: deviceUiBoundsSchema.nullable(),
   center: z.object({ x: z.number().int(), y: z.number().int() }).nullable(),
   enabled: z.boolean(),
@@ -87,6 +88,7 @@ const deviceUiInspectionSchema = z.object({
   windowTitle: z.string().max(300),
   elements: z.array(deviceUiElementSchema).max(100),
   scanned: z.number().int().nonnegative(),
+  waitedMs: z.number().int().nonnegative(),
   truncated: z.boolean(),
 })
 
@@ -94,6 +96,8 @@ const deviceUiActionResultSchema = z.object({
   windowId: z.string().min(1).max(128),
   action: deviceUiActionSchema,
   element: deviceUiElementSchema,
+  waitedMs: z.number().int().nonnegative(),
+  hint: z.string().max(300).optional(),
 })
 
 export const commandResultMessageSchema = z.object({

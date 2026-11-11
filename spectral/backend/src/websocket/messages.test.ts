@@ -5,6 +5,7 @@ const element = {
   runtimeId: "42.393250.4.0.0.656",
   name: "Fechar",
   role: "Button",
+  value: null,
   bounds: { x: 10, y: 20, width: 30, height: 30 },
   center: { x: 25, y: 35 },
   enabled: true,
@@ -35,6 +36,7 @@ describe("commandResultMessageSchema", () => {
         windowTitle: "Chrome",
         elements: [element],
         scanned: 12,
+        waitedMs: 0,
         truncated: false,
       },
     })
@@ -61,6 +63,8 @@ describe("commandResultMessageSchema", () => {
         windowId: "393250",
         action: "select",
         element: { ...element, role: "TabItem", selected: true },
+        waitedMs: 0,
+        hint: "Elemento selecionável: use a ação select.",
       },
     })
 
@@ -72,6 +76,46 @@ describe("commandResultMessageSchema", () => {
 
     expect(parsed.data.result.uiAction?.action).toBe("select")
     expect(parsed.data.result.uiAction?.element.selected).toBe(true)
+    expect(parsed.data.result.uiAction?.waitedMs).toBe(0)
+    expect(parsed.data.result.uiAction?.hint).toBe(
+      "Elemento selecionável: use a ação select.",
+    )
+  })
+
+  it("preserva a espera da inspeção e rejeita waitedMs negativo", () => {
+    const parsed = parseResult({
+      ok: true,
+      ui: {
+        windowId: "393250",
+        windowTitle: "Chrome",
+        elements: [element],
+        scanned: 12,
+        waitedMs: 640,
+        truncated: false,
+      },
+    })
+
+    expect(parsed.success).toBe(true)
+
+    if (!parsed.success || !parsed.data.result.ok) {
+      throw new Error("Esperava um resultado ok.")
+    }
+
+    expect(parsed.data.result.ui?.waitedMs).toBe(640)
+
+    expect(
+      parseResult({
+        ok: true,
+        ui: {
+          windowId: "393250",
+          windowTitle: "Chrome",
+          elements: [element],
+          scanned: 12,
+          waitedMs: -1,
+          truncated: false,
+        },
+      }).success,
+    ).toBe(false)
   })
 
   it("rejeita runtimeId malformado", () => {
@@ -82,6 +126,7 @@ describe("commandResultMessageSchema", () => {
         windowTitle: "Chrome",
         elements: [{ ...element, runtimeId: "42; rm -rf /" }],
         scanned: 1,
+        waitedMs: 0,
         truncated: false,
       },
     })

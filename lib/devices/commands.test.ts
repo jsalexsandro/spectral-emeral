@@ -459,6 +459,7 @@ describe("device command contract", () => {
         maxResults: 40,
         depth: 10,
         includeOffscreen: false,
+        waitMs: 0,
       },
     })
 
@@ -470,6 +471,7 @@ describe("device command contract", () => {
         maxResults: 5,
         depth: 8,
         includeOffscreen: true,
+        waitMs: 2000,
       }),
     ).toEqual({
       command: "inspect-ui",
@@ -480,6 +482,7 @@ describe("device command contract", () => {
         maxResults: 5,
         depth: 8,
         includeOffscreen: true,
+        waitMs: 2000,
       },
     })
 
@@ -495,6 +498,9 @@ describe("device command contract", () => {
     expect(() =>
       parseDeviceCommand("inspect-ui", { windowId: "66500", depth: 13 }),
     ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("inspect-ui", { windowId: "66500", waitMs: 10_001 }),
+    ).toThrow(DeviceCommandValidationError)
   })
 
   it("normalizes ui-action", () => {
@@ -505,7 +511,12 @@ describe("device command contract", () => {
       }),
     ).toEqual({
       command: "ui-action",
-      input: { windowId: "66500", runtimeId: "42.123.456", action: "invoke" },
+      input: {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "invoke",
+        waitMs: 1500,
+      },
     })
 
     expect(
@@ -513,10 +524,52 @@ describe("device command contract", () => {
         windowId: "66500",
         runtimeId: "42.123.456",
         action: "select",
+        waitMs: 0,
       }),
     ).toEqual({
       command: "ui-action",
-      input: { windowId: "66500", runtimeId: "42.123.456", action: "select" },
+      input: {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "select",
+        waitMs: 0,
+      },
+    })
+
+    expect(
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "setValue",
+        value: "clima em João Pessoa",
+      }),
+    ).toEqual({
+      command: "ui-action",
+      input: {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "setValue",
+        waitMs: 1500,
+        value: "clima em João Pessoa",
+      },
+    })
+
+    expect(
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "setValue",
+        value: "",
+      }),
+    ).toEqual({
+      command: "ui-action",
+      input: {
+        windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "setValue",
+        waitMs: 1500,
+        value: "",
+      },
     })
 
     expect(() =>
@@ -530,6 +583,21 @@ describe("device command contract", () => {
         windowId: "66500",
         runtimeId: "42.123",
         action: "explode",
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123",
+        action: "setValue",
+      }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("ui-action", {
+        windowId: "66500",
+        runtimeId: "42.123",
+        action: "invoke",
+        value: "texto",
       }),
     ).toThrow(DeviceCommandValidationError)
   })

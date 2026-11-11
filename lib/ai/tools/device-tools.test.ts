@@ -357,6 +357,7 @@ describe("device tools", () => {
       maxResults: 40,
       depth: 10,
       includeOffscreen: false,
+      waitMs: 0,
     })
 
     expect(
@@ -368,6 +369,7 @@ describe("device tools", () => {
         maxResults: 10,
         depth: 8,
         includeOffscreen: true,
+        waitMs: 2000,
       }).success,
     ).toBe(true)
 
@@ -386,6 +388,14 @@ describe("device tools", () => {
         depth: 13,
       }).success,
     ).toBe(false)
+
+    expect(
+      deviceInspectUiInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        waitMs: 10_001,
+      }).success,
+    ).toBe(false)
   })
 
   it("valida device-ui-action", () => {
@@ -401,6 +411,7 @@ describe("device tools", () => {
       windowId: "66500",
       runtimeId: "42.123.456",
       action: "invoke",
+      waitMs: 1500,
     })
 
     for (const action of [
@@ -425,6 +436,17 @@ describe("device tools", () => {
       deviceUiActionInputSchema.safeParse({
         deviceId: "device-1",
         windowId: "66500",
+        runtimeId: "42.123.456",
+        action: "setValue",
+        value: "texto",
+        waitMs: 0,
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceUiActionInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
         runtimeId: "../42",
         action: "invoke",
       }).success,
@@ -436,6 +458,16 @@ describe("device tools", () => {
         windowId: "66500",
         runtimeId: "42.123",
         action: "explode",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceUiActionInputSchema.safeParse({
+        deviceId: "device-1",
+        windowId: "66500",
+        runtimeId: "42.123",
+        action: "setValue",
+        value: "x".repeat(4097),
       }).success,
     ).toBe(false)
   })

@@ -73,6 +73,10 @@ import {
   DEVICE_UI_DEPTH_MIN,
   DEVICE_UI_DEPTH_MAX,
   DEVICE_UI_DEPTH_DEFAULT,
+  DEVICE_UI_WAIT_MIN_MS,
+  DEVICE_UI_WAIT_MAX_MS,
+  DEVICE_UI_WAIT_DEFAULT_MS,
+  DEVICE_UI_VALUE_MAX_LENGTH,
   DEVICE_UI_RUNTIME_ID_MAX_LENGTH,
   DEVICE_UI_RUNTIME_ID_PATTERN,
   isAllowedDeviceUrl,
@@ -442,6 +446,15 @@ export const deviceInspectUiInputSchema = z.object({
     .boolean()
     .default(false)
     .describe("Inclui controles fora da área visível da janela."),
+  waitMs: z
+    .number()
+    .int()
+    .min(DEVICE_UI_WAIT_MIN_MS)
+    .max(DEVICE_UI_WAIT_MAX_MS)
+    .default(0)
+    .describe(
+      "Tempo máximo, em ms, para o resultado aparecer (0–10000, padrão 0). Use 2000 quando o alvo renderiza depois, como um menu abrindo ou uma pasta carregando.",
+    ),
 })
 
 const deviceUiActionSchema = z.enum(
@@ -459,7 +472,23 @@ export const deviceUiActionInputSchema = z.object({
   action: deviceUiActionSchema
     .default("invoke")
     .describe(
-      "Ação de acessibilidade: invoke, select, toggle, expand, collapse ou focus.",
+      "Ação de acessibilidade: invoke, select, toggle, expand, collapse, focus ou setValue.",
+    ),
+  value: z
+    .string()
+    .max(DEVICE_UI_VALUE_MAX_LENGTH)
+    .optional()
+    .describe(
+      'Texto a escrever no controle. Obrigatório quando action é "setValue"; use "" para limpar o campo.',
+    ),
+  waitMs: z
+    .number()
+    .int()
+    .min(DEVICE_UI_WAIT_MIN_MS)
+    .max(DEVICE_UI_WAIT_MAX_MS)
+    .default(DEVICE_UI_WAIT_DEFAULT_MS)
+    .describe(
+      "Tempo máximo, em ms, para reencontrar o runtimeId antes de desistir (0–10000, padrão 1500).",
     ),
 })
 
@@ -1145,19 +1174,22 @@ const inspectUiDescription = [
   "Inspeciona a árvore de acessibilidade (UI Automation) de uma janela e retorna os controles com nome, papel, limites e centro exato.",
   "Use esta tool antes de clicar em abas, botões, menus, campos e outros controles nativos: ela evita estimar pixels a partir da captura.",
   "Informe o `windowId` retornado por device-list-windows. `find` filtra por trecho do nome ou AutomationId; `role` filtra pelo papel (Button, TabItem, MenuItem, Edit, CheckBox, etc.).",
-  "Cada elemento traz `runtimeId`, `bounds` e `center` em pixels nativos, estado (focado/selecionado/expandido) e `actions` suportadas.",
+  "Cada elemento traz `runtimeId`, `bounds` e `center` em pixels nativos, estado (focado/selecionado/expandido), `actions` suportadas e `value` com o texto atual quando houver (null em campos de senha).",
+  "Se o alvo aparece depois de um clique (menu, pasta, página carregando), passe `waitMs` (ex.: 2000): a tool reenumera a árvore até encontrar em vez de devolver vazio na hora.",
   "Use o `runtimeId` em device-ui-action. O runtimeId é temporário: se a inspeção falhar com `element_not_found`, inspecione de novo antes de agir.",
   "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`: use captura de tela + device-click como fallback.",
 ].join("\n")
 
 const uiActionDescription = [
   "Executa uma ação de acessibilidade em um controle retornado por device-inspect-ui, sem mover o cursor nem depender de coordenadas visuais.",
-  "Ações: `invoke` (pressionar botão/item), `select` (selecionar aba/item), `toggle` (marcar/desmarcar), `expand`/`collapse` (abrir/fechar) e `focus` (focar o controle).",
-  "Para abas, use `select`: `focus` apenas concentra o foco de teclado e não ativa a aba.",
+  "Ações: `invoke` (pressionar botão/item), `select` (selecionar aba/item), `toggle` (marcar/desmarcar), `expand`/`collapse` (abrir/fechar), `focus` (focar o controle) e `setValue` (escrever texto no controle, com `value`).",
+  "Para abas e itens de lista, use `select`: `focus` apenas concentra o foco de teclado e não ativa. Se o resultado vier com `hint`, siga a ação sugerida em vez de reinspectionar.",
+  "Prefira `setValue` para campos com `actions: setValue` (barra de endereço, busca, caixa de texto nativo): ele escreve direto no controle e não depende de keystrokes na janela em foco.",
+  "Campos de senha são bloqueados: `setValue` retorna `password_field_blocked` e a inspeção não expõe o valor. Nunca tente contornar isso; peça ao usuário para digitar a senha.",
   "Use o `runtimeId` exato do elemento e a mesma `windowId` usada na inspeção. Escolha uma ação presente em `actions`; se vier `pattern_not_supported`, use outra ação ou device-click como fallback.",
-  "Em navegadores, títulos de abas mudam com frequência e podem recriar o elemento. Se vier `element_not_found`, inspecione de novo imediatamente antes de agir.",
+  "Em navegadores, títulos de abas mudam com frequência e podem recriar o elemento. O padrão de `waitMs` já reencontra o runtimeId por até 1,5s antes de devolver `element_not_found`; aumente até 10000 quando o app estiver lento.",
   "Confirme com o usuário antes de `invoke` em controles destrutivos (fechar, excluir, enviar, salvar, sair) e nunca feche abas ou janelas reais sem autorização explícita.",
-  "O resultado retorna o estado do elemento depois da ação (focado, selecionado, expandido). Quando o elemento sumir porque a ação o removeu (ex.: fechar aba), o resultado traz o último estado conhecido.",
+  "O resultado retorna o estado do elemento depois da ação (focado, selecionado, expandido) e quanto tempo esperou. Quando o elemento sumir porque a ação o removeu (ex.: fechar aba), o resultado traz o último estado conhecido.",
   "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
 ].join("\n")
 
@@ -1831,7 +1863,7 @@ export function createDeviceTools(userId: string) {
         }
 
         const lines = [
-          `Janela ${ui.windowId} "${ui.windowTitle}": ${ui.elements.length} elemento(s) retornado(s), ${ui.scanned} nó(s) varrido(s)${ui.truncated ? ", resultado truncado" : ""}.`,
+          `Janela ${ui.windowId} "${ui.windowTitle}": ${ui.elements.length} elemento(s) retornado(s), ${ui.scanned} nó(s) varrido(s)${ui.waitedMs > 0 ? `, esperou ${ui.waitedMs}ms pelo alvo` : ""}${ui.truncated ? ", resultado truncado" : ""}.`,
         ]
 
         for (const element of ui.elements) {
@@ -1860,14 +1892,18 @@ export function createDeviceTools(userId: string) {
             element.actions.length > 0
               ? `ações=${element.actions.join("|")}`
               : "sem ações de acessibilidade"
+          const value =
+            element.value === null ? null : `valor="${element.value}"`
 
           lines.push(
-            `- [${element.role || "?"}] "${element.name}" (${runtime}; ${center}; ${actions}; ${states.join(", ")})`,
+            `- [${element.role || "?"}] "${element.name}" (${[runtime, center, actions, value, states.join(", ")]
+              .filter((part): part is string => part !== null)
+              .join("; ")})`,
           )
         }
 
         lines.push(
-          "Use device-ui-action com o runtimeId para agir sem mover o cursor. Se o alvo não estiver na lista, refine find/role ou aumente depth/maxResults.",
+          "Use device-ui-action com o runtimeId para agir sem mover o cursor. Se o alvo não estiver na lista, refine find/role, aumente depth/maxResults ou passe waitMs quando o conteúdo ainda estiver carregando.",
         )
 
         return { type: "text", value: lines.join("\n") }
@@ -1876,12 +1912,18 @@ export function createDeviceTools(userId: string) {
     [DEVICE_UI_ACTION_TOOL_NAME]: tool({
       description: uiActionDescription,
       inputSchema: deviceUiActionInputSchema,
-      execute: async ({ deviceId, windowId, runtimeId, action }) => {
+      execute: async ({ deviceId, windowId, runtimeId, action, value, waitMs }) => {
         try {
           return await runDeviceCommand(
             userId,
             deviceId,
-            parseDeviceCommand("ui-action", { windowId, runtimeId, action }),
+            parseDeviceCommand("ui-action", {
+              windowId,
+              runtimeId,
+              action,
+              waitMs,
+              ...(value === undefined ? {} : { value }),
+            }),
           )
         } catch (error) {
           return {
@@ -1937,8 +1979,17 @@ export function createDeviceTools(userId: string) {
               ? `runtimeId=${result.element.runtimeId}.`
               : "O elemento não expõe runtimeId.",
             `Estado após a ação (ou último conhecido, se o elemento foi removido): ${states.join(", ")}.`,
+            result.element.value === null
+              ? null
+              : `Valor atual do controle: "${result.element.value}".`,
+            result.waitedMs > 0
+              ? `O runtimeId só apareceu depois de ${result.waitedMs}ms; a árvore estava mudando.`
+              : null,
+            result.hint ?? null,
             "Confirme o efeito esperado: capture a tela ou inspecione a interface de novo quando a ação puder ter mudado a árvore.",
-          ].join(" "),
+          ]
+            .filter((line): line is string => line !== null)
+            .join(" "),
         }
       },
     }),
