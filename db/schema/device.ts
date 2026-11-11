@@ -1,5 +1,7 @@
 import {
   index,
+  integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -24,6 +26,17 @@ export const devices = pgTable(
     lastSeenAt: timestamp("lastSeenAt", { mode: "date" }),
     revokedAt: timestamp("revokedAt", { mode: "date" }),
     defaultWorkingDirectory: text("defaultWorkingDirectory"),
+    /**
+     * Teto de execução do dispositivo. Estrutura:
+     * `{ level: "read-only" | "trusted" | "full", updatedAt?: string }`.
+     * A ausência do campo equivale a `read-only`.
+     */
+    executionPolicy: jsonb("executionPolicy").$type<{
+      level: "read-only" | "trusted" | "full"
+      updatedAt?: string
+    }>(),
+    /** Notas livres do usuário sobre o dispositivo (equivalente a CLAUDE.md). */
+    notes: text("notes"),
     createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
   },
@@ -33,6 +46,45 @@ export const devices = pgTable(
     userRevokedIdx: index("Device_userId_revokedAt_idx").on(
       device.userId,
       device.revokedAt,
+    ),
+  }),
+)
+
+/**
+ * Trilha de auditoria do plano de execução. Nunca grava stdout/stderr brutos:
+ * apenas metadados suficientes para reconstruir quem pediu, o que decidiu e
+ * qual foi o resultado.
+ */
+export const deviceAuditEvents = pgTable(
+  "DeviceAuditEvent",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    deviceId: text("deviceId")
+      .notNull()
+      .references(() => devices.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: text("chatId"),
+    toolName: text("toolName").notNull(),
+    command: text("command"),
+    risk: text("risk").notNull(),
+    /** approval-requested | approved | denied | executed | failed */
+    decision: text("decision").notNull(),
+    policy: text("policy").notNull(),
+    mode: text("mode").notNull(),
+    durationMs: integer("durationMs"),
+    exitCode: integer("exitCode"),
+    errorCode: text("errorCode"),
+    createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
+  },
+  (event) => ({
+    deviceCreatedAtIdx: index(
+      "DeviceAuditEvent_deviceId_createdAt_idx",
+    ).on(event.deviceId, event.createdAt),
+    userCreatedAtIdx: index("DeviceAuditEvent_userId_createdAt_idx").on(
+      event.userId,
+      event.createdAt,
     ),
   }),
 )
