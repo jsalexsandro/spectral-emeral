@@ -1,4 +1,4 @@
-import { Globe, ImageIcon, Loader2, X } from "lucide-react"
+import { Check, Globe, ImageIcon, Loader2, X } from "lucide-react"
 import {
   getToolName,
   type DynamicToolUIPart,
@@ -8,9 +8,24 @@ import {
   DEVICE_SCREENSHOT_TOOL_NAME,
   readDeviceScreenshotToolOutput,
 } from "@/lib/devices/screenshot-tool"
+import { summarizeToolInput } from "@/lib/ai/tools/tool-summary"
 
 type ToolPartCardProps = {
   part: ToolUIPart | DynamicToolUIPart
+}
+
+function formatInputJson(input: unknown): string | null {
+  if (input === undefined || input === null) {
+    return null
+  }
+
+  try {
+    const json = JSON.stringify(input, null, 2)
+
+    return json && json !== "{}" ? json : null
+  } catch {
+    return null
+  }
 }
 
 export function ToolPartCard({ part }: ToolPartCardProps) {
@@ -22,6 +37,9 @@ export function ToolPartCard({ part }: ToolPartCardProps) {
     state === "input-available" ||
     state === "approval-requested" ||
     state === "approval-responded"
+  const input = (part as { input?: unknown }).input
+  const summary = summarizeToolInput(toolName, input)
+  const inputJson = formatInputJson(input)
   const screenshotOutput =
     toolName === DEVICE_SCREENSHOT_TOOL_NAME
       ? readDeviceScreenshotToolOutput(
@@ -49,6 +67,11 @@ export function ToolPartCard({ part }: ToolPartCardProps) {
             {" "}
             {toolName}
           </p>
+          {summary && (
+            <p className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground">
+              {summary}
+            </p>
+          )}
           {isError && part.errorText && (
             <p className="mt-0.5 break-words text-muted-foreground">
               {part.errorText}
@@ -116,5 +139,27 @@ export function ToolPartCard({ part }: ToolPartCardProps) {
     )
   }
 
-  return null
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-2 text-xs">
+      <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{toolName}</p>
+        {summary && (
+          <p className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground">
+            {summary}
+          </p>
+        )}
+        {inputJson && (
+          <details className="mt-1">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground select-none">
+              argumentos
+            </summary>
+            <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/40 p-2 text-[11px] break-words whitespace-pre-wrap text-muted-foreground">
+              {inputJson}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  )
 }
