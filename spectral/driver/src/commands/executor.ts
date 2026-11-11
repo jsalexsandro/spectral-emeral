@@ -8,7 +8,8 @@ import {
   type DeviceKeyModifier,
 } from "../../../shared/device-commands.js"
 import { findApp, getAppTarget, listApps } from "./apps.js"
-import { getOsInfo } from "./system.js"
+import { getDeviceEnv, getOsInfo } from "./system.js"
+import { DeviceShellError, runShell } from "./shell.js"
 import {
   DeviceFileError,
   getDefaultFileSandbox,
@@ -438,6 +439,23 @@ export async function executeDeviceCommand(
         return { ok: true, apps: listApps() }
       case "get-os":
         return { ok: true, os: getOsInfo() }
+      case "get-env":
+        return {
+          ok: true,
+          env: await getDeviceEnv(options?.defaultFolder),
+        }
+      case "shell": {
+        if (process.platform !== "win32") {
+          throw unsupported(
+            "O shell do plano de execução está disponível apenas no Windows nesta versão.",
+          )
+        }
+
+        return {
+          ok: true,
+          shell: await runShell(command.input, options?.defaultFolder),
+        }
+      }
       case "open-url":
         await openUrl(command.input.url)
         return { ok: true }
@@ -586,6 +604,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceFileError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceShellError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

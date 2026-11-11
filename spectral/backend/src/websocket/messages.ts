@@ -126,6 +126,66 @@ export const commandResultMessageSchema = z.object({
           elevated: z.boolean().optional(),
         })
         .optional(),
+      env: z
+        .object({
+          platform: z.string().min(1).max(64),
+          arch: z.string().min(1).max(64),
+          hostname: z.string().min(1).max(255),
+          user: z.string().min(1).max(128),
+          home: z.string().min(1).max(1024),
+          temp: z.string().min(1).max(1024),
+          cwd: z.string().min(1).max(1024),
+          shell: z.object({
+            kind: z.enum(["pwsh", "powershell", "cmd", "bash", "sh", "zsh"]),
+            path: z.string().min(1).max(1024),
+            version: z.string().max(120).nullable(),
+          }),
+          shells: z
+            .array(
+              z.object({
+                kind: z.enum([
+                  "pwsh",
+                  "powershell",
+                  "cmd",
+                  "bash",
+                  "sh",
+                  "zsh",
+                ]),
+                path: z.string().min(1).max(1024),
+                version: z.string().max(120).nullable(),
+              }),
+            )
+            .max(8),
+          runtimes: z
+            .array(
+              z.object({
+                id: z.string().min(1).max(32),
+                version: z.string().max(120).nullable(),
+                path: z.string().max(1024).nullable(),
+              }),
+            )
+            .max(32),
+          elevated: z.boolean(),
+          locale: z.string().max(64).nullable(),
+          capabilities: z.array(z.string().min(1).max(64)).max(64),
+          collectedAt: z.string().min(1).max(64),
+        })
+        .optional(),
+      shell: z
+        .object({
+          shell: z.enum(["pwsh", "powershell", "cmd", "bash", "sh", "zsh"]),
+          shellPath: z.string().min(1).max(1024),
+          cwd: z.string().min(1).max(1024),
+          exitCode: z.number().int(),
+          stdout: z.string().max(600_000),
+          stderr: z.string().max(600_000),
+          stdoutBytes: z.number().int().nonnegative(),
+          stderrBytes: z.number().int().nonnegative(),
+          durationMs: z.number().int().nonnegative(),
+          truncated: z.boolean(),
+          timedOut: z.boolean(),
+        })
+        .optional(),
       entries: z
         .array(
           z.object({

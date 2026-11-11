@@ -3,6 +3,8 @@ export const DEVICE_COMMAND_NAMES = [
   "open-app",
   "list-apps",
   "get-os",
+  "get-env",
+  "shell",
   "type-text",
   "press-key",
   "read-clipboard",
@@ -220,6 +222,40 @@ export const DEVICE_RUN_TIMEOUT_MAX_MS = 60_000
 export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
 export const DEVICE_RUN_ARGS_MAX_LENGTH = 1024
 
+/**
+ * Shell é a primitiva central do plano de execução. O script sempre roda a
+ * partir de um arquivo temporário; nunca é interpolado numa linha de comando.
+ * O teto de saída fica abaixo do `maxPayload` do WebSocket (4 MB) para não
+ * quebrar o transporte quando stdout e stderr vêm cheios.
+ */
+export const DEVICE_SHELL_KINDS = [
+  "auto",
+  "pwsh",
+  "powershell",
+  "cmd",
+  "bash",
+  "sh",
+  "zsh",
+] as const
+
+export type DeviceShellKind = (typeof DEVICE_SHELL_KINDS)[number]
+
+const DEVICE_SHELL_KIND_SET = new Set<string>(DEVICE_SHELL_KINDS)
+
+export const DEVICE_SHELL_SCRIPT_MAX_LENGTH = 64 * 1024
+export const DEVICE_SHELL_STDIN_MAX_LENGTH = 64 * 1024
+export const DEVICE_SHELL_TIMEOUT_MIN_MS = 1_000
+export const DEVICE_SHELL_TIMEOUT_MAX_MS = 60_000
+export const DEVICE_SHELL_TIMEOUT_DEFAULT_MS = 30_000
+export const DEVICE_SHELL_OUTPUT_MIN_BYTES = 1024
+export const DEVICE_SHELL_OUTPUT_MAX_BYTES = 512 * 1024
+export const DEVICE_SHELL_OUTPUT_DEFAULT_BYTES = 64 * 1024
+export const DEVICE_SHELL_ENV_MAX_ENTRIES = 32
+export const DEVICE_SHELL_ENV_NAME_MAX_LENGTH = 64
+export const DEVICE_SHELL_ENV_VALUE_MAX_LENGTH = 4096
+export const DEVICE_SHELL_ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+export const DEVICE_ENV_RUNTIMES_MAX = 24
+
 export const DEVICE_SCREENSHOT_FORMATS = ["jpeg", "png"] as const
 
 export type DeviceScreenshotFormat = (typeof DEVICE_SCREENSHOT_FORMATS)[number]
@@ -391,6 +427,56 @@ export type DeviceCommandRunResult = {
   durationMs: number
 }
 
+export type DeviceShellInfo = {
+  /** Como o shell foi identificado: pwsh, powershell, cmd, bash, sh ou zsh. */
+  kind: Exclude<DeviceShellKind, "auto">
+  path: string
+  version: string | null
+}
+
+export type DeviceRuntimeInfo = {
+  id: string
+  version: string | null
+  path: string | null
+}
+
+/**
+ * Retrato do ambiente da máquina. Serve para o modelo parar de adivinhar
+ * caminhos, shells e runtimes antes de executar qualquer script.
+ */
+export type DeviceEnv = {
+  platform: string
+  arch: string
+  hostname: string
+  user: string
+  home: string
+  temp: string
+  cwd: string
+  shell: DeviceShellInfo
+  shells: DeviceShellInfo[]
+  runtimes: DeviceRuntimeInfo[]
+  elevated: boolean
+  locale: string | null
+  /** Comandos que este driver realmente sabe executar nesta plataforma. */
+  capabilities: DeviceCommandName[]
+  collectedAt: string
+}
+
+export type DeviceShellResult = {
+  shell: Exclude<DeviceShellKind, "auto">
+  shellPath: string
+  cwd: string
+  /** 0..255, ou -1 quando o processo foi morto por timeout/abort. */
+  exitCode: number
+  stdout: string
+  stderr: string
+  stdoutBytes: number
+  stderrBytes: number
+  durationMs: number
+  truncated: boolean
+  timedOut: boolean
+}
+
 export type DeviceGrepMatch = {
   path: string
   line: number
@@ -414,6 +500,16 @@ export type DeviceCommandInputMap = {
   "open-app": { appId: string }
   "list-apps": Record<string, never>
   "get-os": Record<string, never>
+  "get-env": Record<string, never>
+  shell: {
+    script: string
+    shell: DeviceShellKind
+    cwd?: string
+    timeoutMs: number
+    env?: Record<string, string>
+    stdin?: string
+    maxOutputBytes: number
+  }
   "type-text": { text: string; windowId?: string }
   "read-clipboard": Record<string, never>
   "write-clipboard": { text: string }
@@ -521,6 +617,8 @@ export type DeviceCommandSuccess = {
   output?: string
   apps?: DeviceAppInfo[]
   os?: DeviceOsInfo
+  env?: DeviceEnv
+  shell?: DeviceShellResult
   entries?: DeviceFileEntry[]
   file?: DeviceFileContent
   paths?: string[]
@@ -1248,19 +1346,22 @@ function readUiActionValue(
   return input.value
 }
 
-function readOptionalPath(input: unknown): string | undefined {
-  if (!isRecord(input) || input.path === undefined || input.path === null) {
+function readOptionalPath(
+  input: unknown,
+  field = "path",
+): string | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
     return undefined
   }
 
-  if (typeof input.path !== "string") {
+  if (typeof input[field] !== "string") {
     throw new DeviceCommandValidationError(
       "invalid_path",
-      'Campo "path" deve ser um texto.',
+      `Campo "${field}" deve ser um texto.`,
     )
   }
 
-  const value = input.path.trim()
+  const value = (input[field] as string).trim()
 
   if (value.length === 0) {
     return undefined
@@ -1670,6 +1771,153 @@ function parseRunCommand(input: unknown): DeviceCommand {
   }
 }
 
+function parseShell(input: unknown): DeviceCommand {
+  const script = readString(input, "script", "invalid_script")
+
+  if (script.trim().length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_script",
+      "O script não pode estar vazio.",
+    )
+  }
+
+  if (script.length > DEVICE_SHELL_SCRIPT_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_script",
+      `O script excede o limite de ${DEVICE_SHELL_SCRIPT_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (script.includes("\u0000")) {
+    throw new DeviceCommandValidationError(
+      "invalid_script",
+      "O script contém bytes nulos.",
+    )
+  }
+
+  const rawShell = isRecord(input) ? input.shell : undefined
+  let kind: DeviceShellKind = "auto"
+
+  if (rawShell !== undefined && rawShell !== null) {
+    if (typeof rawShell !== "string" || !DEVICE_SHELL_KIND_SET.has(rawShell)) {
+      throw new DeviceCommandValidationError(
+        "invalid_shell",
+        `Shell inválido. Use um de: ${DEVICE_SHELL_KINDS.join(", ")}.`,
+      )
+    }
+
+    kind = rawShell as DeviceShellKind
+  }
+
+  const timeoutMs = readInteger(
+    input,
+    "timeoutMs",
+    DEVICE_SHELL_TIMEOUT_DEFAULT_MS,
+    DEVICE_SHELL_TIMEOUT_MIN_MS,
+    DEVICE_SHELL_TIMEOUT_MAX_MS,
+  )
+  const maxOutputBytes = readInteger(
+    input,
+    "maxOutputBytes",
+    DEVICE_SHELL_OUTPUT_DEFAULT_BYTES,
+    DEVICE_SHELL_OUTPUT_MIN_BYTES,
+    DEVICE_SHELL_OUTPUT_MAX_BYTES,
+  )
+  const cwd = readOptionalPath(input, "cwd")
+  const stdin = readOptionalShellStdin(input)
+  const env = readShellEnv(input)
+
+  return {
+    command: "shell",
+    input: {
+      script,
+      shell: kind,
+      timeoutMs,
+      maxOutputBytes,
+      ...(cwd ? { cwd } : {}),
+      ...(stdin === undefined ? {} : { stdin }),
+      ...(env ? { env } : {}),
+    },
+  }
+}
+
+function readOptionalShellStdin(input: unknown): string | undefined {
+  if (!isRecord(input) || input.stdin === undefined || input.stdin === null) {
+    return undefined
+  }
+
+  if (typeof input.stdin !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_stdin",
+      'Campo "stdin" deve ser um texto.',
+    )
+  }
+
+  if (input.stdin.length > DEVICE_SHELL_STDIN_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_stdin",
+      `O stdin excede o limite de ${DEVICE_SHELL_STDIN_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  return input.stdin
+}
+
+function readShellEnv(input: unknown): Record<string, string> | undefined {
+  if (!isRecord(input) || input.env === undefined || input.env === null) {
+    return undefined
+  }
+
+  if (!isRecord(input.env)) {
+    throw new DeviceCommandValidationError(
+      "invalid_env",
+      'Campo "env" deve ser um objeto de string para string.',
+    )
+  }
+
+  const entries = Object.entries(input.env)
+
+  if (entries.length === 0) {
+    return undefined
+  }
+
+  if (entries.length > DEVICE_SHELL_ENV_MAX_ENTRIES) {
+    throw new DeviceCommandValidationError(
+      "invalid_env",
+      `O env aceita no máximo ${DEVICE_SHELL_ENV_MAX_ENTRIES} variáveis.`,
+    )
+  }
+
+  const env: Record<string, string> = {}
+
+  for (const [name, value] of entries) {
+    if (!DEVICE_SHELL_ENV_NAME_PATTERN.test(name)) {
+      throw new DeviceCommandValidationError(
+        "invalid_env",
+        `Nome de variável inválido: ${name}.`,
+      )
+    }
+
+    if (typeof value !== "string") {
+      throw new DeviceCommandValidationError(
+        "invalid_env",
+        `O valor de ${name} deve ser um texto.`,
+      )
+    }
+
+    if (value.length > DEVICE_SHELL_ENV_VALUE_MAX_LENGTH) {
+      throw new DeviceCommandValidationError(
+        "invalid_env",
+        `O valor de ${name} excede ${DEVICE_SHELL_ENV_VALUE_MAX_LENGTH} caracteres.`,
+      )
+    }
+
+    env[name] = value
+  }
+
+  return env
+}
+
 function parseScreenshot(input: unknown): DeviceCommand {
   const monitor = readOptionalInteger(
     input,
@@ -1815,6 +2063,10 @@ export function parseDeviceCommand(
       return { command, input: {} }
     case "get-os":
       return { command, input: {} }
+    case "get-env":
+      return { command, input: {} }
+    case "shell":
+      return parseShell(input)
     case "open-url":
       return parseOpenUrl(input)
     case "open-app":
