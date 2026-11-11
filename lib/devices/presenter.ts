@@ -13,7 +13,6 @@ type DeviceRow = {
   createdAt: Date
   defaultWorkingDirectory: string | null
   executionPolicy: unknown
-  notes: string | null
 }
 
 export function toDeviceSummary(device: DeviceRow): DeviceSummary {
@@ -29,6 +28,5 @@ export function toDeviceSummary(device: DeviceRow): DeviceSummary {
     createdAt: device.createdAt.toISOString(),
     defaultWorkingDirectory: device.defaultWorkingDirectory ?? null,
     executionPolicy: parseDeviceExecutionPolicy(device.executionPolicy),
-    notes: device.notes ?? null,
   }
 }

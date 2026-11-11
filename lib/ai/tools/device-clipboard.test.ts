@@ -10,8 +10,9 @@ vi.mock("@/lib/devices/tool-approval", () => ({
   assertDeviceCommandAllowed: async () => ({
     ok: true,
     risk: "write",
-    policy: { level: "full" },
+    policy: { confirmDestructive: false },
   }),
+  describeAuditPolicy: () => "full",
   readDeviceToolCommand: () => undefined,
 }))
 

@@ -15,7 +15,6 @@ export type DeviceSummary = {
   createdAt: string
   defaultWorkingDirectory: string | null
   executionPolicy: DeviceExecutionPolicy
-  notes: string | null
 }
 
 export type PairingStatus = "pending" | "paired" | "expired"

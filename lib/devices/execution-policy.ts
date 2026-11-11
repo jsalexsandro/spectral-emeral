@@ -1,33 +1,31 @@
 /**
- * Política de execução por dispositivo (teto persistente) e modo por sessão
- * (escolhido no chat). O "cérebro" fica no app; esta camada só decide se uma
- * tool pode rodar sozinha, se precisa de aprovação humana ou se é negada.
+ * Dois modos de sessão no chat. O "cérebro" fica no app; esta camada só decide
+ * se uma tool pode rodar sozinha, se precisa de aprovação humana ou se é negada.
  *
- * Regra de ouro: o modo da sessão nunca ultrapassa o teto do dispositivo.
+ * - `plan` (Modo Leitura): apenas leitura. Qualquer ação que mude a máquina é
+ *   negada e o usuário precisa trocar para o Modo Construtor.
+ * - `build` (Modo Construtor): escreve, executa e controla a máquina. Ações
+ *   destrutivas ou de sistema só rodam sozinhas quando o dispositivo foi
+ *   configurado como "Poder Total"; caso contrário pedem uma aprovação no chat.
  */
 
-export const DEVICE_EXECUTION_LEVELS = ["read-only", "trusted", "full"] as const
-
-export type DeviceExecutionLevel = (typeof DEVICE_EXECUTION_LEVELS)[number]
-
-const DEVICE_EXECUTION_LEVEL_SET = new Set<string>(DEVICE_EXECUTION_LEVELS)
-
-export const CHAT_EXECUTION_MODES = ["ask", "auto", "full"] as const
+export const CHAT_EXECUTION_MODES = ["plan", "build"] as const
 
 export type ChatExecutionMode = (typeof CHAT_EXECUTION_MODES)[number]
 
 const CHAT_EXECUTION_MODE_SET = new Set<string>(CHAT_EXECUTION_MODES)
 
+export const DEFAULT_CHAT_EXECUTION_MODE: ChatExecutionMode = "plan"
+
 export type DeviceExecutionPolicy = {
-  level: DeviceExecutionLevel
+  /** `true` = ações destrutivas/de sistema pedem aprovação no chat. */
+  confirmDestructive: boolean
   updatedAt?: string
 }
 
 export const DEFAULT_DEVICE_EXECUTION_POLICY: DeviceExecutionPolicy = {
-  level: "read-only",
+  confirmDestructive: true,
 }
-
-export const DEFAULT_CHAT_EXECUTION_MODE: ChatExecutionMode = "ask"
 
 export const DEVICE_TOOL_RISKS = [
   "read",
@@ -40,19 +38,13 @@ export const DEVICE_TOOL_RISKS = [
 
 export type DeviceToolRisk = (typeof DEVICE_TOOL_RISKS)[number]
 
-export function isDeviceExecutionLevel(
-  value: unknown,
-): value is DeviceExecutionLevel {
-  return typeof value === "string" && DEVICE_EXECUTION_LEVEL_SET.has(value)
-}
-
 export function isChatExecutionMode(value: unknown): value is ChatExecutionMode {
   return typeof value === "string" && CHAT_EXECUTION_MODE_SET.has(value)
 }
 
 /**
  * Normaliza o JSON persistido. Qualquer valor desconhecido cai para o padrão
- * seguro (`read-only`) em vez de abrir permissões por acidente.
+ * seguro (pedir confirmação) em vez de liberar ações destrutivas por acidente.
  */
 export function parseDeviceExecutionPolicy(
   value: unknown,
@@ -61,8 +53,9 @@ export function parseDeviceExecutionPolicy(
     return { ...DEFAULT_DEVICE_EXECUTION_POLICY }
   }
 
-  if (typeof value === "string" && isDeviceExecutionLevel(value)) {
-    return { level: value }
+  // Formato legado: string com o antigo nível de execução.
+  if (typeof value === "string") {
+    return { confirmDestructive: value !== "full" }
   }
 
   if (typeof value !== "object" || Array.isArray(value)) {
@@ -70,45 +63,42 @@ export function parseDeviceExecutionPolicy(
   }
 
   const record = value as Record<string, unknown>
-  const level = isDeviceExecutionLevel(record.level)
-    ? record.level
-    : DEFAULT_DEVICE_EXECUTION_POLICY.level
+  const confirmDestructive =
+    typeof record.confirmDestructive === "boolean"
+      ? record.confirmDestructive
+      : record.level === "full"
+        ? false
+        : true
 
   return {
-    level,
+    confirmDestructive,
     ...(typeof record.updatedAt === "string"
       ? { updatedAt: record.updatedAt }
       : {}),
   }
 }
 
-export const EXECUTION_LEVEL_LABELS: Record<DeviceExecutionLevel, string> = {
-  "read-only": "Somente leitura",
-  trusted: "Confiável",
-  full: "Completo",
-}
-
-export const EXECUTION_LEVEL_DESCRIPTIONS: Record<DeviceExecutionLevel, string> = {
-  "read-only":
-    "Lê arquivos, ambiente e janelas. Não executa comandos, não escreve arquivos e não controla mouse/teclado.",
-  trusted:
-    "Executa comandos e escreve arquivos, mas ações de risco pedem aprovação no chat. Ações destrutivas sempre pedem.",
-  full: "Executa qualquer ação aprovada no chat, inclusive destrutivas. Use apenas em máquinas dedicadas.",
-}
-
 export const EXECUTION_MODE_LABELS: Record<ChatExecutionMode, string> = {
-  ask: "Perguntar",
-  auto: "Automático",
-  full: "Sem atrito",
+  plan: "Leitura",
+  build: "Construtor",
 }
 
 export const EXECUTION_MODE_DESCRIPTIONS: Record<ChatExecutionMode, string> = {
-  ask: "Toda ação que muda o computador pede sua aprovação.",
-  auto:
-    "Ações de escrita e execução rodam sozinhas dentro do teto do dispositivo; destrutivas ainda pedem.",
-  full:
-    "Aprova tudo o que o teto do dispositivo permitir, sem pedir confirmação a cada ação.",
+  plan: "Só leitura: consulta arquivos, janelas, tela e ambiente, sem alterar a máquina.",
+  build:
+    "Pode escrever, executar e controlar a máquina. Ações destrutivas seguem a configuração do dispositivo.",
 }
+
+export const DEVICE_CONFIRMATION_LABELS = {
+  confirm: "Pedir confirmação",
+  full: "Poder Total",
+} as const
+
+export const DEVICE_CONFIRMATION_DESCRIPTIONS = {
+  confirm:
+    "Escrita, execução e cliques rodam direto no Modo Construtor. Ações destrutivas ou de sistema pedem aprovação no chat.",
+  full: "Ações destrutivas e de sistema rodam sem confirmação. O Modo Leitura continua bloqueando qualquer alteração.",
+} as const
 
 const READ_TOOLS = new Set<string>([
   "device-list",
@@ -309,8 +299,9 @@ export function describeDeviceToolRisk(risk: DeviceToolRisk): string {
 }
 
 /**
- * Decide o destino de uma chamada. A ordem importa: primeiro o teto do
- * dispositivo, depois o modo da sessão, depois o risco.
+ * Decide o destino de uma chamada. A ordem importa: leitura sempre passa,
+ * depois o modo da sessão, depois a configuração do dispositivo para ações
+ * irreversíveis.
  */
 export function evaluateDeviceToolCall({
   policy,
@@ -325,42 +316,24 @@ export function evaluateDeviceToolCall({
     return { action: "allow" }
   }
 
-  if (policy.level === "read-only") {
+  if (mode === "plan") {
     return {
       action: "deny",
       reason:
-        "Este dispositivo está configurado como somente leitura. Peça ao usuário para elevar o nível de execução em Configurações → Dispositivos.",
+        "O Modo Leitura só consulta. Troque para o Modo Construtor (Shift+Tab) para executar esta ação.",
     }
   }
 
-  if (risk === "system") {
-    if (policy.level === "full" && mode === "full") {
-      return { action: "allow" }
-    }
-
+  if (
+    policy.confirmDestructive &&
+    (risk === "destructive" || risk === "system")
+  ) {
     return {
       action: "approval",
       reason:
-        "Ação de sistema (energia, contas, serviços ou segurança). Confirme antes de aplicar.",
-    }
-  }
-
-  if (risk === "destructive") {
-    if (policy.level === "full" && mode !== "ask") {
-      return { action: "allow" }
-    }
-
-    return {
-      action: "approval",
-      reason:
-        "Ação potencialmente destrutiva (apaga, encerra processo ou descarta alterações). Confirme antes de aplicar.",
-    }
-  }
-
-  if (mode === "ask") {
-    return {
-      action: "approval",
-      reason: `Ação de ${describeDeviceToolRisk(risk)} no dispositivo. Confirme antes de aplicar.`,
+        risk === "system"
+          ? "Ação de sistema (energia, contas, serviços ou segurança). Confirme antes de aplicar."
+          : "Ação potencialmente destrutiva (apaga, encerra processo ou descarta alterações). Confirme antes de aplicar.",
     }
   }
 

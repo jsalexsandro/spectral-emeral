@@ -37,12 +37,9 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DeviceSummary } from "@/lib/devices/types"
 import {
-  DEVICE_EXECUTION_LEVELS,
-  EXECUTION_LEVEL_DESCRIPTIONS,
-  EXECUTION_LEVEL_LABELS,
-  type DeviceExecutionLevel,
+  DEVICE_CONFIRMATION_DESCRIPTIONS,
+  DEVICE_CONFIRMATION_LABELS,
 } from "@/lib/devices/execution-policy"
-import { DEVICE_NOTES_MAX_LENGTH } from "@/lib/devices/constants"
 import { cn } from "@/lib/utils"
 
 const POLL_INTERVAL_MS = 10_000
@@ -121,9 +118,7 @@ export function DevicesSection() {
     DeviceSummary | null
   >(null)
   const [folderValue, setFolderValue] = useState("")
-  const [levelValue, setLevelValue] =
-    useState<DeviceExecutionLevel>("read-only")
-  const [notesValue, setNotesValue] = useState("")
+  const [confirmDestructive, setConfirmDestructive] = useState(true)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const requestId = useRef(0)
@@ -309,8 +304,7 @@ export function DevicesSection() {
   function openDeviceSettings(device: DeviceSummary) {
     setDeviceSettingsDevice(device)
     setFolderValue(device.defaultWorkingDirectory ?? "")
-    setLevelValue(device.executionPolicy.level)
-    setNotesValue(device.notes ?? "")
+    setConfirmDestructive(device.executionPolicy.confirmDestructive)
     setDeviceSettingsOpen(true)
   }
 
@@ -331,8 +325,7 @@ export function DevicesSection() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             defaultWorkingDirectory: folderValue.trim() || null,
-            executionLevel: levelValue,
-            notes: notesValue.trim() || null,
+            confirmDestructive,
           }),
         },
       )
@@ -353,8 +346,7 @@ export function DevicesSection() {
       toast.success("Configurações atualizadas.")
       setDeviceSettingsDevice(data.device)
       setFolderValue(data.device.defaultWorkingDirectory ?? "")
-      setLevelValue(data.device.executionPolicy.level)
-      setNotesValue(data.device.notes ?? "")
+      setConfirmDestructive(data.device.executionPolicy.confirmDestructive)
     } catch {
       toast.error("Não foi possível salvar as configurações.")
     } finally {
@@ -472,8 +464,14 @@ export function DevicesSection() {
                     </span>
                   </p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    <span className="font-semibold">Execução:</span>{" "}
-                    {EXECUTION_LEVEL_LABELS[device.executionPolicy.level]}
+                    <span className="font-semibold">Destrutivas:</span>{" "}
+                    {
+                      DEVICE_CONFIRMATION_LABELS[
+                        device.executionPolicy.confirmDestructive
+                          ? "confirm"
+                          : "full"
+                      ]
+                    }
                   </p>
                 </div>
 
@@ -674,7 +672,7 @@ export function DevicesSection() {
           if (!open) {
             setDeviceSettingsDevice(null)
             setFolderValue("")
-            setNotesValue("")
+            setConfirmDestructive(true)
           }
         }}
       >
@@ -756,54 +754,38 @@ export function DevicesSection() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Nível de execução</Label>
-                  <div className="space-y-1.5">
-                    {DEVICE_EXECUTION_LEVELS.map((level) => {
-                      const isSelected = levelValue === level
+                  <Label>Confirmação de ações destrutivas</Label>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {([true, false] as const).map((value) => {
+                      const isSelected = confirmDestructive === value
+                      const key = value ? "confirm" : "full"
 
                       return (
                         <button
-                          key={level}
+                          key={key}
                           type="button"
-                          onClick={() => setLevelValue(level)}
+                          onClick={() => setConfirmDestructive(value)}
                           aria-pressed={isSelected}
                           className={cn(
-                            "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+                            "rounded-lg border px-3 py-2 text-left transition-colors",
                             isSelected
                               ? "border-primary bg-primary/5"
                               : "border-border hover:border-primary/50",
                           )}
                         >
                           <span className="text-sm font-medium">
-                            {EXECUTION_LEVEL_LABELS[level]}
+                            {DEVICE_CONFIRMATION_LABELS[key]}
                           </span>
                           <span className="mt-0.5 block text-xs text-muted-foreground">
-                            {EXECUTION_LEVEL_DESCRIPTIONS[level]}
+                            {DEVICE_CONFIRMATION_DESCRIPTIONS[key]}
                           </span>
                         </button>
                       )
                     })}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    O modo escolhido no chat nunca ultrapassa este teto. O nível
-                    se aplica a todos os chats com este dispositivo.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="settings-device-notes">Notas do dispositivo</Label>
-                  <textarea
-                    id="settings-device-notes"
-                    value={notesValue}
-                    onChange={(event) => setNotesValue(event.target.value)}
-                    maxLength={DEVICE_NOTES_MAX_LENGTH}
-                    rows={4}
-                    placeholder="Ex: não mexer na pasta D:\Clientes; usar pnpm; senha fica no gerenciador."
-                    className="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Contexto fixo que o agente lê antes de operar esta máquina.
-                    Não inclua segredos: as notas são enviadas ao modelo.
+                    Vale para todos os chats com este dispositivo. O Modo Leitura
+                    no chat continua bloqueando qualquer alteração.
                   </p>
                 </div>
               </>

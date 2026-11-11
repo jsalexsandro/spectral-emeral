@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 29
+export const SYSTEM_PROMPT_VERSION = 30
 
 export type SystemPromptChange = {
   version: number
@@ -174,5 +174,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-10",
     summary:
       "Torna o caminho UIA resiliente a apps assíncronos: inspect-ui e ui-action aceitam waitMs e reenumeram a árvore até o alvo aparecer, ui-action ganha setValue (ValuePattern) para campos de texto e devolve hint quando focus é usado num elemento selecionável que exige select.",
+  },
+  {
+    version: 30,
+    date: "2026-11-11",
+    summary:
+      "Substitui o teto de execução por dispositivo e o ciclo de três modos do chat por um modelo simples: Modo Leitura e Modo Construtor alternados com Shift+Tab, e uma preferência por dispositivo entre Pedir confirmação e Poder Total para ações destrutivas ou de sistema.",
   },
 ]

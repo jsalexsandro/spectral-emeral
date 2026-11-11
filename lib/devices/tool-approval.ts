@@ -2,7 +2,7 @@ import type { ToolApprovalStatus } from "ai"
 import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { devices } from "@/db/schema"
-import { recordDeviceAudit } from "./audit"
+import { recordDeviceAudit, type DeviceAuditPolicy } from "./audit"
 import {
   classifyDeviceToolRisk,
   evaluateDeviceToolCall,
@@ -45,6 +45,13 @@ export function readDeviceToolCommand(
   }
 
   return undefined
+}
+
+/** Valor persistido na auditoria para a configuração do dispositivo. */
+export function describeAuditPolicy(
+  policy: DeviceExecutionPolicy,
+): DeviceAuditPolicy {
+  return policy.confirmDestructive ? "confirm" : "full"
 }
 
 export async function loadDevicePolicy(
@@ -145,7 +152,7 @@ export async function resolveDeviceToolApproval({
       command,
       risk,
       decision: "approved",
-      policy: policy.level,
+      policy: describeAuditPolicy(policy),
       mode: executionMode,
     })
 
@@ -161,7 +168,7 @@ export async function resolveDeviceToolApproval({
       command,
       risk,
       decision: "denied",
-      policy: policy.level,
+      policy: describeAuditPolicy(policy),
       mode: executionMode,
       errorCode: "policy_denied",
     })
@@ -177,7 +184,7 @@ export async function resolveDeviceToolApproval({
     command,
     risk,
     decision: "approval-requested",
-    policy: policy.level,
+    policy: describeAuditPolicy(policy),
     mode: executionMode,
   })
 
@@ -186,7 +193,7 @@ export async function resolveDeviceToolApproval({
 
 /**
  * Defesa em profundidade: mesmo que a aprovação seja perdida no caminho, o
- * app não envia comandos de escrita/execução para um dispositivo read-only.
+ * app não envia comandos de escrita/execução em Modo Leitura.
  */
 export async function assertDeviceCommandAllowed({
   userId,
@@ -210,7 +217,7 @@ export async function assertDeviceCommandAllowed({
   const risk = classifyDeviceToolRisk(toolName, input) ?? "write"
   const policy =
     (await loadDevicePolicy(userId, deviceId)) ??
-    ({ level: "read-only" } satisfies DeviceExecutionPolicy)
+    ({ confirmDestructive: true } satisfies DeviceExecutionPolicy)
   const decision = evaluateDeviceToolCall({
     policy,
     mode: executionMode,

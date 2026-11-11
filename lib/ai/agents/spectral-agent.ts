@@ -119,7 +119,7 @@ export function createSpectralAgent({
       resolvedTheme: runtimeContext.resolvedTheme,
     }),
     // Toda tool de dispositivo passa por aqui antes de executar. A política
-    // vive no app (teto por device + modo da sessão), nunca no texto do chat.
+    // vive no app (modo da sessão + confirmação do device), nunca no texto do chat.
     toolApproval: async ({ toolCall }) =>
       resolveDeviceToolApproval({
         userId: runtimeContext.userId,

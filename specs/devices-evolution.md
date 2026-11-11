@@ -293,10 +293,19 @@ Risco considera exposição de segurança ao liberar o recurso.
 
 #### 7. `run-command` em camadas + task runner
 
-- **O que:** substituir a allowlist atual por níveis:
-  - `read-only` (atual, padrão);
-  - `trusted` por dispositivo, com aprovação: `node`, `python`, `git`, `npm`,
-    `powershell`/`bash` executando um script em arquivo;
+> **Detalhamento:** [`specs/device-execution.md`](./device-execution.md). Este item
+> é o centro do **plano de execução**: shell, arquivos, processos e jobs com
+> política, aprovação e auditoria. Os itens 5, 8 e 13 dependem dele.
+
+- **Status:** Fase 0 e Fase 1 implementadas (política, auditoria, aprovação
+  nativa, `device-env` e `device-shell` no Windows). Arquivos/processos (Fase 2)
+  e jobs (Fase 3) seguem no roadmap — ver
+  [`device-execution.md`](./device-execution.md#8-fases-de-implementação).
+- **O que:** shell por script em arquivo, governado por dois modos no chat
+  (`plan` = leitura, `build` = construtor) e uma preferência por dispositivo
+  (`Pedir confirmação` ou `Poder Total` para ações destrutivas/de sistema):
+  - `plan` só consulta; `build` executa `node`, `python`, `git`, `npm`,
+    `powershell`/`bash`;
   - **task runner**: a IA escreve o script em `defaultWorkingDirectory` e
     executa, com stdout/stderr, timeout e cancelamento.
 - **Por quê:** é o que permite "criar um script e rodar" sem liberar shell
@@ -460,16 +469,17 @@ Risco considera exposição de segurança ao liberar o recurso.
 Itens 1, 2, 3, 4 → screenshot + janelas + mouse + clipboard. ✅ Implementado;
 já permite demonstrar automação real de GUI.
 
-**Fase 2 — "confiança para soltar o poder"**
-Itens 7, 15, 16, 14 → `run-command` em camadas + política por dispositivo +
-aprovação + auditoria. Fazer isso **antes** de liberar shell, não depois.
+**Fase 2 — "o driver como plano de execução"** (carro chefe)
+Ver [`specs/device-execution.md`](./specs/device-execution.md). Ordem interna:
+governança (15 + 16 + 14 + 12) → shell (7) → arquivos e processos (5 + 8) →
+jobs (13). Governança vem **antes** de liberar shell, não depois.
 
 **Fase 3 — "produto instalável"**
-Itens 10, 11, 12, 13 → instalador/tray/autostart, auto-update, capabilities e
-jobs. Sem isso o resto não chega no usuário comum.
+Itens 10, 11 → instalador/tray/autostart e auto-update. Sem isso o resto não
+chega no usuário comum.
 
 **Fase 4 — expansão**
-Itens 4c, 5, 6, 8, 9, 17–22.
+Itens 4c, 6, 9, 17–22.
 
 Se fosse escolher **só três** para começar: **screenshot**, **listar/focar
 janelas** e **política de aprovação por dispositivo**. As duas primeiras
@@ -498,6 +508,8 @@ Valem para todos os itens acima:
 ## Referências
 
 - Arquitetura e protocolo: [`specs/devices-connect.md`](./devices-connect.md)
+- Plano de execução (shell, arquivos, processos, jobs):
+  [`specs/device-execution.md`](./device-execution.md)
 - Tools atuais do chat: [`specs/chat-device.md`](./chat-device.md)
 - Configurações iniciais do device: [`specs/eco-device.md`](./eco-device.md)
 - Schema de `Device` e `DevicePairingSession`: [`specs/schema.md`](./schema.md)

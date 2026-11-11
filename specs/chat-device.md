@@ -26,8 +26,10 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 
 | Tool | Para que serve | Entrada | Retorno |
 | --- | --- | --- | --- |
-| `device-list` | Lista todos os PCs pareados, inclusive offline | `{}` | `devices[]` com id, nome, hostname, plataforma, arquitetura, status e último contato |
-| `device-online-list` | Lista apenas os PCs online agora | `{}` | `devices[]` somente online |
+| `device-list` | Lista todos os PCs pareados, inclusive offline | `{}` | `devices[]` com id, nome, hostname, plataforma, arquitetura, status, último contato e `confirmDestructive` |
+| `device-online-list` | Lista apenas os PCs online agora | `{}` | `devices[]` somente online, com `confirmDestructive` |
+| `device-env` | Retrato da máquina para o modelo não adivinhar shell, caminhos e runtimes | `{ deviceId }` | `env` com plataforma, arquitetura, hostname, usuário, home, temp, cwd, shell padrão, shells e runtimes instalados, elevação, locale e `capabilities` |
+| `device-shell` | Executa um script de shell na máquina (build, git, rede, testes) | `{ deviceId, script, shell?, cwd?, env?, stdin?, maxOutputBytes?, timeoutMs? }` | `shell` com `shell`, `shellPath`, `cwd`, `exitCode`, `stdout`, `stderr`, tamanhos, `durationMs`, `truncated` e `timedOut` |
 | `device-get-os` | Consulta o sistema operacional do PC | `{ deviceId }` | `os` com `platform`, `type`, `release`, `version`, `architecture` e `elevated` |
 | `device-list-apps` | Lista os aplicativos que o PC permite abrir | `{ deviceId }` | `apps[]` com `id` e `name` |
 | `device-open-url` | Abre uma URL no navegador padrão do PC | `{ deviceId, url }` | `ok` |
@@ -128,6 +130,28 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 - `device-check-admin` retorna `admin: true` quando o driver está elevado
   (PowerShell como Administrador ou `sudo`). Use para responder se o PC tem
   privilégios de adm.
+- `device-env` deve ser chamado antes de montar scripts: devolve o shell padrão,
+  os shells instalados (`pwsh`, `powershell`, `cmd`, `bash`, `sh`, `zsh`), os
+  runtimes encontrados (`node`, `npm`, `pnpm`, `yarn`, `bun`, `python`, `pip`,
+  `git`, `docker`, `rg`), usuário, home, temp, diretório atual, elevação e
+  locale. O resultado é cacheado no driver por 5 minutos.
+- `device-shell` grava o script em um arquivo temporário e nunca o interpola numa
+  linha de comando. `shell` aceita `auto` (padrão), `pwsh`, `powershell`, `cmd`,
+  `bash`, `sh` e `zsh`; no Windows, `auto` usa `pwsh`, depois `powershell` e por
+  fim `cmd`. `cwd` precisa estar dentro do home ou da pasta padrão do
+  dispositivo. `env` aceita até 32 variáveis extras, `stdin` até 64 KB,
+  `maxOutputBytes` de 1 KB a 512 KB (padrão 64 KB por stream) e `timeoutMs` de
+  1 s a 60 s (padrão 30 s). Acima do teto de saída, o resultado mantém cabeça e
+  cauda com um marcador de bytes omitidos. macOS e Linux retornam
+  `unsupported_platform` nesta versão.
+- Erros do shell: `unsupported_platform`, `shell_unavailable`,
+  `cwd_outside_root`, `command_timeout`, `output_too_large`, `policy_denied` e
+  `command_failed`. O driver mata a árvore de processos no timeout.
+- `device-run-command` continua sendo a allowlist curta de consulta; não é o
+  caminho para scripts. Fluxos reais usam `device-env` + `device-shell`.
+- `confirmDestructive` vem em `device-list`/`device-online-list`: quando `true`,
+  ações destrutivas ou de sistema pedem aprovação no chat; quando `false`, o
+  dispositivo está em Poder Total.
 - `device-write-file` escreve ou sobrescreve um arquivo de texto no dispositivo.
   Cria o arquivo se não existir. Máximo de 1 MB de conteúdo. O caminho deve
   estar dentro da pasta do usuário e não pode ser um caminho bloqueado.
@@ -230,9 +254,23 @@ carga do widget.
 - `device-type-text` e `device-press-key` podem afetar qualquer janela em foco
   quando não recebem `windowId`. O prompt exige que a IA liste as janelas antes,
   confirme antes de conteúdo sensível e proíba senhas.
-- O driver não executa shell arbitrário fora da allowlist, escreve/edita apenas
-  dentro do sandbox da pasta do usuário e só captura tela sob comando explícito
-  da tool `device-screenshot`. Screenshots ficam no máximo 15 minutos em
+- O shell é liberado por política, não por texto do modelo. O modo da sessão
+  (`plan` → `build`) é escolhido no composer e chega ao app por um campo
+  estruturado (`executionMode`) — nunca por instrução do modelo.
+- `plan` (Modo Leitura, padrão) permite apenas leitura e nega `input`, `write`,
+  `exec`, `destructive` e `system`. `build` (Modo Construtor) libera `input`,
+  `write` e `exec`; `destructive` e `system` pedem aprovação, exceto quando o
+  dispositivo está em Poder Total (`confirmDestructive: false`).
+- Quando uma tool exige aprovação, o app usa o primitivo nativo do AI SDK
+  (`toolApproval` + `tool-approval-request`) e o usuário decide no card
+  Permitir/Negar. O pedido é assinado no servidor; o modelo nunca recebe a
+  decisão como texto e não consegue forjar uma aprovação.
+- Toda execução e negação gera um `DeviceAuditEvent` com ferramenta, risco,
+  decisão, política, modo, duração, exit code e comando sanitizado. stdout/stderr
+  brutos não são gravados.
+- O driver escreve/edita apenas dentro do sandbox da pasta do usuário, restringe
+  `cwd` do shell ao home/pasta padrão e só captura tela sob comando explícito da
+  tool `device-screenshot`. Screenshots ficam no máximo 15 minutos em
   armazenamento temporário e não entram no histórico do chat. A leitura de
   arquivos é restrita à pasta de usuário com sandbox e denylist de caminhos sensíveis
   (`.ssh`, `.gnupg`, `.aws`, credenciais, perfis de navegador, arquivos do
@@ -241,23 +279,26 @@ carga do widget.
   Administrador ou `sudo`) para que comandos futuros possam ser elevados. Isso é
   refletido em `device-get-os` (`elevated`).
 
-## Confirmação no chat
+## Aprovação no chat
 
-- `device-type-text` e `device-press-key` podem afetar qualquer janela em foco
-  quando não recebem `windowId`. Antes de executá-las, o assistente lista as
-  janelas, escolhe a alvo e pede confirmação em texto (sim/não). O comando só é
-  enviado ao dispositivo após o usuário confirmar.
-- Se o usuário não confirmar, o comando não é executado.
-- `device-window-action` (incluindo `close`) não exige confirmação textual nesta
-  versão. O fechamento continua gracioso, então o aplicativo ainda pode pedir
-  para salvar alterações.
-- `device-ui-action` com `invoke` em controles destrutivos (fechar, excluir,
-  enviar, salvar, sair, fechar aba/janela) exige autorização explícita do
-  usuário no pedido original ou confirmação em texto antes de executar. Ações
-  não destrutivas (`select`, `toggle`, `expand`, `collapse`, `focus`) podem ser
-  usadas para navegar e inspecionar.
-- No futuro, haverá um modo/opção `requireApproval: false` (autônomo) para
-  desativar confirmações.
+- O composer tem um chip de modo (`Leitura`, `Construtor`); `Shift+Tab`
+  alterna entre os dois. O modo é por chat e fica salvo em `localStorage`
+  (`spectral:execution-mode:<chatId>`).
+- A confirmação de ações destrutivas é configurada em Configurações →
+  Dispositivos (`Pedir confirmação` ou `Poder Total`) e vale para todos os chats.
+  Ela nunca fura o Modo Leitura.
+- Um pedido de aprovação abre o painel “Execução do agente” e mostra o card com
+  Permitir/Negar. A resposta é enviada automaticamente de volta ao agente
+  (`sendAutomaticallyWhen`).
+- `device-type-text` e `device-press-key` são risco `input`: rodam direto no
+  Modo Construtor e são negadas no Modo Leitura. O modelo continua proibido de
+  digitar senhas.
+- Ações destrutivas (fechar janela/aba, matar processo, exclusão) pedem
+  aprovação no Modo Construtor, exceto com Poder Total. O fechamento de janela
+  continua gracioso.
+- Ações não destrutivas de UIA (`select`, `toggle`, `expand`, `collapse`,
+  `focus`) e `invoke` em controles de navegação rodam direto no Modo Construtor;
+  o `invoke` de controles destrutivos continua exigindo autorização.
 
 ## Exemplos de uso no chat
 
@@ -280,11 +321,15 @@ carga do widget.
 - Contrato compartilhado: `spectral/shared/device-commands.ts`
 - Tools do chat: `lib/ai/tools/device-tools.ts`
 - Cliente do backend: `lib/devices/command-client.ts`
-- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 26`)
+- Prompt: `lib/ai/prompts/sections/devices.ts` (`SYSTEM_PROMPT_VERSION = 29`)
 - Backend: `spectral/backend/src/websocket/command-bus.ts` e `spectral/backend/src/http/internal.ts`
 - Driver: `spectral/driver/src/commands/executor.ts`,
+  `spectral/driver/src/commands/shell.ts`,
+  `spectral/driver/src/commands/system.ts`,
   `spectral/driver/src/commands/files.ts` e
   `spectral/driver/src/commands/screen.ts`
+- Governança: `lib/devices/execution-policy.ts`,
+  `lib/devices/tool-approval.ts` e `lib/devices/audit.ts`
 - Screenshot no app: `lib/devices/screenshot-store.ts`,
   `lib/devices/screenshot-tool.ts` e
   `app/api/devices/[id]/screenshots/[screenshotId]/route.ts`

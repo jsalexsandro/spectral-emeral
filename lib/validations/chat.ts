@@ -17,13 +17,13 @@ export const chatModelSchema = z
     return Boolean(parsed && getModel(parsed.provider, parsed.modelId))
   }, "Modelo desconhecido")
 
-export const chatExecutionModeSchema = z.enum(["ask", "auto", "full"])
+export const chatExecutionModeSchema = z.enum(["plan", "build"])
 
 export const sendChatMessageSchema = z.object({
   chatId: chatIdSchema,
   model: chatModelSchema,
   messages: z.array(z.unknown()).min(1, "Envie ao menos uma mensagem"),
-  executionMode: chatExecutionModeSchema.default("ask"),
+  executionMode: chatExecutionModeSchema.default("plan"),
   theme: z.enum(["light", "dark", "system"]).optional(),
   resolvedTheme: z.enum(["light", "dark"]).optional(),
 })

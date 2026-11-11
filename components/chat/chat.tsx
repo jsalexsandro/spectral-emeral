@@ -52,9 +52,8 @@ const MAX_TEXTAREA_HEIGHT = 240
 const EXECUTION_MODE_STORAGE_PREFIX = "spectral:execution-mode:"
 
 const EXECUTION_MODE_CYCLE: Record<ChatExecutionMode, ChatExecutionMode> = {
-  ask: "auto",
-  auto: "full",
-  full: "ask",
+  plan: "build",
+  build: "plan",
 }
 
 const hiddenMessageToolNames = new Set<string>([

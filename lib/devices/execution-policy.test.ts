@@ -4,75 +4,59 @@ import {
   evaluateDeviceToolCall,
   parseDeviceExecutionPolicy,
   type ChatExecutionMode,
-  type DeviceExecutionLevel,
   type DeviceToolRisk,
 } from "./execution-policy"
 
 function decide(
-  level: DeviceExecutionLevel,
+  confirmDestructive: boolean,
   mode: ChatExecutionMode,
   risk: DeviceToolRisk,
 ) {
   return evaluateDeviceToolCall({
-    policy: { level },
+    policy: { confirmDestructive },
     mode,
     risk,
   }).action
 }
 
+const MUTATIONS = ["input", "write", "exec"] as const
+const IRREVERSIBLE = ["destructive", "system"] as const
+
 describe("execution policy", () => {
-  it("always allows read tools, regardless of level or mode", () => {
-    for (const level of ["read-only", "trusted", "full"] as const) {
-      for (const mode of ["ask", "auto", "full"] as const) {
-        expect(decide(level, mode, "read")).toBe("allow")
+  it("always allows read tools, regardless of mode or device setting", () => {
+    for (const confirmDestructive of [true, false]) {
+      for (const mode of ["plan", "build"] as const) {
+        expect(decide(confirmDestructive, mode, "read")).toBe("allow")
       }
     }
   })
 
-  it("denies everything except read on read-only devices", () => {
-    for (const risk of [
-      "input",
-      "write",
-      "exec",
-      "destructive",
-      "system",
-    ] as const) {
-      for (const mode of ["ask", "auto", "full"] as const) {
-        expect(decide("read-only", mode, risk)).toBe("deny")
+  it("denies every mutation in plan mode", () => {
+    for (const confirmDestructive of [true, false]) {
+      for (const risk of [...MUTATIONS, ...IRREVERSIBLE]) {
+        expect(decide(confirmDestructive, "plan", risk)).toBe("deny")
       }
     }
   })
 
-  it("asks for approval on trusted devices in ask mode", () => {
-    expect(decide("trusted", "ask", "input")).toBe("approval")
-    expect(decide("trusted", "ask", "write")).toBe("approval")
-    expect(decide("trusted", "ask", "exec")).toBe("approval")
-    expect(decide("trusted", "ask", "destructive")).toBe("approval")
-    expect(decide("trusted", "ask", "system")).toBe("approval")
+  it("runs mutations directly in build mode", () => {
+    for (const confirmDestructive of [true, false]) {
+      for (const risk of MUTATIONS) {
+        expect(decide(confirmDestructive, "build", risk)).toBe("allow")
+      }
+    }
   })
 
-  it("runs input, write and exec automatically on trusted devices", () => {
-    expect(decide("trusted", "auto", "input")).toBe("allow")
-    expect(decide("trusted", "auto", "write")).toBe("allow")
-    expect(decide("trusted", "auto", "exec")).toBe("allow")
-    expect(decide("trusted", "auto", "destructive")).toBe("approval")
-    expect(decide("trusted", "auto", "system")).toBe("approval")
-    expect(decide("trusted", "full", "destructive")).toBe("approval")
+  it("asks approval for destructive and system actions when confirming", () => {
+    for (const risk of IRREVERSIBLE) {
+      expect(decide(true, "build", risk)).toBe("approval")
+    }
   })
 
-  it("keeps destructive and system actions gated on full devices in ask mode", () => {
-    expect(decide("full", "ask", "destructive")).toBe("approval")
-    expect(decide("full", "ask", "system")).toBe("approval")
-  })
-
-  it("allows destructive but not system actions on full devices in auto mode", () => {
-    expect(decide("full", "auto", "destructive")).toBe("allow")
-    expect(decide("full", "auto", "system")).toBe("approval")
-  })
-
-  it("only releases system actions on full level and full mode", () => {
-    expect(decide("full", "full", "destructive")).toBe("allow")
-    expect(decide("full", "full", "system")).toBe("allow")
+  it("releases destructive and system actions under full power", () => {
+    for (const risk of IRREVERSIBLE) {
+      expect(decide(false, "build", risk)).toBe("allow")
+    }
   })
 })
 
@@ -122,23 +106,37 @@ describe("device tool risk classification", () => {
 })
 
 describe("parseDeviceExecutionPolicy", () => {
-  it("falls back to read-only for missing or invalid values", () => {
-    expect(parseDeviceExecutionPolicy(null).level).toBe("read-only")
-    expect(parseDeviceExecutionPolicy("nonsense").level).toBe("read-only")
-    expect(parseDeviceExecutionPolicy({ level: "nope" }).level).toBe("read-only")
-    expect(parseDeviceExecutionPolicy([]).level).toBe("read-only")
+  it("defaults to confirming destructive actions", () => {
+    expect(parseDeviceExecutionPolicy(null).confirmDestructive).toBe(true)
+    expect(parseDeviceExecutionPolicy(undefined).confirmDestructive).toBe(true)
+    expect(parseDeviceExecutionPolicy("nonsense").confirmDestructive).toBe(true)
+    expect(parseDeviceExecutionPolicy([]).confirmDestructive).toBe(true)
   })
 
-  it("accepts legacy strings and object shapes", () => {
-    expect(parseDeviceExecutionPolicy("trusted").level).toBe("trusted")
-    expect(parseDeviceExecutionPolicy({ level: "full" })).toEqual({
-      level: "full",
+  it("accepts the current boolean shape", () => {
+    expect(parseDeviceExecutionPolicy({ confirmDestructive: false })).toEqual({
+      confirmDestructive: false,
     })
     expect(
       parseDeviceExecutionPolicy({
-        level: "trusted",
+        confirmDestructive: true,
         updatedAt: "2026-11-11T00:00:00.000Z",
       }),
-    ).toEqual({ level: "trusted", updatedAt: "2026-11-11T00:00:00.000Z" })
+    ).toEqual({
+      confirmDestructive: true,
+      updatedAt: "2026-11-11T00:00:00.000Z",
+    })
+  })
+
+  it("maps the legacy level format without loosening anything", () => {
+    expect(parseDeviceExecutionPolicy("full").confirmDestructive).toBe(false)
+    expect(parseDeviceExecutionPolicy({ level: "full" })).toEqual({
+      confirmDestructive: false,
+    })
+    expect(parseDeviceExecutionPolicy("trusted").confirmDestructive).toBe(true)
+    expect(parseDeviceExecutionPolicy("read-only").confirmDestructive).toBe(true)
+    expect(parseDeviceExecutionPolicy({ level: "nope" }).confirmDestructive).toBe(
+      true,
+    )
   })
 })

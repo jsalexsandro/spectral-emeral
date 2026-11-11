@@ -73,13 +73,12 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         ...(parsed.data.defaultWorkingDirectory !== undefined && {
           defaultWorkingDirectory: parsed.data.defaultWorkingDirectory,
         }),
-        ...(parsed.data.executionLevel !== undefined && {
+        ...(parsed.data.confirmDestructive !== undefined && {
           executionPolicy: {
-            level: parsed.data.executionLevel,
+            confirmDestructive: parsed.data.confirmDestructive,
             updatedAt: new Date().toISOString(),
           },
         }),
-        ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
         updatedAt: new Date(),
       })
       .where(

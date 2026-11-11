@@ -1,10 +1,8 @@
 import { db } from "@/db"
 import { deviceAuditEvents } from "@/db/schema"
-import type {
-  ChatExecutionMode,
-  DeviceExecutionLevel,
-  DeviceToolRisk,
-} from "./execution-policy"
+import type { ChatExecutionMode, DeviceToolRisk } from "./execution-policy"
+
+export type DeviceAuditPolicy = "confirm" | "full"
 
 const MAX_COMMAND_LENGTH = 500
 
@@ -58,7 +56,7 @@ export type RecordDeviceAuditInput = {
   command?: string
   risk: DeviceToolRisk
   decision: DeviceAuditDecision
-  policy: DeviceExecutionLevel
+  policy: DeviceAuditPolicy
   mode: ChatExecutionMode
   durationMs?: number | null
   exitCode?: number | null

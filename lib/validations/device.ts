@@ -1,10 +1,6 @@
 import { z } from "zod"
 import { DEVICE_APP_ID_PATTERN } from "@/lib/devices/commands"
-import {
-  DEVICE_NAME_MAX_LENGTH,
-  DEVICE_NOTES_MAX_LENGTH,
-} from "@/lib/devices/constants"
-import { DEVICE_EXECUTION_LEVELS } from "@/lib/devices/execution-policy"
+import { DEVICE_NAME_MAX_LENGTH } from "@/lib/devices/constants"
 
 const hostnameSchema = z
   .string()
@@ -58,17 +54,6 @@ export const confirmPairingSchema = z.object({
     .max(16, "Código inválido"),
 })
 
-const deviceNotesSchema = z
-  .string()
-  .trim()
-  .max(DEVICE_NOTES_MAX_LENGTH, "Notas muito longas")
-  .nullable()
-  .optional()
-
-const deviceExecutionLevelSchema = z
-  .enum(DEVICE_EXECUTION_LEVELS)
-  .describe("Teto de execução do dispositivo.")
-
 export const renameDeviceSchema = z.object({
   name: z
     .string()
@@ -79,14 +64,15 @@ export const renameDeviceSchema = z.object({
   defaultWorkingDirectory: z
     .union([devicePathSchema, z.null()])
     .describe("Pasta padrão do dispositivo para execução de comandos."),
-  executionLevel: deviceExecutionLevelSchema.optional(),
-  notes: deviceNotesSchema,
+  confirmDestructive: z
+    .boolean()
+    .describe("Pedir confirmação para ações destrutivas ou de sistema.")
+    .optional(),
 }).refine(
   (data) =>
     data.name !== undefined ||
     data.defaultWorkingDirectory !== undefined ||
-    data.executionLevel !== undefined ||
-    data.notes !== undefined,
+    data.confirmDestructive !== undefined,
   {
     message: "Informe ao menos um campo para atualizar.",
     path: ["name"],

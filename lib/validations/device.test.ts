@@ -11,31 +11,22 @@ describe("renameDeviceSchema", () => {
     expect(parsed.success && parsed.data.defaultWorkingDirectory).toBeNull()
   })
 
-  it("accepts execution level and notes together", () => {
-    const parsed = renameDeviceSchema.safeParse({
-      executionLevel: "trusted",
-      notes: "usar pnpm; não mexer em D:\\Clientes",
-    })
+  it("accepts the destructive confirmation preference", () => {
+    const parsed = renameDeviceSchema.safeParse({ confirmDestructive: false })
 
     expect(parsed.success).toBe(true)
-    expect(parsed.success && parsed.data.executionLevel).toBe("trusted")
+    expect(parsed.success && parsed.data.confirmDestructive).toBe(false)
   })
 
-  it("rejects unknown execution levels", () => {
-    const parsed = renameDeviceSchema.safeParse({ executionLevel: "root" })
+  it("rejects non-boolean confirmation values", () => {
+    const parsed = renameDeviceSchema.safeParse({
+      confirmDestructive: "full",
+    })
 
     expect(parsed.success).toBe(false)
   })
 
   it("rejects an empty update", () => {
     expect(renameDeviceSchema.safeParse({}).success).toBe(false)
-  })
-
-  it("rejects oversized notes", () => {
-    const parsed = renameDeviceSchema.safeParse({
-      notes: "a".repeat(8_001),
-    })
-
-    expect(parsed.success).toBe(false)
   })
 })

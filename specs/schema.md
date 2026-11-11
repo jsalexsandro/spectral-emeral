@@ -72,11 +72,33 @@ Dispositivo emparelhado a um usuário. A revogação é lógica (`revokedAt`), p
 - `fingerprint` (text, not null) - SHA-256 (base64url) da chave pública em DER; indexado
 - `lastSeenAt` (timestamp, nullable) - Atualizado a cada heartbeat; online quando ≤ 45s
 - `revokedAt` (timestamp, nullable) - Revogação lógica; dispositivo revogado não autentica
+- `defaultWorkingDirectory` (text, nullable) - Pasta padrão para execução de comandos; também delimita o `cwd` aceito pelo shell
+- `executionPolicy` (jsonb, nullable) - Preferência de confirmação `{ confirmDestructive: boolean, updatedAt?: string }`; ausência equivale a `confirmDestructive: true` (Pedir confirmação)
+- `notes` (text, nullable) - Aposentada; o app não lê nem escreve mais. Mantida para não divergir da migration 0009
 - `createdAt` (timestamp, not null) - Default: now()
-- `updatedAt` (timestamp, not null) - Default: now(); atualizado ao renomear/revogar
+- `updatedAt` (timestamp, not null) - Default: now(); atualizado ao renomear, revogar ou alterar a preferência
 - Index: (userId), (fingerprint), (userId, revokedAt)
 
 > O servidor nunca recebe a chave privada. A presença não é persistida como enum; o status é derivado de `lastSeenAt`.
+
+### DeviceAuditEvent
+Trilha de auditoria do plano de execução. Nunca armazena stdout/stderr brutos.
+- `id` (text, PK) - CUID gerado automaticamente
+- `deviceId` (text, FK -> Device.id, cascade delete)
+- `userId` (text, FK -> user.id, cascade delete)
+- `chatId` (text, nullable) - Conversa que originou a chamada
+- `toolName` (text, not null) - Tool de dispositivo chamada
+- `command` (text, nullable) - Comando sanitizado (segredos redigidos, até 500 caracteres)
+- `risk` (text, not null) - `read` | `input` | `write` | `exec` | `destructive` | `system`
+- `decision` (text, not null) - `approval-requested` | `approved` | `denied` | `executed` | `failed`
+- `policy` (text, not null) - Preferência do dispositivo no momento da decisão (`confirm` | `full`)
+- `mode` (text, not null) - Modo da sessão (`plan` | `build`)
+- `durationMs` e `exitCode` (integer, nullable)
+- `errorCode` (text, nullable)
+- `createdAt` (timestamp, not null) - Default: now()
+- Index: (deviceId, createdAt), (userId, createdAt)
+
+> A aprovação efetiva é feita pelo primitivo `toolApproval` do AI SDK, com pedidos assinados no servidor. O evento de auditoria é a fonte de verdade para negações e execuções.
 
 ### DevicePairingSession
 Sessão temporária de emparelhamento. O código de 6 caracteres nunca é armazenado em texto puro.
@@ -141,6 +163,8 @@ Para verificação de email/magic links.
 - `0005_message_prompt_version` — adiciona a coluna `promptVersion` em `Message`.
 - `0006_complex_drax` — cria `Device` e `DevicePairingSession` (emparelhamento e presença).
 - `0007_red_lorna_dane` — adiciona `DevicePairingSession.deviceId` para o driver recuperar o dispositivo confirmado.
+- `0008_lying_leper_queen` — adiciona `Device.defaultWorkingDirectory` (pasta padrão do dispositivo).
+- `0009_small_shocker` — adiciona `Device.executionPolicy` e a tabela `DeviceAuditEvent` (confirmação e auditoria do plano de execução). A coluna `Device.notes` foi aposentada no código; a migration não é alterada.
 
 Aplicar com:
 

@@ -105,11 +105,11 @@ import {
   classifyDeviceToolRisk,
   parseDeviceExecutionPolicy,
   type ChatExecutionMode,
-  type DeviceExecutionLevel,
 } from "@/lib/devices/execution-policy"
 import { recordDeviceAudit } from "@/lib/devices/audit"
 import {
   assertDeviceCommandAllowed,
+  describeAuditPolicy,
   readDeviceToolCommand,
 } from "@/lib/devices/tool-approval"
 import {
@@ -952,7 +952,6 @@ type DeviceRow = {
   architecture: string | null
   lastSeenAt: Date | null
   executionPolicy?: unknown
-  notes?: string | null
 }
 
 export type DeviceToolSummary = {
@@ -963,27 +962,7 @@ export type DeviceToolSummary = {
   architecture: string | null
   status: DeviceStatus
   lastSeenAt: string | null
-  executionLevel: DeviceExecutionLevel
-  notes: string | null
-}
-
-/** Notas são enviadas ao modelo quando o dispositivo é listado; corte defensivo. */
-const DEVICE_NOTES_PROMPT_MAX_LENGTH = 4_000
-
-function toPromptNotes(notes: string | null | undefined): string | null {
-  if (!notes) {
-    return null
-  }
-
-  const trimmed = notes.trim()
-
-  if (!trimmed) {
-    return null
-  }
-
-  return trimmed.length > DEVICE_NOTES_PROMPT_MAX_LENGTH
-    ? `${trimmed.slice(0, DEVICE_NOTES_PROMPT_MAX_LENGTH)}…`
-    : trimmed
+  confirmDestructive: boolean
 }
 
 export function toDeviceToolSummary(
@@ -998,8 +977,8 @@ export function toDeviceToolSummary(
     architecture: device.architecture,
     status: isDeviceOnline(device.lastSeenAt, now) ? "online" : "offline",
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
-    executionLevel: parseDeviceExecutionPolicy(device.executionPolicy).level,
-    notes: toPromptNotes(device.notes),
+    confirmDestructive: parseDeviceExecutionPolicy(device.executionPolicy)
+      .confirmDestructive,
   }
 }
 
@@ -1021,7 +1000,6 @@ async function listOwnedDevices(userId: string): Promise<DeviceToolSummary[]> {
       architecture: devices.architecture,
       lastSeenAt: devices.lastSeenAt,
       executionPolicy: devices.executionPolicy,
-      notes: devices.notes,
     })
     .from(devices)
     .where(and(eq(devices.userId, userId), isNull(devices.revokedAt)))
@@ -1095,7 +1073,7 @@ async function runDeviceCommand(
   command: DeviceCommand,
   context?: DeviceToolContext,
 ) {
-  const executionMode = context?.executionMode ?? "ask"
+  const executionMode = context?.executionMode ?? "plan"
   const toolName = `device-${command.command}`
   const risk = classifyDeviceToolRisk(toolName, command.input)
 
@@ -1104,7 +1082,7 @@ async function runDeviceCommand(
     return toCommandToolResult(deviceId, output)
   }
 
-  let policyLevel: "read-only" | "trusted" | "full"
+  let auditPolicy: ReturnType<typeof describeAuditPolicy>
 
   try {
     const guard = await assertDeviceCommandAllowed({
@@ -1115,7 +1093,7 @@ async function runDeviceCommand(
       input: command.input,
     })
 
-    policyLevel = guard.policy.level
+    auditPolicy = describeAuditPolicy(guard.policy)
 
     if (!guard.ok) {
       await recordDeviceAudit({
@@ -1126,7 +1104,7 @@ async function runDeviceCommand(
         command: readDeviceToolCommand(toolName, command.input),
         risk,
         decision: "denied",
-        policy: guard.policy.level,
+        policy: auditPolicy,
         mode: executionMode,
         errorCode: guard.code,
       })
@@ -1155,7 +1133,7 @@ async function runDeviceCommand(
     command: readDeviceToolCommand(toolName, command.input),
     risk,
     decision: failed ? "failed" : "executed",
-    policy: policyLevel,
+    policy: auditPolicy,
     mode: executionMode,
     durationMs,
     exitCode: output.ok && output.result.ok ? output.result.shell?.exitCode ?? null : null,

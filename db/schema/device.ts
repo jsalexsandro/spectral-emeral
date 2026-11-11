@@ -27,15 +27,15 @@ export const devices = pgTable(
     revokedAt: timestamp("revokedAt", { mode: "date" }),
     defaultWorkingDirectory: text("defaultWorkingDirectory"),
     /**
-     * Teto de execução do dispositivo. Estrutura:
-     * `{ level: "read-only" | "trusted" | "full", updatedAt?: string }`.
-     * A ausência do campo equivale a `read-only`.
+     * Preferência de confirmação do dispositivo. Estrutura:
+     * `{ confirmDestructive: boolean, updatedAt?: string }`.
+     * A ausência do campo equivale a pedir confirmação.
      */
     executionPolicy: jsonb("executionPolicy").$type<{
-      level: "read-only" | "trusted" | "full"
+      confirmDestructive: boolean
       updatedAt?: string
     }>(),
-    /** Notas livres do usuário sobre o dispositivo (equivalente a CLAUDE.md). */
+    /** Coluna aposentada: mantida para não divergir da migration 0009. */
     notes: text("notes"),
     createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
