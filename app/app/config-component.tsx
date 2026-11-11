@@ -234,9 +234,10 @@ function useAutoSave(initialValue: string, field: "name" | "nickname") {
     }
 
     const controller = new AbortController()
-    setStatus("saving")
 
     const timeout = setTimeout(async () => {
+      setStatus("saving")
+
       try {
         const response = await fetch("/api/user", {
           method: "PATCH",

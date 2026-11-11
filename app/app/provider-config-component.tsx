@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -51,19 +51,19 @@ export function ProviderConfigComponent({
   const [removeOpen, setRemoveOpen] = useState(false)
 
   const providerId = provider?.id ?? null
+  const [lastProviderId, setLastProviderId] = useState(providerId)
 
-  useEffect(() => {
-    if (!providerId) {
-      return
-    }
-
+  // Padrão recomendado pelo React para resetar o formulário quando o alvo
+  // muda: ajustar o estado durante a renderização, sem efeito.
+  if (providerId !== lastProviderId) {
+    setLastProviderId(providerId)
     setApiKey("")
     setShowKey(false)
     setIsSaving(false)
     setIsRemoving(false)
     setError(null)
     setRemoveOpen(false)
-  }, [providerId])
+  }
 
   if (!provider) {
     return null

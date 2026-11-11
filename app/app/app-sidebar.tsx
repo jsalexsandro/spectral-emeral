@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore, useState } from "react"
 import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
@@ -55,6 +55,24 @@ type SidebarUser = {
   image?: string | null
 }
 
+const MOBILE_MEDIA_QUERY = "(max-width: 767px)"
+
+function subscribeMobile(listener: () => void) {
+  const mediaQuery = window.matchMedia(MOBILE_MEDIA_QUERY)
+
+  mediaQuery.addEventListener("change", listener)
+
+  return () => mediaQuery.removeEventListener("change", listener)
+}
+
+function getMobileSnapshot() {
+  return window.matchMedia(MOBILE_MEDIA_QUERY).matches
+}
+
+function getServerMobileSnapshot() {
+  return false
+}
+
 function getInitials(user: SidebarUser) {
   const source = user.name?.trim() || user.email?.trim() || "?"
   const parts = source.split(/[\s@._-]+/).filter(Boolean)
@@ -69,22 +87,17 @@ function getInitials(user: SidebarUser) {
 export function AppSidebar({ user }: { user: SidebarUser }) {
   const [open, setOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const { startNewChat, chats, chatsLoading, isDraft } = useChatSession()
   const { openSettings } = useAppActions()
   const router = useRouter()
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    const mediaQuery = window.matchMedia("(max-width: 767px)")
-    setIsMobile(mediaQuery.matches)
-    const handler = (event: MediaQueryListEvent) => setIsMobile(event.matches)
-    mediaQuery.addEventListener("change", handler)
-    return () => mediaQuery.removeEventListener("change", handler)
-  }, [])
+  const isMobile = useSyncExternalStore(
+    subscribeMobile,
+    getMobileSnapshot,
+    getServerMobileSnapshot,
+  )
 
   function handleNewChat() {
     startNewChat()

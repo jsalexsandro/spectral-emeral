@@ -6,7 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 
@@ -22,6 +22,34 @@ type ThemeContextValue = {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
+
+const themeListeners = new Set<() => void>()
+
+function subscribeTheme(listener: () => void) {
+  themeListeners.add(listener)
+  window.addEventListener("storage", listener)
+
+  return () => {
+    themeListeners.delete(listener)
+    window.removeEventListener("storage", listener)
+  }
+}
+
+function notifyThemeChange() {
+  for (const listener of themeListeners) {
+    listener()
+  }
+}
+
+function getStoredTheme(): Theme {
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+
+  return isTheme(stored) ? stored : "system"
+}
+
+function getServerTheme(): Theme {
+  return "system"
+}
 
 function resolveTheme(theme: Theme) {
   if (theme !== "system") {
@@ -41,15 +69,17 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system")
+  // O tema persistido vive no localStorage, uma fonte externa ao React. O
+  // snapshot do servidor é "system" para não quebrar a hidratação.
+  const theme = useSyncExternalStore(
+    subscribeTheme,
+    getStoredTheme,
+    getServerTheme,
+  )
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-    const initial = isTheme(stored) ? stored : "system"
-
-    setThemeState(initial)
-    applyTheme(initial)
-  }, [])
+    applyTheme(theme)
+  }, [theme])
 
   useEffect(() => {
     if (theme !== "system") {
@@ -66,8 +96,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((nextTheme: Theme) => {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
-    setThemeState(nextTheme)
     applyTheme(nextTheme)
+    notifyThemeChange()
   }, [])
 
   const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])

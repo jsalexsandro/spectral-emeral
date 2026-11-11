@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,30 +14,39 @@ export function ByokSection() {
   const [hasError, setHasError] = useState(false)
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<ByokProvider | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
-  const loadProviders = useCallback(async () => {
-    setIsLoading(true)
-    setHasError(false)
-
-    try {
-      const response = await fetch("/api/byok", { cache: "no-store" })
-
-      if (!response.ok) {
-        throw new Error("Falha ao carregar")
-      }
-
-      const data = (await response.json()) as { providers: ByokProvider[] }
-      setProviders(data.providers)
-    } catch {
-      setHasError(true)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
+  // As atualizações de estado só acontecem nos callbacks assíncronos, nunca no
+  // corpo do efeito.
   useEffect(() => {
-    void loadProviders()
-  }, [loadProviders])
+    const controller = new AbortController()
+
+    fetch("/api/byok", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Falha ao carregar")
+        }
+
+        const data = (await response.json()) as { providers: ByokProvider[] }
+
+        if (!controller.signal.aborted) {
+          setProviders(data.providers)
+          setHasError(false)
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setHasError(true)
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [reloadKey])
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -97,7 +106,10 @@ export function ByokSection() {
           <p>Não foi possível carregar os provedores.</p>
           <button
             type="button"
-            onClick={() => void loadProviders()}
+            onClick={() => {
+              setIsLoading(true)
+              setReloadKey((current) => current + 1)
+            }}
             className="mt-1 font-medium text-primary underline-offset-4 hover:underline"
           >
             Tentar novamente
