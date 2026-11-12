@@ -19,13 +19,16 @@ O que já existe e funciona:
 - Gestão em Configurações → Dispositivos: listar, renomear, revogar e definir a
   pasta padrão.
 - Tools de chat: `device-list`, `device-online-list`, `device-get-os`,
-  `device-list-apps`, `device-open-url`, `device-open-app`, `device-type-text`,
-  `device-press-key`, `device-list-windows`, `device-focus-window`,
-  `device-window-action`, `device-screenshot`, `device-read-clipboard`,
+  `device-env`, `device-list-apps`, `device-open-url`, `device-open-app`,
+  `device-type-text`, `device-press-key`, `device-list-windows`,
+  `device-focus-window`, `device-window-action`, `device-screenshot`,
+  `device-inspect-ui`, `device-ui-action`, `device-read-clipboard`,
   `device-write-clipboard`, `device-move-mouse`, `device-click`,
-  `device-scroll`, `device-drag`, `device-list-files`,
-  `device-read-file`, `device-glob`, `device-grep`, `device-check-admin`,
-  `device-write-file`, `device-edit-file` e `device-run-command`.
+  `device-scroll`, `device-drag`, `device-list-files`, `device-read-file`,
+  `device-glob`, `device-grep`, `device-check-admin`, `device-write-file`,
+  `device-edit-file`, `device-mkdir`, `device-stat`, `device-copy`,
+  `device-move`, `device-delete`, `device-apply-patch`, `device-run-command` e
+  `device-shell`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
 
 ## O que limita o carro chefe
@@ -43,15 +46,19 @@ O que já existe e funciona:
 - **O `device-run-command` não roda nada útil.** A allowlist em
   `spectral/driver/src/commands/files.ts` só tem `dir`, `type`, `echo`,
   `tasklist`, `systeminfo` etc., e o denylist bloqueia `node`, `git`, `python`,
-  `npm` e shell. Ou seja: não dá para "criar um script e executar", que é
-  justamente a promessa do produto.
-- **Não há operações de arquivo básicas** (copiar, mover, renomear, apagar,
-  upload/download). O mouse MVP já está disponível por coordenada.
+  `npm` e shell. O caminho real agora é `device-shell` (item 7), que executa
+  scripts em arquivo; a allowlist antiga continua só para consulta.
+- **Operações de arquivo básicas:** `mkdir`, `stat`, `copy`, `move`, `delete`
+  para a lixeira e `apply-patch` atômico já funcionam no Windows. Upload/download
+  e `zip`/`unzip` dedicados ainda faltam (transferência binária é a Fase 5a;
+  zip via shell).
 - **O driver não é um produto instalável.** Hoje é `npm run dev:driver` em um
   terminal aberto. Sem instalador, serviço/tray, autostart e auto-update, a
   adoção fica travada.
-- **Não há política por dispositivo, aprovação real nem auditoria.** A
-  confirmação é apenas texto no chat.
+- **A política existe, mas ainda é enxuta.** Modo Leitura/Construtor + Pedir
+  confirmação/Poder Total, aprovação nativa do AI SDK e auditoria em
+  `DeviceAuditEvent` já funcionam; faltam a tela de atividade e mais categorias
+  de risco.
 - **O transporte limita o tamanho e a duração.** O WebSocket do backend usa
   `maxPayload` de 4 MB (configurável) e cada comando tem timeout máximo de 60s,
   com um comando em voo por PC (`device_busy`). Screenshots ainda trafegam em
@@ -267,15 +274,20 @@ Risco considera exposição de segurança ao liberar o recurso.
 
 ### Bloco B — Controle real do PC
 
-#### 5. Operações de arquivo completas
+#### 5. Operações de arquivo completas ✅
 
-- **O que:** `copy`, `move`, `rename`, `delete` (para a lixeira quando possível),
-  `mkdir`, `stat`, `zip` e `unzip`.
-- **Por quê:** hoje só existe escrever/editar; sem isso não se organiza nada.
+- **O que:** `copy`, `move`, `rename` (caso de `move`), `delete` (para a lixeira
+  quando possível), `mkdir`, `stat` e `apply-patch`. `zip`/`unzip` ficam
+  opcionais via `shell`.
+- **Por quê:** antes só existia escrever/editar; sem isso não se organiza nada.
 - **Onde mexer:** `spectral/driver/src/commands/files.ts` (mesmo sandbox e
   denylist atuais), contrato e tools.
+- **Status:** implementado no Windows. `delete` usa a lixeira por padrão e exige
+  `permanent: true` para apagar de vez; raízes protegidas; symlinks nunca
+  seguidos. Tools `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
+  `device-delete`, `device-apply-patch`.
 - **Pronto quando:** as operações respeitarem raízes permitidas e houver
-  aprovação para exclusão.
+  aprovação para exclusão. ✅
 - **Esforço:** M · **Risco:** alto (exclusão) — exige aprovação.
 
 #### 6. Transferência app ↔ dispositivo
@@ -297,9 +309,10 @@ Risco considera exposição de segurança ao liberar o recurso.
 > é o centro do **plano de execução**: shell, arquivos, processos e jobs com
 > política, aprovação e auditoria. Os itens 5, 8 e 13 dependem dele.
 
-- **Status:** Fase 0 e Fase 1 implementadas (política, auditoria, aprovação
-  nativa, `device-env` e `device-shell` no Windows). Arquivos/processos (Fase 2)
-  e jobs (Fase 3) seguem no roadmap — ver
+- **Status:** Fase 0, Fase 1 e Fase 2 de arquivos implementadas (política,
+  auditoria, aprovação nativa, `device-env`, `device-shell` e operações de
+  arquivo no Windows). Processos (restante da Fase 2) e jobs (Fase 3) seguem no
+  roadmap — ver
   [`device-execution.md`](./device-execution.md#8-fases-de-implementação).
 - **O que:** shell por script em arquivo, governado por dois modos no chat
   (`plan` = leitura, `build` = construtor) e uma preferência por dispositivo
@@ -485,6 +498,163 @@ Se fosse escolher **só três** para começar: **screenshot**, **listar/focar
 janelas** e **política de aprovação por dispositivo**. As duas primeiras
 destravam o produto; a terceira permite liberar comandos complexos sem virar um
 risco.
+
+---
+
+## Paridade com o Claude Code (plano consolidado)
+
+> **Detalhamento de contrato, limites e critérios de aceite:**
+> [`specs/device-execution.md`](./device-execution.md). Esta seção consolida o
+> que falta para o driver oferecer **todas as primitivas de execução** que o
+> Claude Code usa para operar a máquina do usuário, sem mover o cérebro para o
+> driver.
+
+**Poder ≠ permissão.** O driver ganha a capacidade técnica; o app continua
+decidindo o que pode rodar (Modo Leitura/Construtor + Pedir confirmação/Poder
+Total). Planejamento, todo list, subagents, memória, MCP, hooks e skills
+continuam sendo cérebro e não vão para o driver.
+
+### Mapa de paridade
+
+| Capacidade | Claude Code | Driver hoje | Entrega |
+|---|---|---|---|
+| Shell/scripts | `Bash` | ✅ `shell` (Windows, 60 s, 1 comando em voo) | Fase 4 (jobs) e Fase 6 (macOS/Linux) |
+| Shell persistente (cwd/env entre comandos) | sessão viva | ❌ | Fase 4 (opcional) |
+| Background + streaming + cancelar | `run_in_background`, `BashOutput`, `KillShell` | ❌ | Fase 4 |
+| Ler arquivo com offset/limit | `Read` | ✅ `read-file` | — |
+| Escrever arquivo | `Write` | ✅ `write-file` | — |
+| Editar vários trechos | `Edit`/`MultiEdit` | ✅ `apply-patch` atômico | — |
+| Buscar arquivos/texto | `Glob`/`Grep` | ✅ `glob`, `grep` | — |
+| Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
+| Processos | `ps`, `top`, `kill` | ❌ | Fase 3 |
+| Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
+| Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
+| GUI/UIA, mouse, teclado, janelas | ❌ | ✅ | diferencial do Spectral |
+| Sistema (volume, brilho, energia) | via shell | ❌ | Fase 5b |
+| Navegador | via MCP/Playwright | ❌ | Fase 5d |
+| Elevação/UAC | manual | ❌ | Fase 5e (opt-in) |
+
+### Fase 2 — Arquivos completos (M) — ✅ implementada
+
+Mesmo `FileSandbox` atual, com raízes unificadas ao shell (home + pasta padrão):
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `mkdir` | `{ path, recursive? }` | write |
+| `stat` | `{ path }` — tipo, tamanho, datas, modo, symlink sem seguir | read |
+| `copy` | `{ from, to, overwrite?, recursive? }` | write |
+| `move` | `{ from, to, overwrite? }` (rename é o caso do mesmo diretório) | write |
+| `delete` | `{ path, recursive?, permanent? }` | **destructive** |
+| `apply-patch` | `{ path, patches: [{ oldText, newText, replaceAll? }] }` | write |
+
+- `delete` usa a lixeira por padrão; `permanent: true` exige aprovação.
+- Nunca seguir symlink em `delete` recursivo, `copy` ou `move`.
+- `copy`/`move` validam origem e destino; `overwrite` é explícito.
+- `apply-patch` é atômico, preserva CRLF/BOM e limita a 10 patches / 1 MB.
+- `zip`/`unzip` ficam opcionais: o shell resolve, e zip slip adiciona superfície.
+- Tools: `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
+  `device-delete`, `device-apply-patch`.
+- Fora do Windows, `delete` sem `permanent` retorna `unsupported_platform`.
+
+**Pronto quando:** organizar uma pasta (criar, copiar, mover, apagar para a
+lixeira) e editar vários trechos de um arquivo funcionarem com aprovação só no
+destrutivo, auditoria e verificação posterior. ✅
+
+### Fase 3 — Processos (M)
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `list-processes` | `{ filter?, limit? }` | read |
+| `start-process` | `{ command, args?, cwd?, detached?, env? }` | exec |
+| `kill-process` | `{ pid, force?, tree? }` | **destructive** |
+
+- `kill-process` só por **pid**; nome vira resolução ambígua e perigosa.
+- Lista de PIDs protegidos: driver, processos críticos do SO e o próprio app.
+  Tentativa retorna `protected_process`.
+- `start-process` é para apps/GUI e comandos soltos; scripts de fundo usam jobs.
+- Tools: `device-list-processes`, `device-start-process`, `device-kill-process`.
+
+**Pronto quando:** "o que está travando?", "abre o Chrome" e "mata esse
+processo" funcionarem com aprovação e auditoria, sem risco a processos críticos.
+
+### Fase 4 — Jobs e sessões (G)
+
+```ts
+job-start:  { script, shell?, cwd?, env?, label?, maxRuntimeMs? } → { jobId }
+job-status: { jobId } → { status, exitCode?, startedAt, durationMs, bytesOut }
+job-output: { jobId, cursor, maxBytes? } → { chunks[], nextCursor }
+job-cancel: { jobId } → { cancelled }
+job-list:   {} → { jobs[] }
+```
+
+- Buffer circular de 1 MB + log completo em arquivo temporário.
+- `job-output` incremental por `cursor`; o modelo não relê tudo.
+- `maxRuntimeMs` padrão de 30 min; cancelar mata a árvore de processos.
+- Até 3 jobs por dispositivo; comandos curtos não bloqueiam.
+- Backend mantém o registro e emite eventos; abortar o chat cancela os jobs.
+- Sessão persistente/PTY (`shell-session-*`) é opcional: cwd/env explícitos por
+  comando cobrem quase tudo; PTY só para REPLs interativos.
+
+**Pronto quando:** `npm run dev`, builds longos e watchers ficarem vivos além de
+60 s, com saída incremental, cancelamento e sem processo órfão.
+
+### Fase 5 — Expansão
+
+- **5a. Transferência binária (G):** `device-upload-file`/`device-download-file`
+  com streaming, progresso, limite e hash; nada de binário em base64 no comando.
+- **5b. Sistema (M):** volume, brilho, mídia, bloquear, dormir e
+  desligar/reiniciar (risco `system`).
+- **5c. Rede dedicada (opcional):** manter `curl` via `shell`; só criar
+  `http-request` se houver allowlist de domínios.
+- **5d. Playwright (G):** `browser-open/goto/find/action/text`, perfil isolado
+  por padrão e aprovação para enviar mensagem/comprar.
+- **5e. Elevação (M, opt-in):** `run-as-admin` com UAC explícito e aprovação;
+  nunca no fluxo automático.
+
+### Fase 6 — Multiplataforma e robustez (G)
+
+- macOS/Linux para shell, arquivos, processos e jobs; UIA/GUI segue Windows.
+- Negociação de capacidades, rate limit por dispositivo, auditoria com
+  referência de job (sem saída bruta).
+- Atualização do prompt a cada fase e `SYSTEM_PROMPT_VERSION++`.
+- Instalador/serviço/tray e auto-update (itens 10 e 11) continuam pré-requisito
+  para uso real, mas não bloqueiam a paridade técnica.
+
+### Ordem recomendada
+
+| Ordem | Entrega | Esforço | Valor |
+|---|---|---|---|
+| 1 | Fase 2 — arquivos completos ✅ | M | alto (organizar projetos) |
+| 2 | Fase 3 — processos | M | alto ("o que travou?") |
+| 3 | Fase 4 — jobs/background | G | altíssimo (dev server, builds) |
+| 4 | Fase 5a/5b — transferência + sistema | G/M | alto (uso diário) |
+| 5 | Fase 5d — Playwright | G | alto (web sem UIA) |
+| 6 | Fase 6 — macOS/Linux | G | expansão |
+
+Estimativa total: **4–6 semanas** de trabalho focado, com validação ao vivo em
+Windows a cada fase.
+
+> **Aviso:** o `shell` atual **não é uma sandbox de SO**. A restrição de `cwd`
+> limita apenas o diretório inicial; o script pode navegar e escrever em qualquer
+> lugar que o usuário alcance. Contenção real exigiria token restrito,
+> AppContainer ou Job Object, o que fica fora deste plano. A segurança prática
+> continua sendo modos + aprovação + auditoria + denylist.
+
+### Decisões pendentes
+
+Resolvidas na Fase 2:
+
+1. `delete` usa lixeira por padrão. ✅ (`permanent: true` para apagar de vez)
+2. Raízes de arquivo: home + pasta padrão; pastas extras na UI ficam para depois.
+   ✅
+3. Fase 2 inteira (arquivos); `zip`/`unzip` via shell. ✅
+
+Ainda abertas:
+
+4. Sessão persistente/PTY agora ou só jobs? (recomendado: jobs primeiro)
+5. macOS/Linux entram agora ou depois de jobs? (recomendado: depois)
+6. Playwright e elevação UAC entram no escopo? (recomendado: sim, nas fases
+   5d/5e)
 
 ---
 

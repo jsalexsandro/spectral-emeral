@@ -56,6 +56,12 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | — | `defaultWorkingDirectory` (campo do dispositivo) | `string | null` | Pasta padrão do dispositivo, retornada em `device-list`/`device-get` e enviada ao driver em `device:authenticated`. Usada como `cwd` padrão de `run-command`. |
 | `device-write-file` | Escreve/sobrescreve conteúdo de texto em um arquivo (gravação) | `{ deviceId, path, content }` | `write` com `path`, `size`, `created` |
 | `device-edit-file` | Substitui uma ocorrência exata de texto dentro de um arquivo (edição) | `{ deviceId, path, oldText, newText }` | `edit` com `path`, `replacements`, `oldTextLength`, `newTextLength` |
+| `device-mkdir` | Cria um diretório (gravação) | `{ deviceId, path, recursive? }` | `mkdir` com `path` e `created` |
+| `device-stat` | Consulta metadados de um caminho sem seguir links (somente leitura) | `{ deviceId, path }` | `stat` com tipo, tamanho, datas, modo, `isSymlink` e `linkTarget` |
+| `device-copy` | Copia arquivo ou árvore de diretórios (gravação) | `{ deviceId, from, to, overwrite?, recursive? }` | `copy` com `from`, `to`, `files` e `bytes` |
+| `device-move` | Move ou renomeia arquivo/diretório (gravação) | `{ deviceId, from, to, overwrite? }` | `move` com `from` e `to` |
+| `device-delete` | Apaga arquivo ou diretório, para a lixeira por padrão (destrutivo) | `{ deviceId, path, recursive?, permanent? }` | `delete` com `path`, `deleted` e `toTrash` |
+| `device-apply-patch` | Aplica vários trechos exatos de forma atômica (edição) | `{ deviceId, path, patches: [{ oldText, newText, replaceAll? }] }` | `patch` com `path`, `applied` e `replacements` |
 
 ### Detalhes
 
@@ -159,6 +165,32 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   dentro de um arquivo. O texto antigo deve aparecer exatamente uma vez no
   arquivo; se aparecer mais de uma vez, a edição é rejeitada. Máximo de 1 MB
   no arquivo resultante.
+- `device-mkdir` cria um diretório e, com `recursive: true` (padrão), também os
+  intermediários. Se já existir como diretório, retorna `created: false` sem
+  erro.
+- `device-stat` usa `lstat` e não segue o último componente: informa `type`
+  (`file`, `directory`, `symlink`, `other`), tamanho, datas, modo, `isSymlink` e
+  `linkTarget`. Use antes de copiar, mover ou apagar.
+- `device-copy` copia arquivos ou árvores (`recursive: true` por padrão) arquivo
+  por arquivo e ignora symlinks. `overwrite: false` (padrão) falha se o destino
+  existir; copiar um diretório para dentro dele mesmo retorna
+  `invalid_destination`.
+- `device-move` usa `rename` no mesmo volume e copia + apaga a origem entre
+  volumes. Renomear no mesmo diretório é só usar `from`/`to`. `overwrite: false`
+  (padrão) falha se o destino existir.
+- `device-delete` envia para a lixeira do Windows por padrão (`toTrash: true`).
+  `permanent: true` apaga de vez e só deve ser usado com confirmação explícita.
+  Diretórios com conteúdo exigem `recursive: true`; symlinks são removidos como
+  link, nunca seguidos. As raízes permitidas (home e pasta padrão) não podem ser
+  apagadas (`protected_path`). Fora do Windows, sem `permanent` retorna
+  `unsupported_platform`.
+- `device-apply-patch` aplica de 1 a 10 patches em uma única gravação: se algum
+  `oldText` não existir ou aparecer mais de uma vez (sem `replaceAll: true`),
+  nada é gravado. Preserva CRLF/BOM e limita o resultado a 1 MB. Prefira ler o
+  arquivo antes e conferir com `device-read-file`/`device-stat` depois.
+- Todas as operações de arquivo compartilham o sandbox: home + pasta padrão do
+  dispositivo, denylist e bloqueio de symlink. Caminhos relativos resolvem contra
+  a pasta padrão; `~` resolve contra o home.
 - `device-screenshot` captura a tela inteira (todos os monitores), uma janela
   por `windowId`, um monitor pelo índice (`0` = primeiro) ou uma `region`. Use
   apenas um alvo por captura. Com `windowId`, o driver foca a janela e captura

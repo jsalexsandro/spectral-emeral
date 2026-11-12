@@ -1,7 +1,9 @@
 # Execução no dispositivo — o driver como “Claude Code sem cérebro”
 
-> **Status:** Fase 0 (fundação) e Fase 1 (shell MVP) implementadas. As fases 2
-> (arquivos/processos) e 3 (jobs) seguem como plano. Detalha o item 7 de
+> **Status:** Fase 0 (fundação), Fase 1 (shell MVP) e Fase 2 de arquivos
+> (`mkdir`, `stat`, `copy`, `move`, `delete` para a lixeira e `apply-patch`)
+> implementadas. Processos (restante da Fase 2) e jobs (Fase 3) seguem como
+> plano. Detalha o item 7 de
 > [`specs/devices-evolution.md`](./devices-evolution.md) e é a base para os
 > itens 5, 8 e 13.
 >
@@ -42,9 +44,9 @@
 | Shell / scripts | Bash livre, cwd, exit code | allowlist `dir`, `type`, `echo`… | `shell` (item 7a) |
 | Descobrir ambiente | `env`, `which`, `uname` | `get-os` básico | `env` (item 7b) |
 | Ler arquivo | `Read` com offset/limit | ✅ `read-file` | — |
-| Escrever/editar | `Write`, `Edit`, `MultiEdit` | ✅ `write-file`, `edit-file` (1 ocorrência) | `apply-patch` (item 7c) |
+| Escrever/editar | `Write`, `Edit`, `MultiEdit` | ✅ `write-file`, `edit-file`, `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`, `Grep` (rg) | ✅ `glob`, `grep` | — |
-| Operações de arquivo | `cp`, `mv`, `rm`, `mkdir` | ❌ | item 5 |
+| Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira) | `zip`/`unzip` via shell |
 | Processos | `ps`, `kill`, `top` | ❌ | item 8 |
 | Comandos longos | background + streaming | ❌ timeout 60 s, 1 por PC | jobs (item 13) |
 | Rede | `curl`/WebFetch | ❌ (bloqueado) | via `shell` no Modo Construtor |
@@ -170,29 +172,43 @@ DeviceEnv = {
 - `capabilities` evita tool inútil: se não tem `pwsh`, o modelo vê `powershell`.
 - Também alimenta o item 12 (negociação de capacidades) da UI.
 
-### 4.3 Arquivos (itens 5 e 7c)
+### 4.3 Arquivos (itens 5 e 7c) — ✅ implementado
 
-Manter o `FileSandbox` atual e adicionar:
+Estado real do contrato em `spectral/shared/device-commands.ts`, executado por
+`FileSandbox` (`spectral/driver/src/commands/files.ts`):
 
-| Comando | Entrada | Observação |
-|---|---|---|
-| `mkdir` | `{ path, recursive? }` | idempotente |
-| `copy` | `{ from, to, overwrite? }` | recursivo |
-| `move` | `{ from, to, overwrite? }` | |
-| `rename` | `{ path, name }` | mesmo diretório |
-| `delete` | `{ path, recursive?, permanent? }` | lixeira por padrão |
-| `stat` | `{ path }` | tipo, tamanho, datas, permissões |
-| `zip` | `{ paths[], to }` | limite de tamanho |
-| `unzip` | `{ from, to }` | proteção contra zip slip |
-| `apply-patch` | `{ path, patches[] }` | multi-edição determinística |
+| Comando | Entrada | Resultado | Risco | Observação |
+|---|---|---|---|---|
+| `mkdir` | `{ path, recursive? }` | `mkdir: { path, created }` | write | `recursive` padrão `true`; idempotente quando já é diretório |
+| `stat` | `{ path }` | `stat: { path, type, size, modifiedAt, createdAt, mode, isSymlink, linkTarget }` | read | `lstat` sem seguir o último componente |
+| `copy` | `{ from, to, overwrite?, recursive? }` | `copy: { from, to, files, bytes }` | write | árvore arquivo por arquivo; symlinks ignorados |
+| `move` | `{ from, to, overwrite? }` | `move: { from, to }` | write | `rename` é o caso de mesmo diretório; `EXDEV` copia e apaga |
+| `delete` | `{ path, recursive?, permanent? }` | `delete: { path, deleted, toTrash }` | **destructive** | lixeira por padrão; `permanent: true` apaga de vez |
+| `apply-patch` | `{ path, patches: [{ oldText, newText, replaceAll? }] }` | `patch: { path, applied, replacements }` | write | atômico; preserva CRLF/BOM; 10 patches / 1 MB |
+| `zip`/`unzip` | — | — | — | opcionais via `shell`; zip slip fica fora do contrato |
 
-Regras:
+Regras implementadas:
 
-- `delete` exige aprovação e usa lixeira quando possível.
-- `copy`/`move` validam origem e destino no sandbox.
-- `apply-patch` substitui o `edit-file` de 1 ocorrência para edições maiores,
-  com `context` antes/depois e falha atômica (nenhuma escrita parcial).
-- Raízes permitidas vêm da política, não do `homedir` fixo.
+- Raízes do `FileSandbox` = home + `defaultWorkingDirectory` + raízes extras.
+  Caminhos relativos resolvem contra a pasta padrão; `~` contra o home.
+- `delete` usa a lixeira do Windows (`Microsoft.VisualBasic.FileIO.FileSystem`,
+  `SendToRecycleBin`, timeout de 20 s). Fora do Windows, sem lixeira, retorna
+  `unsupported_platform`; `permanent: true` usa `rm` em qualquer plataforma.
+- As raízes permitidas não podem ser apagadas (`protected_path`). Diretório com
+  conteúdo exige `recursive: true`; symlink é removido como link, nunca seguido.
+- `copy`/`move` validam origem e destino, recusam destino dentro da origem
+  (`invalid_destination`) e só substituem com `overwrite: true`.
+- `apply-patch` aplica todos os patches ou nenhum: cada `oldText` precisa ocorrer
+  exatamente uma vez, salvo `replaceAll: true`; detecta EOL dominante e preserva
+  BOM.
+- Erros: `path_outside_root`, `path_denied`, `path_not_found`,
+  `parent_not_found`, `path_exists`, `symlink_not_allowed`, `not_a_file`,
+  `directory_not_empty`, `directory_requires_recursive`, `protected_path`,
+  `destination_not_found`, `invalid_destination`, `permission_denied`,
+  `trash_failed`, `text_not_found`, `multiple_matches`, `binary_file`,
+  `file_too_large`, `unsupported_platform`.
+- Tools no app: `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
+  `device-delete`, `device-apply-patch`.
 
 ### 4.4 Processos (item 8)
 
@@ -385,12 +401,27 @@ funciona com aprovação, saída capturada e auditoria; comandos de leitura não
 pedem aprovação. ✅ (builds/servidores longos continuam na Fase 3: jobs.)
 
 ### Fase 2 — Arquivos e processos (M)
-- `mkdir`, `copy`, `move`, `rename`, `delete`, `stat`, `zip`, `unzip`,
-  `apply-patch`.
+
+Arquivos — ✅ implementado (Windows):
+- `mkdir`, `stat`, `copy`, `move` (renomear incluso), `delete` para a lixeira e
+  `apply-patch` atômico; `zip`/`unzip` ficam no `shell`.
+- Raízes unificadas com o shell (home + pasta padrão), `overwrite` explícito,
+  symlinks nunca seguidos e raízes protegidas contra exclusão.
+- Tools `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
+  `device-delete` (risco `destructive`) e `device-apply-patch` (risco `write`).
+- Prompt atualizado (`SYSTEM_PROMPT_VERSION = 31`).
+- macOS/Linux: `delete` sem `permanent` retorna `unsupported_platform`; o
+  restante opera por plataforma no driver.
+
+Processos — pendente:
 - `list-processes`, `start-process`, `kill-process`.
 
-**Pronto quando:** organizar uma pasta, editar múltiplos trechos de um arquivo e
-encerrar um processo funcionam com aprovação e auditoria.
+**Arquivos prontos quando:** organizar uma pasta (criar, copiar, mover, apagar
+para a lixeira) e editar vários trechos de um arquivo funcionam com aprovação só
+no destrutivo, auditoria e verificação posterior. ✅
+
+**Fase completa quando:** encerrar um processo também funcionar com aprovação e
+auditoria.
 
 ### Fase 3 — Jobs (G)
 - `job-start/status/output/cancel/list` + buffer + streaming no chat.
