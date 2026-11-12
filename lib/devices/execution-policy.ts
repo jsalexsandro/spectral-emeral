@@ -32,6 +32,7 @@ export const DEVICE_TOOL_RISKS = [
   "input",
   "write",
   "exec",
+  "launch",
   "destructive",
   "system",
 ] as const
@@ -128,7 +129,7 @@ const INPUT_TOOLS = new Set<string>([
   "device-scroll",
   "device-drag",
   "device-open-url",
-  "device-open-app",
+  "device-open-path",
   "device-focus-window",
   "device-minimize-window",
   "device-maximize-window",
@@ -144,6 +145,8 @@ const WRITE_TOOLS = new Set<string>([
   "device-copy",
   "device-move",
   "device-apply-patch",
+  "device-register-app",
+  "device-remove-app",
 ])
 
 const EXEC_TOOLS = new Set<string>([
@@ -226,6 +229,20 @@ function collectCommandText(toolName: string, input: unknown): string {
     return [command, ...args].join(" ")
   }
 
+  if (toolName === "device-open-app") {
+    const target =
+      typeof record.path === "string"
+        ? record.path
+        : typeof record.appId === "string"
+          ? record.appId
+          : ""
+    const args = Array.isArray(record.args)
+      ? record.args.filter((item): item is string => typeof item === "string")
+      : []
+
+    return [target, ...args].join(" ")
+  }
+
   return ""
 }
 
@@ -247,6 +264,29 @@ export function classifyDeviceToolRisk(
 
   if (READ_TOOLS.has(toolName)) {
     return "read"
+  }
+
+  if (toolName === "device-open-app") {
+    const text = collectCommandText(toolName, input)
+    const record =
+      typeof input === "object" && input !== null && !Array.isArray(input)
+        ? (input as Record<string, unknown>)
+        : {}
+    const args = Array.isArray(record.args) ? record.args : []
+    const hasCwd =
+      typeof record.cwd === "string" && record.cwd.trim().length > 0
+
+    if (matchesAny(SYSTEM_COMMAND_PATTERNS, text)) {
+      return "system"
+    }
+
+    if (matchesAny(DESTRUCTIVE_COMMAND_PATTERNS, text)) {
+      return "destructive"
+    }
+
+    // Sem argumentos é só abrir o app; com argumentos o app passa a executar
+    // algo em nome do modelo, então pede aprovação como qualquer launch.
+    return args.length > 0 || hasCwd ? "launch" : "input"
   }
 
   if (INPUT_TOOLS.has(toolName)) {
@@ -299,6 +339,7 @@ const RISK_LABELS: Record<DeviceToolRisk, string> = {
   input: "interação",
   write: "escrita",
   exec: "execução",
+  launch: "abertura com argumentos",
   destructive: "destrutiva",
   system: "de sistema",
 }
@@ -335,14 +376,16 @@ export function evaluateDeviceToolCall({
 
   if (
     policy.confirmDestructive &&
-    (risk === "destructive" || risk === "system")
+    (risk === "destructive" || risk === "system" || risk === "launch")
   ) {
     return {
       action: "approval",
       reason:
         risk === "system"
           ? "Ação de sistema (energia, contas, serviços ou segurança). Confirme antes de aplicar."
-          : "Ação potencialmente destrutiva (apaga, encerra processo ou descarta alterações). Confirme antes de aplicar.",
+          : risk === "launch"
+            ? "O aplicativo vai receber argumentos ou diretório de trabalho. Confirme para abrir."
+            : "Ação potencialmente destrutiva (apaga, encerra processo ou descarta alterações). Confirme antes de aplicar.",
     }
   }
 

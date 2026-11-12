@@ -52,7 +52,26 @@ export function readDeviceToolCommand(
     toolName === "device-open-app" &&
     (typeof record.appId === "string" || typeof record.path === "string")
   ) {
-    return typeof record.path === "string" ? record.path : String(record.appId)
+    const target =
+      typeof record.path === "string" ? record.path : String(record.appId)
+    const args = Array.isArray(record.args)
+      ? record.args.filter((item): item is string => typeof item === "string")
+      : []
+    const cwd = typeof record.cwd === "string" ? ` (cwd ${record.cwd})` : ""
+
+    return [target, ...args].join(" ") + cwd
+  }
+
+  if (toolName === "device-open-path" && typeof record.path === "string") {
+    return record.path
+  }
+
+  if (toolName === "device-register-app" && typeof record.path === "string") {
+    return `${String(record.name ?? "app")} -> ${record.path}`
+  }
+
+  if (toolName === "device-remove-app" && typeof record.appId === "string") {
+    return record.appId
   }
 
   if (toolName === "device-find-app" && typeof record.query === "string") {

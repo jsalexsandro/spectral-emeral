@@ -53,6 +53,13 @@ describe("execution policy", () => {
     }
   })
 
+  it("asks approval for launch when confirming, allows under full power", () => {
+    expect(decide(true, "build", "launch")).toBe("approval")
+    expect(decide(false, "build", "launch")).toBe("allow")
+    expect(decide(true, "plan", "launch")).toBe("deny")
+    expect(decide(false, "plan", "launch")).toBe("deny")
+  })
+
   it("releases destructive and system actions under full power", () => {
     for (const risk of IRREVERSIBLE) {
       expect(decide(false, "build", risk)).toBe("allow")
@@ -108,6 +115,51 @@ describe("device tool risk classification", () => {
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "whoami" }),
     ).toBe("exec")
+  })
+
+  it("classifica open-app sem argumentos como interação", () => {
+    expect(
+      classifyDeviceToolRisk("device-open-app", { appId: "zed-7eb333" }),
+    ).toBe("input")
+    expect(
+      classifyDeviceToolRisk("device-open-app", { path: "C:\\Zed\\Zed.exe" }),
+    ).toBe("input")
+  })
+
+  it("promove open-app com args ou cwd para lançamento", () => {
+    expect(
+      classifyDeviceToolRisk("device-open-app", {
+        appId: "zed-7eb333",
+        args: ["."],
+      }),
+    ).toBe("launch")
+    expect(
+      classifyDeviceToolRisk("device-open-app", {
+        appId: "zed-7eb333",
+        cwd: "C:\\projeto",
+      }),
+    ).toBe("launch")
+    expect(
+      classifyDeviceToolRisk("device-open-app", {
+        path: "C:\\Zed\\Zed.exe",
+        args: ["--verbose"],
+      }),
+    ).toBe("launch")
+  })
+
+  it("classifica open-path e register/remove", () => {
+    expect(
+      classifyDeviceToolRisk("device-open-path", { path: "C:\\arquivo.pdf" }),
+    ).toBe("input")
+    expect(
+      classifyDeviceToolRisk("device-register-app", {
+        name: "Zed",
+        path: "C:\\Zed\\Zed.exe",
+      }),
+    ).toBe("write")
+    expect(
+      classifyDeviceToolRisk("device-remove-app", { appId: "zed-7eb333" }),
+    ).toBe("write")
   })
 })
 
