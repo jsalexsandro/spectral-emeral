@@ -36,7 +36,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DeviceSummary } from "@/lib/devices/types"
-import type { DeviceCustomApp } from "@/lib/devices/custom-apps"
 import {
   DEVICE_CONFIRMATION_DESCRIPTIONS,
   DEVICE_CONFIRMATION_LABELS,
@@ -120,9 +119,6 @@ export function DevicesSection() {
   >(null)
   const [folderValue, setFolderValue] = useState("")
   const [confirmDestructive, setConfirmDestructive] = useState(true)
-  const [customApps, setCustomApps] = useState<DeviceCustomApp[]>([])
-  const [customAppName, setCustomAppName] = useState("")
-  const [customAppPath, setCustomAppPath] = useState("")
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const requestId = useRef(0)
@@ -309,38 +305,7 @@ export function DevicesSection() {
     setDeviceSettingsDevice(device)
     setFolderValue(device.defaultWorkingDirectory ?? "")
     setConfirmDestructive(device.executionPolicy.confirmDestructive)
-    setCustomApps(device.customApps ?? [])
-    setCustomAppName("")
-    setCustomAppPath("")
     setDeviceSettingsOpen(true)
-  }
-
-  function handleAddCustomApp() {
-    const name = customAppName.trim()
-    const path = customAppPath.trim()
-
-    if (!name || !path) {
-      toast.error("Informe o nome e o caminho do aplicativo.")
-      return
-    }
-
-    if (customApps.length >= 50) {
-      toast.error("Limite de 50 apps personalizados por dispositivo.")
-      return
-    }
-
-    if (customApps.some((app) => app.name.toLowerCase() === name.toLowerCase())) {
-      toast.error("Já existe um app personalizado com esse nome.")
-      return
-    }
-
-    setCustomApps((current) => [...current, { name, path }])
-    setCustomAppName("")
-    setCustomAppPath("")
-  }
-
-  function handleRemoveCustomApp(name: string) {
-    setCustomApps((current) => current.filter((app) => app.name !== name))
   }
 
   async function handleSaveSettings(event: React.FormEvent) {
@@ -361,7 +326,6 @@ export function DevicesSection() {
           body: JSON.stringify({
             defaultWorkingDirectory: folderValue.trim() || null,
             confirmDestructive,
-            customApps,
           }),
         },
       )
@@ -383,7 +347,6 @@ export function DevicesSection() {
       setDeviceSettingsDevice(data.device)
       setFolderValue(data.device.defaultWorkingDirectory ?? "")
       setConfirmDestructive(data.device.executionPolicy.confirmDestructive)
-      setCustomApps(data.device.customApps ?? [])
     } catch {
       toast.error("Não foi possível salvar as configurações.")
     } finally {
@@ -710,9 +673,6 @@ export function DevicesSection() {
             setDeviceSettingsDevice(null)
             setFolderValue("")
             setConfirmDestructive(true)
-            setCustomApps([])
-            setCustomAppName("")
-            setCustomAppPath("")
           }
         }}
       >
@@ -827,74 +787,6 @@ export function DevicesSection() {
                     Vale para todos os chats com este dispositivo. O Modo Leitura
                     no chat continua bloqueando qualquer alteração.
                   </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="settings-custom-app-name">
-                    Apps personalizados
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Cadastre executáveis fora da descoberta automática. O nome
-                    aparece nas buscas do chat e o caminho precisa ser absoluto
-                    (por exemplo, C:\Programas\App\App.exe).
-                  </p>
-
-                  {customApps.length > 0 && (
-                    <ul className="space-y-1.5">
-                      {customApps.map((app) => (
-                        <li
-                          key={app.name}
-                          className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              {app.name}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {app.path}
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Remover ${app.name}`}
-                            onClick={() => handleRemoveCustomApp(app.name)}
-                          >
-                            <Trash2 />
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]">
-                    <Input
-                      id="settings-custom-app-name"
-                      value={customAppName}
-                      onChange={(event) => setCustomAppName(event.target.value)}
-                      placeholder="Nome do app"
-                      maxLength={80}
-                      className="h-10"
-                    />
-                    <Input
-                      aria-label="Caminho do aplicativo"
-                      value={customAppPath}
-                      onChange={(event) => setCustomAppPath(event.target.value)}
-                      placeholder="C:\Programas\App\App.exe"
-                      maxLength={1024}
-                      className="h-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleAddCustomApp}
-                      disabled={!customAppName.trim() || !customAppPath.trim()}
-                    >
-                      <Plus />
-                      Adicionar
-                    </Button>
-                  </div>
                 </div>
               </>
             )}

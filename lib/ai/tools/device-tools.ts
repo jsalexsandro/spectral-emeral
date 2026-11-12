@@ -7,16 +7,13 @@ import {
   type SendDeviceCommandOutput,
 } from "@/lib/devices/command-client"
 import {
-  findCustomApp,
-  matchCustomApps,
-  parseDeviceCustomApps,
-  type DeviceCustomApp,
-} from "@/lib/devices/custom-apps"
-import {
   DEVICE_APP_ID_PATTERN,
   DEVICE_APP_QUERY_MAX_LENGTH,
   DEVICE_APP_RESULTS_MAX,
   DEVICE_APP_RESULTS_DEFAULT,
+  DEVICE_APP_ARGS_MAX,
+  DEVICE_APP_ARG_MAX_LENGTH,
+  DEVICE_APP_NAME_MAX_LENGTH,
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
@@ -38,6 +35,7 @@ import {
   DEVICE_PATH_MAX_LENGTH,
   DEVICE_PATTERN_MAX_LENGTH,
   isAbsoluteAppPath,
+  hasAppPathExtension,
   DEVICE_FILE_DEPTH_DEFAULT,
   DEVICE_FILE_DEPTH_MAX,
   DEVICE_FILE_DEPTH_MIN,
@@ -104,7 +102,6 @@ import {
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   parseDeviceCommand,
-  type DeviceAppInfo,
   type DeviceCommand,
   type DeviceKey,
   type DeviceKeyModifier,
@@ -141,6 +138,9 @@ export const DEVICE_LIST_TOOL_NAME = "device-list"
 export const DEVICE_ONLINE_LIST_TOOL_NAME = "device-online-list"
 export const DEVICE_OPEN_URL_TOOL_NAME = "device-open-url"
 export const DEVICE_OPEN_APP_TOOL_NAME = "device-open-app"
+export const DEVICE_OPEN_PATH_TOOL_NAME = "device-open-path"
+export const DEVICE_REGISTER_APP_TOOL_NAME = "device-register-app"
+export const DEVICE_REMOVE_APP_TOOL_NAME = "device-remove-app"
 export const DEVICE_LIST_APPS_TOOL_NAME = "device-list-apps"
 export const DEVICE_FIND_APP_TOOL_NAME = "device-find-app"
 export const DEVICE_GET_OS_TOOL_NAME = "device-get-os"
@@ -204,6 +204,42 @@ export const deviceOpenUrlInputSchema = z.object({
     }),
 })
 
+const deviceAppArgSchema = z
+  .string()
+  .min(1)
+  .max(DEVICE_APP_ARG_MAX_LENGTH)
+  .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+    message: "O argumento não pode conter caracteres de controle.",
+  })
+
+const deviceAppArgsSchema = z
+  .array(deviceAppArgSchema)
+  .max(DEVICE_APP_ARGS_MAX)
+  .describe(
+    "Argumentos de linha de comando passados ao app, um por item (ex.: [\".\"] para `zed .`). Use apenas quando o usuário pedir para abrir algo específico.",
+  )
+
+const deviceAppCwdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(DEVICE_PATH_MAX_LENGTH)
+  .refine(isAbsoluteAppPath, {
+    message: "Use um caminho absoluto para o diretório de trabalho.",
+  })
+  .describe(
+    "Diretório de trabalho do app. Passe o projeto/pasta quando usar argumentos como `.`.",
+  )
+
+const deviceAppPathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(DEVICE_PATH_MAX_LENGTH)
+  .refine(isAbsoluteAppPath, {
+    message: "Use um caminho absoluto para o executável ou atalho.",
+  })
+
 export const deviceOpenAppInputSchema = z
   .object({
     deviceId: deviceIdSchema,
@@ -214,18 +250,13 @@ export const deviceOpenAppInputSchema = z
       .describe(
         "Id do aplicativo retornado por device-list-apps ou device-find-app.",
       ),
-    path: z
-      .string()
-      .trim()
-      .min(1)
-      .max(DEVICE_PATH_MAX_LENGTH)
-      .refine(isAbsoluteAppPath, {
-        message: "Use um caminho absoluto para o executável ou atalho.",
-      })
+    path: deviceAppPathSchema
       .optional()
       .describe(
         "Caminho absoluto do executável ou atalho, para apps fora da descoberta automática.",
       ),
+    args: deviceAppArgsSchema.optional(),
+    cwd: deviceAppCwdSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if ((value.appId === undefined) === (value.path === undefined)) {
@@ -236,6 +267,50 @@ export const deviceOpenAppInputSchema = z
       })
     }
   })
+
+export const deviceOpenPathInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z
+    .string()
+    .trim()
+    .min(1)
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .refine(isAbsoluteAppPath, {
+      message: "Use um caminho absoluto para o arquivo ou pasta.",
+    })
+    .refine((value) => !hasAppPathExtension(value), {
+      message:
+        "Arquivos executáveis devem ser abertos com device-open-app, que pede aprovação.",
+    })
+    .describe("Caminho absoluto de um arquivo ou pasta a abrir no app padrão."),
+})
+
+export const deviceRegisterAppInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(DEVICE_APP_NAME_MAX_LENGTH)
+    .describe("Nome amigável do aplicativo no catálogo do dispositivo."),
+  path: deviceAppPathSchema.describe(
+    "Caminho absoluto do executável ou atalho existente no dispositivo.",
+  ),
+  args: deviceAppArgsSchema
+    .optional()
+    .describe("Argumentos padrão usados quando este app for aberto."),
+  cwd: deviceAppCwdSchema
+    .optional()
+    .describe("Diretório de trabalho padrão deste app."),
+})
+
+export const deviceRemoveAppInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  appId: z
+    .string()
+    .regex(DEVICE_APP_ID_PATTERN, "Identificador de aplicativo inválido.")
+    .describe("Id do app no catálogo do dispositivo."),
+})
 
 export const deviceListAppsInputSchema = z.object({
   deviceId: deviceIdSchema,
@@ -1168,51 +1243,6 @@ async function listOwnedDevices(userId: string): Promise<DeviceToolSummary[]> {
   return rows.map((row) => toDeviceToolSummary(row, now))
 }
 
-async function listDeviceCustomApps(
-  userId: string,
-  deviceId: string,
-): Promise<DeviceCustomApp[]> {
-  const { db } = await import("@/db")
-
-  const [row] = await db
-    .select({ customApps: devices.customApps })
-    .from(devices)
-    .where(
-      and(
-        eq(devices.id, deviceId),
-        eq(devices.userId, userId),
-        isNull(devices.revokedAt),
-      ),
-    )
-    .limit(1)
-
-  return parseDeviceCustomApps(row?.customApps)
-}
-
-function mergeApps(
-  base: readonly DeviceAppInfo[],
-  extra: readonly DeviceAppInfo[],
-  limit: number,
-): DeviceAppInfo[] {
-  const merged: DeviceAppInfo[] = []
-  const seen = new Set<string>()
-
-  for (const app of [...base, ...extra]) {
-    if (seen.has(app.id)) {
-      continue
-    }
-
-    seen.add(app.id)
-    merged.push(app)
-
-    if (merged.length >= limit) {
-      break
-    }
-  }
-
-  return merged
-}
-
 function toCommandToolResult(
   deviceId: string,
   output: SendDeviceCommandOutput,
@@ -1388,22 +1418,45 @@ const openUrlDescription = [
 const openAppDescription = [
   "Abre um aplicativo em um dispositivo online.",
   "Informe `appId` de um app retornado por device-list-apps ou device-find-app, ou `path` absoluto de um executável/atalho para apps fora da descoberta.",
-  "No Windows, a descoberta cobre atalhos do Menu Iniciar e o registro App Paths; apps cadastrados pelo usuário em Configurações → Dispositivos também aparecem na lista.",
+  "Para passar argumentos (ex.: `zed .`, `code C:\\projeto`), use `args` com um item por argumento e informe `cwd` quando o argumento for um caminho relativo. Abrir com args/cwd pede aprovação no chat.",
+  "Sem `cwd`, o app herda a pasta padrão do dispositivo (home), não a pasta do projeto: para abrir o projeto atual, passe o caminho em `args` ou em `cwd`.",
+  "No Windows, a descoberta cobre atalhos do Menu Iniciar e o registro App Paths. Apps fora da descoberta podem ser cadastrados com device-register-app.",
   "Use device-find-app quando não souber o id exato; use `refresh: true` se o usuário acabou de instalar o app.",
+  "Se a abertura falhar com `app_not_found`, tente `device-find-app` com outro termo ou `device-register-app` com o caminho informado pelo usuário. Se o driver não suportar o comando (`unsupported_platform` ou comando interno indisponível), use o terminal interno (`device-shell`): no Windows `Start-Process`, no macOS `open`, no Linux `xdg-open`. Explique ao usuário que está usando a alternativa via terminal.",
+].join("\n")
+
+const openPathDescription = [
+  "Abre um arquivo ou pasta no aplicativo padrão do dispositivo, sem pedir aprovação.",
+  "Use para abrir um PDF, imagem, documento ou uma pasta no Explorer/Finder.",
+  "Não aceita executáveis, atalhos ou scripts: para isso use device-open-app, que pede aprovação.",
+  "Informe o caminho absoluto. Caminhos inexistentes retornam `path_not_found`.",
+].join("\n")
+
+const registerAppDescription = [
+  "Cadastra um aplicativo no catálogo local do dispositivo (driver), com nome, caminho absoluto e, opcionalmente, argumentos e diretório de trabalho padrão.",
+  "Use quando o usuário informar um executável fora da descoberta automática ou pedir para sempre abrir um app com os mesmos argumentos.",
+  "O caminho precisa existir no dispositivo. O cadastro não concede permissão: abrir o app continua seguindo a política do dispositivo.",
+  "Use device-list-apps para descobrir o id retornado e device-remove-app para remover depois.",
+].join("\n")
+
+const removeAppDescription = [
+  "Remove um aplicativo do catálogo local do dispositivo.",
+  "Use o id retornado por device-list-apps ou device-register-app. Isso não desinstala nem apaga o executável; só esquece a entrada do catálogo.",
 ].join("\n")
 
 const listAppsDescription = [
   "Lista os aplicativos que o driver consegue abrir em um dispositivo online.",
-  "No Windows, inclui apps fixos, atalhos do Menu Iniciar e entradas do App Paths, além dos apps personalizados cadastrados no dispositivo.",
+  "Inclui apps fixos, atalhos do Menu Iniciar, entradas do App Paths e os apps cadastrados no catálogo local do driver (`source: custom`).",
   "Use `query` para filtrar por nome, id ou caminho e `refresh: true` para refazer a descoberta após instalar algo.",
   "Use o `id` retornado em device-open-app.",
 ].join("\n")
 
 const findAppDescription = [
   "Verifica se um aplicativo existe no PC e retorna as correspondências.",
-  "Aceita nome, id ou parte do caminho; a resposta traz `found` e a lista de apps com id, nome, origem e caminho quando disponível.",
+  "Aceita nome, id ou parte do caminho; a resposta traz `found` e a lista de apps com id, nome, origem (`custom` para o catálogo do driver) e caminho quando disponível.",
   "Use antes de device-open-app quando não tiver certeza do id ou quando o usuário perguntar se um app está instalado.",
   "`refresh: true` refaz a descoberta (Menu Iniciar + App Paths) em vez de usar o cache.",
+  "Se nada for encontrado, peça o caminho ao usuário e cadastre com device-register-app — não invente ids nem caminhos.",
 ].join("\n")
 
 const getOsDescription = [
@@ -1717,12 +1770,16 @@ export function createDeviceTools(
     [DEVICE_OPEN_APP_TOOL_NAME]: tool({
       description: openAppDescription,
       inputSchema: deviceOpenAppInputSchema,
-      execute: async ({ deviceId, appId, path }) => {
+      execute: async ({ deviceId, appId, path, args, cwd }) => {
         try {
           if (path) {
             return await runCommand(deviceId, {
               command: "open-app",
-              input: { path },
+              input: {
+                path,
+                ...(args && args.length > 0 ? { args } : {}),
+                ...(cwd ? { cwd } : {}),
+              },
             })
           }
 
@@ -1734,19 +1791,13 @@ export function createDeviceTools(
             }
           }
 
-          const customApps = await listDeviceCustomApps(userId, deviceId)
-          const custom = findCustomApp(customApps, appId)
-
-          if (custom) {
-            return await runCommand(deviceId, {
-              command: "open-app",
-              input: { path: custom.path },
-            })
-          }
-
           return await runCommand(deviceId, {
             command: "open-app",
-            input: { appId },
+            input: {
+              appId,
+              ...(args && args.length > 0 ? { args } : {}),
+              ...(cwd ? { cwd } : {}),
+            },
           })
         } catch (error) {
           return {
@@ -1760,34 +1811,87 @@ export function createDeviceTools(
         }
       },
     }),
+    [DEVICE_OPEN_PATH_TOOL_NAME]: tool({
+      description: openPathDescription,
+      inputSchema: deviceOpenPathInputSchema,
+      execute: async ({ deviceId, path }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "open-path",
+            input: { path },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-open-path.",
+          }
+        }
+      },
+    }),
+    [DEVICE_REGISTER_APP_TOOL_NAME]: tool({
+      description: registerAppDescription,
+      inputSchema: deviceRegisterAppInputSchema,
+      execute: async ({ deviceId, name, path, args, cwd }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "register-app",
+            input: {
+              name,
+              path,
+              ...(args && args.length > 0 ? { args } : {}),
+              ...(cwd ? { cwd } : {}),
+            },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-register-app.",
+          }
+        }
+      },
+    }),
+    [DEVICE_REMOVE_APP_TOOL_NAME]: tool({
+      description: removeAppDescription,
+      inputSchema: deviceRemoveAppInputSchema,
+      execute: async ({ deviceId, appId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "remove-app",
+            input: { appId },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-remove-app.",
+          }
+        }
+      },
+    }),
     [DEVICE_LIST_APPS_TOOL_NAME]: tool({
       description: listAppsDescription,
       inputSchema: deviceListAppsInputSchema,
       execute: async ({ deviceId, query, refresh, limit }) => {
         try {
-          const [result, customApps] = await Promise.all([
-            runCommand(deviceId, {
-              command: "list-apps",
-              input: {
-                ...(query !== undefined && query.length > 0 ? { query } : {}),
-                ...(refresh !== undefined ? { refresh } : {}),
-                limit,
-              },
-            }),
-            listDeviceCustomApps(userId, deviceId),
-          ])
-
-          if (!result.ok) {
-            return result
-          }
-
-          const apps = mergeApps(
-            result.apps ?? [],
-            matchCustomApps(customApps, query, limit),
-            limit,
-          )
-
-          return { ...result, apps }
+          return await runCommand(deviceId, {
+            command: "list-apps",
+            input: {
+              ...(query !== undefined && query.length > 0 ? { query } : {}),
+              ...(refresh !== undefined ? { refresh } : {}),
+              limit,
+            },
+          })
         } catch (error) {
           return {
             ok: false as const,
@@ -1805,29 +1909,24 @@ export function createDeviceTools(
       inputSchema: deviceFindAppInputSchema,
       execute: async ({ deviceId, query, refresh, limit }) => {
         try {
-          const [result, customApps] = await Promise.all([
-            runCommand(deviceId, {
-              command: "find-app",
-              input: {
-                query,
-                ...(refresh !== undefined ? { refresh } : {}),
-                limit,
-              },
-            }),
-            listDeviceCustomApps(userId, deviceId),
-          ])
+          const result = await runCommand(deviceId, {
+            command: "find-app",
+            input: {
+              query,
+              ...(refresh !== undefined ? { refresh } : {}),
+              limit,
+            },
+          })
 
           if (!result.ok) {
             return result
           }
 
-          const apps = mergeApps(
-            result.apps ?? [],
-            matchCustomApps(customApps, query, limit),
-            limit,
-          )
-
-          return { ...result, query, found: apps.length > 0, apps }
+          return {
+            ...result,
+            query,
+            found: (result.apps?.length ?? 0) > 0,
+          }
         } catch (error) {
           return {
             ok: false as const,

@@ -10,8 +10,11 @@ import {
   DEVICE_MKDIR_TOOL_NAME,
   DEVICE_MOVE_TOOL_NAME,
   DEVICE_OPEN_APP_TOOL_NAME,
+  DEVICE_OPEN_PATH_TOOL_NAME,
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
+  DEVICE_REGISTER_APP_TOOL_NAME,
+  DEVICE_REMOVE_APP_TOOL_NAME,
   DEVICE_STAT_TOOL_NAME,
   DEVICE_TYPE_TEXT_TOOL_NAME,
   DEVICE_UI_ACTION_TOOL_NAME,
@@ -125,6 +128,37 @@ describe("summarizeToolInput", () => {
         path: "C:\\Program Files\\Zed\\Zed.exe",
       }),
     ).toBe("C:\\Program Files\\Zed\\Zed.exe")
+    expect(
+      summarizeToolInput(DEVICE_OPEN_APP_TOOL_NAME, {
+        appId: "zed-1a2b3c",
+        args: ["projeto"],
+        cwd: "C:\\projeto",
+      }),
+    ).toBe("zed-1a2b3c · args: projeto · cwd: C:\\projeto")
+  })
+
+  it("resume open-path pelo caminho", () => {
+    expect(
+      summarizeToolInput(DEVICE_OPEN_PATH_TOOL_NAME, {
+        path: "C:\\Users\\eujos\\relatorio.pdf",
+      }),
+    ).toBe("C:\\Users\\eujos\\relatorio.pdf")
+  })
+
+  it("resume register-app com nome, caminho e cwd", () => {
+    expect(
+      summarizeToolInput(DEVICE_REGISTER_APP_TOOL_NAME, {
+        name: "Zed",
+        path: "C:\\Programas\\Zed\\Zed.exe",
+        cwd: "C:\\projeto",
+      }),
+    ).toBe('"Zed" · → C:\\Programas\\Zed\\Zed.exe · cwd: C:\\projeto')
+  })
+
+  it("resume remove-app pelo id", () => {
+    expect(
+      summarizeToolInput(DEVICE_REMOVE_APP_TOOL_NAME, { appId: "zed-1a2b3c" }),
+    ).toBe("remover zed-1a2b3c")
   })
 
   it("resume find-app com a busca", () => {

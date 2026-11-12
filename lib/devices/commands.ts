@@ -1,5 +1,8 @@
 export {
   DEVICE_APP_ID_PATTERN,
+  DEVICE_APP_ARGS_MAX,
+  DEVICE_APP_ARG_MAX_LENGTH,
+  DEVICE_APP_NAME_MAX_LENGTH,
   DEVICE_APP_QUERY_MAX_LENGTH,
   DEVICE_APP_RESULTS_MAX,
   DEVICE_APP_RESULTS_DEFAULT,
@@ -109,6 +112,7 @@ export {
   isDeviceKey,
   isDeviceWindowId,
   deviceAppIdFromTarget,
+  hasAppPathExtension,
   isAbsoluteAppPath,
   parseDeviceCommand,
 } from "@/spectral/shared/device-commands"

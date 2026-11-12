@@ -3,7 +3,6 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { devices } from "@/db/schema"
 import { sendDeviceCommand } from "@/lib/devices/command-client"
-import { findCustomApp, parseDeviceCustomApps } from "@/lib/devices/custom-apps"
 import { checkRateLimit } from "@/lib/devices/rate-limit"
 import { openDeviceAppSchema } from "@/lib/validations/device"
 
@@ -85,7 +84,7 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   try {
     const [device] = await db
-      .select({ id: devices.id, customApps: devices.customApps })
+      .select({ id: devices.id })
       .from(devices)
       .where(
         and(
@@ -100,17 +99,16 @@ export async function POST(request: Request, { params }: RouteContext) {
       return Response.json({ error: "device_not_found" }, { status: 404 })
     }
 
-    const custom = findCustomApp(
-      parseDeviceCustomApps(device.customApps),
-      parsed.data.appId,
-    )
-
     const output = await sendDeviceCommand({
       userId,
       deviceId: id,
       command: {
         command: "open-app",
-        input: custom ? { path: custom.path } : { appId: parsed.data.appId },
+        input: {
+          appId: parsed.data.appId,
+          ...(parsed.data.args ? { args: parsed.data.args } : {}),
+          ...(parsed.data.cwd ? { cwd: parsed.data.cwd } : {}),
+        },
       },
     })
 

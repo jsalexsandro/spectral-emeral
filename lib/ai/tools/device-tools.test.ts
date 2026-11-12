@@ -7,9 +7,12 @@ import {
   DEVICE_LIST_TOOL_NAME,
   DEVICE_ONLINE_LIST_TOOL_NAME,
   DEVICE_OPEN_APP_TOOL_NAME,
+  DEVICE_OPEN_PATH_TOOL_NAME,
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
   DEVICE_READ_FILE_TOOL_NAME,
+  DEVICE_REGISTER_APP_TOOL_NAME,
+  DEVICE_REMOVE_APP_TOOL_NAME,
   DEVICE_TYPE_TEXT_TOOL_NAME,
   DEVICE_GLOB_TOOL_NAME,
   DEVICE_GREP_TOOL_NAME,
@@ -39,14 +42,17 @@ import {
   DEVICE_DRAG_TOOL_NAME,
   createDeviceTools,
   deviceGetOsInputSchema,
+  deviceOpenAppInputSchema,
+  deviceOpenPathInputSchema,
   deviceReadClipboardInputSchema,
+  deviceRegisterAppInputSchema,
+  deviceRemoveAppInputSchema,
   deviceWriteClipboardInputSchema,
   deviceMoveMouseInputSchema,
   deviceClickInputSchema,
   deviceScrollInputSchema,
   deviceDragInputSchema,
   deviceScreenshotInputSchema,
-  deviceOpenAppInputSchema,
   deviceListAppsInputSchema,
   deviceFindAppInputSchema,
   deviceOpenUrlInputSchema,
@@ -124,6 +130,9 @@ describe("device tools", () => {
         DEVICE_ONLINE_LIST_TOOL_NAME,
         DEVICE_OPEN_URL_TOOL_NAME,
         DEVICE_OPEN_APP_TOOL_NAME,
+        DEVICE_OPEN_PATH_TOOL_NAME,
+        DEVICE_REGISTER_APP_TOOL_NAME,
+        DEVICE_REMOVE_APP_TOOL_NAME,
         DEVICE_LIST_APPS_TOOL_NAME,
         DEVICE_FIND_APP_TOOL_NAME,
         DEVICE_GET_OS_TOOL_NAME,
@@ -213,6 +222,113 @@ describe("device tools", () => {
       deviceOpenAppInputSchema.safeParse({
         deviceId: "device-1",
         path: "Zed.exe",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida argumentos e diretório de trabalho em open-app", () => {
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+        args: ["."],
+        cwd: "C:\\Users\\eujos\\projeto",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+        args: [".", "arquivo.txt"],
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+        args: ["a".repeat(513)],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+        args: ["sem\nquebra"],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+        cwd: "pasta-relativa",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-open-path", () => {
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\Users\\eujos\\relatorio.pdf",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\Users\\eujos\\projeto",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\Programas\\Zed\\Zed.exe",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "relatorio.pdf",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida device-register-app e device-remove-app", () => {
+    expect(
+      deviceRegisterAppInputSchema.safeParse({
+        deviceId: "device-1",
+        name: "Zed",
+        path: "C:\\Programas\\Zed\\Zed.exe",
+        args: ["."],
+        cwd: "C:\\Users\\eujos\\projeto",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceRegisterAppInputSchema.safeParse({
+        deviceId: "device-1",
+        name: "Zed",
+        path: "Zed.exe",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceRemoveAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "zed-7eb333",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceRemoveAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "Zed App",
       }).success,
     ).toBe(false)
   })

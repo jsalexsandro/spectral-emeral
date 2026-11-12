@@ -16,6 +16,9 @@ const DEVICE_TYPE_TEXT = "device-type-text"
 const DEVICE_PRESS_KEY = "device-press-key"
 const DEVICE_OPEN_URL = "device-open-url"
 const DEVICE_OPEN_APP = "device-open-app"
+const DEVICE_OPEN_PATH = "device-open-path"
+const DEVICE_REGISTER_APP = "device-register-app"
+const DEVICE_REMOVE_APP = "device-remove-app"
 const DEVICE_LIST_APPS = "device-list-apps"
 const DEVICE_FIND_APP = "device-find-app"
 const DEVICE_WRITE_CLIPBOARD = "device-write-clipboard"
@@ -255,12 +258,41 @@ export function summarizeToolInput(
     case DEVICE_OPEN_APP: {
       const appId = readString(record, "appId")
       const path = readString(record, "path")
+      const args = Array.isArray(record.args)
+        ? record.args.filter((item): item is string => typeof item === "string")
+        : []
+      const cwd = readString(record, "cwd")
 
-      summary = joinParts([
+      return joinParts([
         appId,
-        path ? (path.length > 60 ? `${path.slice(0, 59)}…` : path) : undefined,
+        path ? (path.length > 40 ? `${path.slice(0, 39)}…` : path) : undefined,
+        args.length > 0 ? `args: ${args.map((item) => truncate(item)).join(" ")}` : undefined,
+        cwd ? `cwd: ${cwd}` : undefined,
       ])
-      break
+    }
+
+    case DEVICE_OPEN_PATH: {
+      const path = readString(record, "path")
+
+      return path ? (path.length > 60 ? `${path.slice(0, 59)}…` : path) : ""
+    }
+
+    case DEVICE_REGISTER_APP: {
+      const name = readString(record, "name")
+      const path = readString(record, "path")
+      const cwd = readString(record, "cwd")
+
+      return joinParts([
+        name ? `"${truncate(name, 30)}"` : undefined,
+        path ? `→ ${path}` : undefined,
+        cwd ? `cwd: ${cwd}` : undefined,
+      ])
+    }
+
+    case DEVICE_REMOVE_APP: {
+      const appId = readString(record, "appId")
+
+      return appId ? `remover ${appId}` : ""
     }
 
     case DEVICE_LIST_APPS: {
