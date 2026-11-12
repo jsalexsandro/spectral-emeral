@@ -31,9 +31,10 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-env` | Retrato da máquina para o modelo não adivinhar shell, caminhos e runtimes | `{ deviceId }` | `env` com plataforma, arquitetura, hostname, usuário, home, temp, cwd, shell padrão, shells e runtimes instalados, elevação, locale e `capabilities` |
 | `device-shell` | Executa um script de shell na máquina (build, git, rede, testes) | `{ deviceId, script, shell?, cwd?, env?, stdin?, maxOutputBytes?, timeoutMs? }` | `shell` com `shell`, `shellPath`, `cwd`, `exitCode`, `stdout`, `stderr`, tamanhos, `durationMs`, `truncated` e `timedOut` |
 | `device-get-os` | Consulta o sistema operacional do PC | `{ deviceId }` | `os` com `platform`, `type`, `release`, `version`, `architecture` e `elevated` |
-| `device-list-apps` | Lista os aplicativos que o PC permite abrir | `{ deviceId }` | `apps[]` com `id` e `name` |
+| `device-list-apps` | Lista os aplicativos que o driver consegue abrir, com busca e cache de descoberta | `{ deviceId, query?, refresh?, limit? }` | `apps[]` com `id`, `name`, `source` e `target` quando conhecido |
+| `device-find-app` | Verifica se um aplicativo existe no PC e retorna as correspondências | `{ deviceId, query, refresh?, limit? }` | `found`, `query` e `apps[]` ordenados por relevância |
 | `device-open-url` | Abre uma URL no navegador padrão do PC | `{ deviceId, url }` | `ok` |
-| `device-open-app` | Abre um aplicativo da allowlist no PC | `{ deviceId, appId }` | `ok` + `output` |
+| `device-open-app` | Abre um aplicativo por id descoberto ou caminho absoluto | `{ deviceId, appId? , path? }` | `ok` + `output` |
 | `device-type-text` | Digita texto na janela alvo do PC | `{ deviceId, text, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-read-clipboard` | Lê o texto atual da área de transferência do PC | `{ deviceId }` | `clipboard` com `text`, `length` e `truncated` (usar apenas quando o usuário pedir) |
@@ -69,9 +70,23 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   para indicar se o driver está rodando com privilégios de administrador.
 - `device-open-url` aceita apenas `http://` e `https://`, até 2048 caracteres,
   sem usuário/senha na URL.
-- `device-open-app` aceita apenas `appId` da allowlist do driver:
-  `chrome`, `edge`, `firefox`, `notepad`, `explorer`, `vscode`, `terminal` e
-  `calculator`. Use `device-list-apps` antes para descobrir os ids disponíveis.
+- `device-open-app` aceita exatamente um entre `appId` e `path`. O `appId` pode
+  ser um app fixo (`chrome`, `edge`, `firefox`, `notepad`, `explorer`, `vscode`,
+  `terminal`, `calculator`), um atalho descoberto no Windows ou um app
+  personalizado do dispositivo. `path` precisa ser absoluto e apontar para uma
+  extensão suportada (`.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`,
+  `.appref-ms`, `.app`). Use `device-find-app`/`device-list-apps` antes para
+  descobrir o id. Ids desconhecidos retornam `app_not_found`; caminhos sem
+  extensão suportada retornam `unsupported_app_path`.
+- `device-find-app` é a verificação de existência: aceita nome, id ou trecho do
+  caminho, retorna `found` e lista as correspondências com `source`
+  (`builtin`, `start-menu`, `app-path` ou `custom`). No Windows a descoberta
+  cobre atalhos do Menu Iniciar e o registro App Paths, com cache de 5 minutos;
+  `refresh: true` refaz a varredura.
+- Apps personalizados são cadastrados por dispositivo em Configurações →
+  Dispositivos (até 50, nome único e caminho absoluto). Eles aparecem como
+  `source: "custom"` e são resolvidos pelo app para um `path` antes de chegar ao
+  driver.
 - `device-type-text` aceita de 1 a 2000 caracteres e rejeita caracteres de
   controle (exceto tab, CR e LF). Sem `windowId`, o texto vai para a janela que
   estiver em foco; com `windowId`, o driver foca a janela e digita no mesmo
@@ -267,7 +282,8 @@ Quando o usuário pede um seletor ou botão em vez de uma abertura imediata:
 
 1. a IA chama `device-online-list`;
 2. se houver mais de um PC online, pergunta qual usar antes de gerar o widget;
-3. chama `device-list-apps` e embute `apps[]` no `<select>` do widget;
+3. chama `device-list-apps` (ou `device-find-app`) e embute `apps[]` no
+   `<select>` do widget;
 4. o clique envia `openDeviceApp` (`deviceId`, `appId`) pela bridge do widget;
 5. o app executa `POST /api/devices/{id}/open-app`, que valida sessão e
    ownership, aplica rate limit e chama o mesmo comando `open-app` do driver.

@@ -19,7 +19,8 @@ O que já existe e funciona:
 - Gestão em Configurações → Dispositivos: listar, renomear, revogar e definir a
   pasta padrão.
 - Tools de chat: `device-list`, `device-online-list`, `device-get-os`,
-  `device-env`, `device-list-apps`, `device-open-url`, `device-open-app`,
+  `device-env`, `device-list-apps`, `device-find-app`, `device-open-url`,
+  `device-open-app`,
   `device-type-text`, `device-press-key`, `device-list-windows`,
   `device-focus-window`, `device-window-action`, `device-screenshot`,
   `device-inspect-ui`, `device-ui-action`, `device-read-clipboard`,
@@ -30,6 +31,8 @@ O que já existe e funciona:
   `device-move`, `device-delete`, `device-apply-patch`, `device-run-command` e
   `device-shell`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
+- Descoberta de aplicativos instalados no Windows (Menu Iniciar + App Paths),
+  verificação por `device-find-app` e apps personalizados por dispositivo.
 
 ## O que limita o carro chefe
 
@@ -272,6 +275,28 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Esforço:** G · **Risco:** alto (sessão autenticada; enviar mensagem ou
   comprar em nome do usuário).
 
+#### 4c. Aplicativos: descoberta e abertura ✅
+
+- **O que:** substituir a allowlist fixa por descoberta dinâmica no Windows
+  (atalhos do Menu Iniciar e registro App Paths), busca por nome/id/caminho
+  (`find-app`), abertura por id descoberto ou caminho absoluto (`open-app`) e
+  apps personalizados por dispositivo (`Device.customApps`).
+- **Por quê:** o usuário espera "abre o Zed" sem precisar descobrir o caminho e
+  sem que a IA invente ids. A allowlist de oito apps não cobre a máquina real.
+- **Onde mexer:** `spectral/driver/src/commands/apps.ts`,
+  `spectral/shared/device-commands.ts`, `lib/devices/custom-apps.ts`,
+  `db/schema/device.ts`, tools e prompt.
+- **Status:** implementado no Windows. `device-find-app` retorna `found`,
+  `query` e `apps[]`; `device-list-apps` aceita `query`, `refresh` e `limit`;
+  ids vêm de `deviceAppIdFromTarget` (slug + FNV-1a) e a descoberta tem cache de
+  5 minutos. Até 50 apps personalizados por dispositivo, resolvidos no app para
+  um `path` antes de chegar ao driver. Fora do Windows só os apps fixos
+  funcionam.
+- **Pronto quando:** "o Zed está instalado?" e "abre o Zed" funcionarem com o
+  caminho real do PC, e um app fora da descoberta puder ser cadastrado na UI.
+  ✅
+- **Esforço:** M · **Risco:** médio (abrir executável arbitrário via `path`).
+
 ### Bloco B — Controle real do PC
 
 #### 5. Operações de arquivo completas ✅
@@ -484,8 +509,8 @@ já permite demonstrar automação real de GUI.
 
 **Fase 2 — "o driver como plano de execução"** (carro chefe)
 Ver [`specs/device-execution.md`](./specs/device-execution.md). Ordem interna:
-governança (15 + 16 + 14 + 12) → shell (7) → arquivos e processos (5 + 8) →
-jobs (13). Governança vem **antes** de liberar shell, não depois.
+governança (15 + 16 + 14 + 12) → shell (7) → arquivos, apps e processos (5 +
+4c + 8) → jobs (13). Governança vem **antes** de liberar shell, não depois.
 
 **Fase 3 — "produto instalável"**
 Itens 10, 11 → instalador/tray/autostart e auto-update. Sem isso o resto não
@@ -526,6 +551,7 @@ continuam sendo cérebro e não vão para o driver.
 | Editar vários trechos | `Edit`/`MultiEdit` | ✅ `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`/`Grep` | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
+| Abrir aplicativos | atalhos do sistema | ✅ `find-app`, `list-apps`, `open-app` (descoberta + custom apps) | macOS/Linux na Fase 6 |
 | Processos | `ps`, `top`, `kill` | ❌ | Fase 3 |
 | Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
 | Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
@@ -559,6 +585,27 @@ Mesmo `FileSandbox` atual, com raízes unificadas ao shell (home + pasta padrão
 **Pronto quando:** organizar uma pasta (criar, copiar, mover, apagar para a
 lixeira) e editar vários trechos de um arquivo funcionarem com aprovação só no
 destrutivo, auditoria e verificação posterior. ✅
+
+### Fase 2b — Aplicativos (M) — ✅ implementada
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `list-apps` | `{ query?, refresh?, limit? }` | read |
+| `find-app` | `{ query, refresh?, limit? }` | read |
+| `open-app` | `{ appId? , path? }` | input |
+
+- Descoberta no Windows por atalhos `.lnk` do Menu Iniciar (usuário e comum) e
+  por `App Paths` em HKLM (64/32-bit) e HKCU, com cache de 5 minutos.
+- `find-app` é a verificação de existência: retorna `found`, `query` e `apps[]`
+  com `source` (`builtin`, `start-menu`, `app-path`, `custom`) e `target`.
+- `open-app` resolve ids fixos e descobertos; `path` precisa ser absoluto e ter
+  extensão suportada. Erros: `app_not_found` e `unsupported_app_path`.
+- Apps personalizados por dispositivo em `Device.customApps` (até 50, nomes
+  únicos, caminho absoluto). O app resolve o id para `path` antes do driver.
+- Tools: `device-find-app`, `device-list-apps`, `device-open-app`.
+
+**Pronto quando:** perguntar se um app existe e abri-lo por nome funcionar com o
+caminho real do PC, inclusive para apps fora da descoberta automática. ✅
 
 ### Fase 3 — Processos (M)
 

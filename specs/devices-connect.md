@@ -138,8 +138,9 @@ Backend --HTTP 200 { ok, result }--> Tool
 | Comando | Input | Resultado |
 | --- | --- | --- |
 | `open-url` | `{ url }` | `ok` |
-| `open-app` | `{ appId }` | `ok` + `output` |
-| `list-apps` | `{}` | `ok` + `apps[{ id, name }]` |
+| `open-app` | `{ appId? , path? }` | `ok` + `output` |
+| `list-apps` | `{ query?, refresh?, limit? }` | `ok` + `apps[{ id, name, source?, target? }]` |
+| `find-app` | `{ query, refresh?, limit? }` | `ok` + `found`, `query` e `apps[{ id, name, source?, target? }]` |
 | `get-os` | `{}` | `ok` + `os{ platform, type, release, version, architecture, elevated }` |
 | `type-text` | `{ text, windowId? }` | `ok` + `window` |
 | `press-key` | `{ key, modifiers?, windowId? }` | `ok` + `window` |
@@ -165,9 +166,20 @@ Backend --HTTP 200 { ok, result }--> Tool
 
 - `open-url`: apenas `http://` e `https://`, até 2048 caracteres, sem
   usuário/senha na URL.
-- `open-app`: `appId` no padrão `^[a-z0-9][a-z0-9-]{0,39}$` e presente na
-  allowlist do driver (`chrome`, `edge`, `firefox`, `notepad`, `explorer`,
-  `vscode`, `terminal`, `calculator`).
+- `open-app`: exatamente um entre `appId` e `path`.
+  - `appId` segue `^[a-z0-9][a-z0-9-]{0,39}$` e é resolvido no driver entre os
+    apps fixos, os descobertos no Windows (Menu Iniciar + App Paths) e os apps
+    personalizados que o app envia como `path`.
+  - `path` precisa ser absoluto (drive, UNC, POSIX ou `~`) e terminar em uma
+    extensão suportada: `.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`,
+    `.appref-ms` ou `.app`.
+  - Id ou caminho inexistente retorna `app_not_found`; extensão não suportada
+    retorna `unsupported_app_path`.
+- `list-apps`/`find-app`: no Windows descobrem atalhos do Menu Iniciar e
+  entradas do registro App Paths (HKLM/HKCU, 64/32-bit), com cache de 5 minutos.
+  `refresh: true` refaz a varredura; `query` filtra por nome, id ou caminho;
+  `limit` vai de 1 a 200. `find-app` ecoa `query` e retorna `found: false` com
+  lista vazia quando nada casa.
 - `get-os`: sem input; retorna `platform`, `type`, `release`, `version` e
   `architecture` do `node:os` do driver.
 - `type-text`: 1 a 2000 caracteres; caracteres de controle são rejeitados

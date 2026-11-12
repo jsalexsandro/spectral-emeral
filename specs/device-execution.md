@@ -47,6 +47,7 @@
 | Escrever/editar | `Write`, `Edit`, `MultiEdit` | ✅ `write-file`, `edit-file`, `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`, `Grep` (rg) | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira) | `zip`/`unzip` via shell |
+| Abrir aplicativos | `open`/atalhos do sistema | ✅ `open-app`, `list-apps`, `find-app` (descoberta no Windows) | — |
 | Processos | `ps`, `kill`, `top` | ❌ | item 8 |
 | Comandos longos | background + streaming | ❌ timeout 60 s, 1 por PC | jobs (item 13) |
 | Rede | `curl`/WebFetch | ❌ (bloqueado) | via `shell` no Modo Construtor |
@@ -209,6 +210,36 @@ Regras implementadas:
   `file_too_large`, `unsupported_platform`.
 - Tools no app: `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
   `device-delete`, `device-apply-patch`.
+
+### 4.3b Apps (descoberta e abertura) — ✅ implementado
+
+Substitui a allowlist fixa por descoberta dinâmica no Windows e apps
+personalizados por dispositivo.
+
+| Comando | Entrada | Resultado | Risco | Observação |
+|---|---|---|---|---|
+| `list-apps` | `{ query?, refresh?, limit? }` | `apps: [{ id, name, source?, target? }]` | read | apps fixos + descobertos; `limit` 1–200 |
+| `find-app` | `{ query, refresh?, limit? }` | `found`, `query`, `apps[]` | read | busca ranqueada por nome/id/caminho |
+| `open-app` | `{ appId? , path? }` | `output` com o nome aberto | input | exatamente um entre `appId` e `path` |
+
+Regras implementadas:
+
+- Descoberta no Windows (`spectral/driver/src/commands/apps.ts`): atalhos `.lnk`
+  do Menu Iniciar do usuário e comum, além de `App Paths` em HKLM (64/32-bit) e
+  HKCU. Cache de 5 minutos; `refresh: true` força nova varredura.
+- Ids derivam de `deviceAppIdFromTarget(name, target)` (slug + FNV-1a), estáveis
+  entre execuções e compatíveis com `DEVICE_APP_ID_PATTERN`. Duplicatas de
+  caminho e apps fixos são filtrados.
+- `open-app` por `appId` resolve primeiro apps fixos e depois os descobertos;
+  id desconhecido retorna `app_not_found`.
+- `open-app` por `path` exige caminho absoluto (`C:\`, UNC, `/` ou `~`), extensão
+  em `.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`, `.appref-ms` ou `.app` e
+  existência de arquivo. Erros: `app_not_found`, `unsupported_app_path`.
+- Apps personalizados ficam em `Device.customApps` (`[{ name, path }]`, até 50,
+  nomes únicos). O app os resolve para `path` antes de chamar o driver; o widget
+  `openDeviceApp` faz o mesmo em `POST /api/devices/[id]/open-app`.
+- Fora do Windows os apps fixos continuam funcionando; a descoberta retorna
+  vazia e `find-app` só encontra os fixos.
 
 ### 4.4 Processos (item 8)
 
