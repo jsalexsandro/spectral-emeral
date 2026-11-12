@@ -20,7 +20,8 @@ O que já existe e funciona:
   pasta padrão.
 - Tools de chat: `device-list`, `device-online-list`, `device-get-os`,
   `device-env`, `device-list-apps`, `device-find-app`, `device-open-url`,
-  `device-open-app`,
+  `device-open-app`, `device-open-path`, `device-register-app`,
+  `device-remove-app`,
   `device-type-text`, `device-press-key`, `device-list-windows`,
   `device-focus-window`, `device-window-action`, `device-screenshot`,
   `device-inspect-ui`, `device-ui-action`, `device-read-clipboard`,
@@ -275,27 +276,40 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Esforço:** G · **Risco:** alto (sessão autenticada; enviar mensagem ou
   comprar em nome do usuário).
 
-#### 4c. Aplicativos: descoberta e abertura ✅
+#### 4c. Aplicativos: descoberta, abertura e catálogo local ✅
 
 - **O que:** substituir a allowlist fixa por descoberta dinâmica no Windows
   (atalhos do Menu Iniciar e registro App Paths), busca por nome/id/caminho
-  (`find-app`), abertura por id descoberto ou caminho absoluto (`open-app`) e
-  apps personalizados por dispositivo (`Device.customApps`).
-- **Por quê:** o usuário espera "abre o Zed" sem precisar descobrir o caminho e
-  sem que a IA invente ids. A allowlist de oito apps não cobre a máquina real.
+  (`find-app`), abertura por id descoberto ou caminho absoluto (`open-app`) com
+  argumentos (`args`) e diretório de trabalho (`cwd`), abertura de arquivo/pasta
+  no app padrão sem aprovação (`open-path`) e catálogo local de apps no driver
+  (`~/.spectral/driver/apps.json`) com `register-app` e `remove-app`.
+- **Por quê:** o usuário espera "abre o Zed" ou "abre o Zed nesta pasta"
+  (`zed .`) sem precisar descobrir o caminho e sem que a IA invente ids. A
+  allowlist de oito apps não cobre a máquina real. `open-path` abre documentos
+  sem aprovação; `open-app` com `args`/`cwd` pede aprovação porque o app recebe
+  instruções.
 - **Onde mexer:** `spectral/driver/src/commands/apps.ts`,
-  `spectral/shared/device-commands.ts`, `lib/devices/custom-apps.ts`,
-  `db/schema/device.ts`, tools e prompt.
+  `spectral/driver/src/commands/catalog.ts` (novo),
+  `spectral/driver/src/commands/executor.ts`,
+  `spectral/shared/device-commands.ts`, `lib/ai/tools/device-tools.ts`,
+  `lib/devices/execution-policy.ts`, `lib/devices/tool-approval.ts`,
+  `lib/ai/prompts/sections/devices.ts`, prompt v33.
 - **Status:** implementado no Windows. `device-find-app` retorna `found`,
-  `query` e `apps[]`; `device-list-apps` aceita `query`, `refresh` e `limit`;
-  ids vêm de `deviceAppIdFromTarget` (slug + FNV-1a) e a descoberta tem cache de
-  5 minutos. Até 50 apps personalizados por dispositivo, resolvidos no app para
-  um `path` antes de chegar ao driver. Fora do Windows só os apps fixos
-  funcionam.
-- **Pronto quando:** "o Zed está instalado?" e "abre o Zed" funcionarem com o
-  caminho real do PC, e um app fora da descoberta puder ser cadastrado na UI.
-  ✅
-- **Esforço:** M · **Risco:** médio (abrir executável arbitrário via `path`).
+  `query` e `apps[]`; `device-list-apps` aceita `query`, `refresh` e `limit` e
+  mescla builtins, descoberta e catálogo local (`source: custom`); ids vêm de
+  `deviceAppIdFromTarget` (slug + FNV-1a) e a descoberta tem cache de 5 minutos.
+  `open-app` aceita `args` (até 32, máximo 512 chars cada, sem controle) e
+  `cwd` (diretório existente); com args/cwd o risco é `launch` (aprovação no
+  build). `open-path` recusa executáveis (`invalid_path`). `register-app` valida
+  o caminho na hora e grava em `apps.json` (escrita atômica, dedupe por caminho,
+  máx. 100). Fora do Windows só os apps fixos e `open-path` funcionam.
+- **Pronto quando:** "o Zed está instalado?", "abre o Zed" e "abre o Zed nesta
+  pasta" funcionarem com o caminho real do PC; `open-path` abrir um PDF sem
+  aprovação; `register-app` cadastrar um app fora da descoberta; e o catálogo
+  aparecer em `device-list-apps` sem cadastro manual em Configurações. ✅
+- **Esforço:** M · **Risco:** médio (abrir executável arbitrário via `path`;
+  args/cwd pedem aprovação como lançamento).
 
 ### Bloco B — Controle real do PC
 
@@ -551,7 +565,7 @@ continuam sendo cérebro e não vão para o driver.
 | Editar vários trechos | `Edit`/`MultiEdit` | ✅ `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`/`Grep` | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
-| Abrir aplicativos | atalhos do sistema | ✅ `find-app`, `list-apps`, `open-app` (descoberta + custom apps) | macOS/Linux na Fase 6 |
+| Abrir aplicativos | atalhos do sistema | ✅ `find-app`, `list-apps`, `open-app` (descoberta + catálogo local), `open-path` (arquivo/pasta), `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` (aprovação); macOS/Linux na Fase 6 |
 | Processos | `ps`, `top`, `kill` | ❌ | Fase 3 |
 | Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
 | Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
@@ -592,20 +606,37 @@ destrutivo, auditoria e verificação posterior. ✅
 |---|---|---|
 | `list-apps` | `{ query?, refresh?, limit? }` | read |
 | `find-app` | `{ query, refresh?, limit? }` | read |
-| `open-app` | `{ appId? , path? }` | input |
+| `open-app` | `{ appId?, path?, args?, cwd? }` | input sem args; **launch** com args/cwd |
+| `open-path` | `{ path }` | input (recusa executáveis) |
+| `register-app` | `{ name, path, args?, cwd? }` | write |
+| `remove-app` | `{ appId }` | write |
 
 - Descoberta no Windows por atalhos `.lnk` do Menu Iniciar (usuário e comum) e
   por `App Paths` em HKLM (64/32-bit) e HKCU, com cache de 5 minutos.
 - `find-app` é a verificação de existência: retorna `found`, `query` e `apps[]`
   com `source` (`builtin`, `start-menu`, `app-path`, `custom`) e `target`.
-- `open-app` resolve ids fixos e descobertos; `path` precisa ser absoluto e ter
-  extensão suportada. Erros: `app_not_found` e `unsupported_app_path`.
-- Apps personalizados por dispositivo em `Device.customApps` (até 50, nomes
-  únicos, caminho absoluto). O app resolve o id para `path` antes do driver.
-- Tools: `device-find-app`, `device-list-apps`, `device-open-app`.
+- `open-app` resolve ids fixos, descobertos e do catálogo local; `path` precisa
+  ser absoluto e ter extensão suportada. `args` (até 32, máximo 512 chars cada,
+  sem caracteres de controle) e `cwd` (diretório existente) acompanham qualquer
+  um dos dois. Erros: `app_not_found`, `unsupported_app_path`,
+  `app_args_unsupported` (atalho com args), `invalid_app_args`.
+- `open-path` abre arquivo ou pasta no app padrão, sem aprovação. Recusa
+  executáveis/atalhos (`invalid_path`).
+- Catálogo local do driver em `~/.spectral/driver/apps.json` (versão 1, esc
+ rita atômica, dedupe por caminho, máx. 100). `register-app` cadastra/atualiza
+  pelo caminho; `remove-app` remove pelo id. Aparece em `list-apps` com
+  `source: custom`.
+- `Device.customApps` (banco) é importado uma vez para o driver quando o
+  dispositivo fica online; cadastro manual em Configurações é retirado. Drop da
+  coluna fica para a próxima release.
+- Tools: `device-find-app`, `device-list-apps`, `device-open-app`,
+  `device-open-path`, `device-register-app`, `device-remove-app`.
 
 **Pronto quando:** perguntar se um app existe e abri-lo por nome funcionar com o
-caminho real do PC, inclusive para apps fora da descoberta automática. ✅
+caminho real do PC; `open-app "Zed" args ["."]` abrir o Zed na pasta atual com
+aprovação; `open-path` abrir um documento sem aprovação; `register-app`
+cadastrar um app fora da descoberta; e o catálogo aparecer em
+`device-list-apps` sem cadastro manual em Configurações. ✅
 
 ### Fase 3 — Processos (M)
 

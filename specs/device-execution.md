@@ -47,7 +47,7 @@
 | Escrever/editar | `Write`, `Edit`, `MultiEdit` | ✅ `write-file`, `edit-file`, `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`, `Grep` (rg) | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira) | `zip`/`unzip` via shell |
-| Abrir aplicativos | `open`/atalhos do sistema | ✅ `open-app`, `list-apps`, `find-app` (descoberta no Windows) | — |
+| Abrir aplicativos | `open`/atalhos do sistema | ✅ `open-app`, `list-apps`, `find-app` (descoberta no Windows), `open-path`, `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` |
 | Processos | `ps`, `kill`, `top` | ❌ | item 8 |
 | Comandos longos | background + streaming | ❌ timeout 60 s, 1 por PC | jobs (item 13) |
 | Rede | `curl`/WebFetch | ❌ (bloqueado) | via `shell` no Modo Construtor |
@@ -211,16 +211,19 @@ Regras implementadas:
 - Tools no app: `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
   `device-delete`, `device-apply-patch`.
 
-### 4.3b Apps (descoberta e abertura) — ✅ implementado
+### 4.3b Apps (descoberta, abertura e catálogo local) — ✅ implementado
 
-Substitui a allowlist fixa por descoberta dinâmica no Windows e apps
-personalizados por dispositivo.
+Descoberta dinâmica no Windows, abertura com argumentos e catálogo local de apps
+no driver. Substitui a allowlist fixa e o cadastro manual em Configurações.
 
 | Comando | Entrada | Resultado | Risco | Observação |
 |---|---|---|---|---|
-| `list-apps` | `{ query?, refresh?, limit? }` | `apps: [{ id, name, source?, target? }]` | read | apps fixos + descobertos; `limit` 1–200 |
+| `list-apps` | `{ query?, refresh?, limit? }` | `apps: [{ id, name, source?, target?, args?, cwd? }]` | read | fixos + descobertos + catálogo local (`custom`); `limit` 1–200 |
 | `find-app` | `{ query, refresh?, limit? }` | `found`, `query`, `apps[]` | read | busca ranqueada por nome/id/caminho |
-| `open-app` | `{ appId? , path? }` | `output` com o nome aberto | input | exatamente um entre `appId` e `path` |
+| `open-app` | `{ appId?, path?, args?, cwd? }` | `output` com o nome aberto | input sem args; **launch** com args/cwd | exatamente um entre `appId` e `path` |
+| `open-path` | `{ path }` | `output` com o caminho aberto | input | recusa executáveis/atalhos (`invalid_path`) |
+| `register-app` | `{ name, path, args?, cwd? }` | `apps: [{...}]` | write | grava em `~/.spectral/driver/apps.json` |
+| `remove-app` | `{ appId }` | `output` de remoção | write | remove do catálogo local |
 
 Regras implementadas:
 
@@ -230,17 +233,28 @@ Regras implementadas:
 - Ids derivam de `deviceAppIdFromTarget(name, target)` (slug + FNV-1a), estáveis
   entre execuções e compatíveis com `DEVICE_APP_ID_PATTERN`. Duplicatas de
   caminho e apps fixos são filtrados.
-- `open-app` por `appId` resolve primeiro apps fixos e depois os descobertos;
-  id desconhecido retorna `app_not_found`.
-- `open-app` por `path` exige caminho absoluto (`C:\`, UNC, `/` ou `~`), extensão
-  em `.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`, `.appref-ms` ou `.app` e
-  existência de arquivo. Erros: `app_not_found`, `unsupported_app_path`.
-- Apps personalizados ficam em `Device.customApps` (`[{ name, path }]`, até 50,
-  nomes únicos). O app os resolve para `path` antes de chamar o driver; o widget
-  `openDeviceApp` faz o mesmo em `POST /api/devices/[id]/open-app`.
+- `open-app` por `appId` resolve primeiro apps fixos, depois o catálogo local e
+  por fim os descobertos; id desconhecido retorna `app_not_found`. `args` (até
+  32, máximo 512 chars cada, sem caracteres de controle) e `cwd` (diretório
+  existente) acompanham `appId` ou `path`. Com args/cwd o risco é `launch`
+  (aprovação no build). Erros: `app_not_found`, `unsupported_app_path`,
+  `app_args_unsupported` (atalho com args), `invalid_app_args`,
+  `invalid_app_cwd`.
+- `open-path` abre arquivo ou pasta no app padrão, sem aprovação. Recusa
+  executáveis/atalhos (`invalid_path`). Erros: `path_not_found`.
+- Catálogo local do driver em `~/.spectral/driver/apps.json` (versão 1, escrita
+  atômica, dedupe por caminho, máx. 100). `register-app` valida o caminho na
+  hora (`assertLaunchablePath`) e cadastra/atualiza pelo caminho; `remove-app`
+  remove pelo id. Aparece em `list-apps` com `source: custom`.
+- `Device.customApps` (banco) é importado uma vez para o driver quando o
+  dispositivo fica online; cadastro manual em Configurações é retirado. Drop da
+  coluna fica para a próxima release.
 - Fora do Windows os apps fixos continuam funcionando; a descoberta retorna
-  vazia e `find-app` só encontra os fixos.
-
+  vazia e `find-app` só encontra os fixos. `open-path` funciona em
+  macOS/Linux (`open`/`xdg-open`).
+- Tools no app: `device-find-app`, `device-list-apps`, `device-open-app`,
+  `device-open-path`, `device-register-app`, `device-remove-app`.
+- Driver roda em `tsx watch`; dispositivo de teste online.
 ### 4.4 Processos (item 8)
 
 ```ts
@@ -316,6 +330,7 @@ Matriz de decisão (`lib/devices/execution-policy.ts`):
 |---|---|---|---|
 | `read` | allow | allow | allow |
 | `input`, `write`, `exec` | deny | allow | allow |
+| `launch` | deny | approval | allow |
 | `destructive`, `system` | deny | approval | allow |
 
 - O Modo Leitura nunca é furado pela preferência do dispositivo.
@@ -421,8 +436,8 @@ aparece na auditoria. ✅
 - Matriz de política em `lib/devices/execution-policy.ts`: modo da sessão
   (`plan`/`build`) × preferência do dispositivo (`confirmDestructive`) × risco
   da tool.
-- `plan` bloqueia `input`, `write`, `exec`, `destructive` e `system` no app e
-  novamente no driver (defesa em profundidade).
+- `plan` bloqueia `input`, `write`, `exec`, `launch`, `destructive` e `system`
+  no app e novamente no driver (defesa em profundidade).
 - Tools `device-shell` e `device-env`, chip de modo no composer (`Shift+Tab`) e
   card de aprovação no chat.
 - Prompt de operação da máquina (`SYSTEM_PROMPT_VERSION = 30`).
