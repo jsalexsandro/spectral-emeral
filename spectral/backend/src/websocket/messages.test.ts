@@ -133,4 +133,38 @@ describe("commandResultMessageSchema", () => {
 
     expect(parsed.success).toBe(false)
   })
+
+  it("preserva os resultados das operações de arquivo", () => {
+    const parsed = parseResult({
+      ok: true,
+      mkdir: { path: "C:\\Users\\ana\\projeto", created: true },
+      stat: {
+        path: "C:\\Users\\ana\\projeto",
+        type: "directory",
+        size: null,
+        modifiedAt: "2026-11-11T12:00:00.000Z",
+        createdAt: "2026-11-11T12:00:00.000Z",
+        mode: 16_822,
+        isSymlink: false,
+        linkTarget: null,
+      },
+      copy: { from: "C:\\a.txt", to: "C:\\b.txt", files: 1, bytes: 10 },
+      move: { from: "C:\\b.txt", to: "C:\\c.txt" },
+      delete: { path: "C:\\c.txt", deleted: true, toTrash: true },
+      patch: { path: "C:\\d.txt", applied: 2, replacements: 2 },
+    })
+
+    expect(parsed.success).toBe(true)
+
+    if (!parsed.success || !parsed.data.result.ok) {
+      throw new Error("Esperava um resultado ok.")
+    }
+
+    expect(parsed.data.result.mkdir?.created).toBe(true)
+    expect(parsed.data.result.stat?.type).toBe("directory")
+    expect(parsed.data.result.copy?.bytes).toBe(10)
+    expect(parsed.data.result.move?.to).toBe("C:\\c.txt")
+    expect(parsed.data.result.delete?.toTrash).toBe(true)
+    expect(parsed.data.result.patch?.replacements).toBe(2)
+  })
 })

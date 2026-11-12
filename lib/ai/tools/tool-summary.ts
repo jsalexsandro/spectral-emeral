@@ -21,6 +21,12 @@ const DEVICE_LIST_FILES = "device-list-files"
 const DEVICE_READ_FILE = "device-read-file"
 const DEVICE_WRITE_FILE = "device-write-file"
 const DEVICE_EDIT_FILE = "device-edit-file"
+const DEVICE_MKDIR = "device-mkdir"
+const DEVICE_STAT = "device-stat"
+const DEVICE_COPY = "device-copy"
+const DEVICE_MOVE = "device-move"
+const DEVICE_DELETE = "device-delete"
+const DEVICE_APPLY_PATCH = "device-apply-patch"
 const DEVICE_RUN_COMMAND = "device-run-command"
 const DEVICE_ENV = "device-env"
 const DEVICE_SHELL = "device-shell"
@@ -274,8 +280,38 @@ export function summarizeToolInput(
 
     case DEVICE_WRITE_FILE:
     case DEVICE_EDIT_FILE:
+    case DEVICE_MKDIR:
+    case DEVICE_STAT:
       summary = joinParts([readString(record, "path")])
       break
+
+    case DEVICE_COPY:
+    case DEVICE_MOVE: {
+      const from = readString(record, "from")
+      const to = readString(record, "to")
+      summary = from && to ? `${from} → ${to}` : joinParts([from, to])
+      break
+    }
+
+    case DEVICE_DELETE: {
+      const permanent = record.permanent === true
+      const recursive = record.recursive === true
+      summary = joinParts([
+        readString(record, "path"),
+        permanent ? "permanente" : "lixeira",
+        recursive ? "recursivo" : undefined,
+      ])
+      break
+    }
+
+    case DEVICE_APPLY_PATCH: {
+      const patches = Array.isArray(record.patches) ? record.patches.length : 0
+      summary = joinParts([
+        readString(record, "path"),
+        patches > 0 ? `${patches} ${patches === 1 ? "patch" : "patches"}` : undefined,
+      ])
+      break
+    }
 
     case DEVICE_RUN_COMMAND: {
       const command = readString(record, "command")

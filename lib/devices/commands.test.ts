@@ -630,3 +630,99 @@ describe("device command contract", () => {
     }
   })
 })
+
+describe("device file operation contract", () => {
+  it("normalizes mkdir, stat, copy, move and delete", () => {
+    expect(parseDeviceCommand("mkdir", { path: " ~/projetos/novo " })).toEqual({
+      command: "mkdir",
+      input: { path: "~/projetos/novo", recursive: true },
+    })
+
+    expect(parseDeviceCommand("stat", { path: "~/a.txt" })).toEqual({
+      command: "stat",
+      input: { path: "~/a.txt" },
+    })
+
+    expect(
+      parseDeviceCommand("copy", {
+        from: "~/a.txt",
+        to: "~/b.txt",
+      }),
+    ).toEqual({
+      command: "copy",
+      input: {
+        from: "~/a.txt",
+        to: "~/b.txt",
+        overwrite: false,
+        recursive: true,
+      },
+    })
+
+    expect(
+      parseDeviceCommand("move", {
+        from: "~/a.txt",
+        to: "~/b.txt",
+        overwrite: true,
+      }),
+    ).toEqual({
+      command: "move",
+      input: { from: "~/a.txt", to: "~/b.txt", overwrite: true },
+    })
+
+    expect(parseDeviceCommand("delete", { path: "~/a.txt" })).toEqual({
+      command: "delete",
+      input: { path: "~/a.txt", recursive: false, permanent: false },
+    })
+  })
+
+  it("requires both paths for copy and move", () => {
+    expect(() => parseDeviceCommand("copy", { from: "~/a" })).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() => parseDeviceCommand("move", { to: "~/b" })).toThrow(
+      DeviceCommandValidationError,
+    )
+  })
+
+  it("normalizes atomic patches and rejects invalid lists", () => {
+    expect(
+      parseDeviceCommand("apply-patch", {
+        path: "~/a.ts",
+        patches: [
+          { oldText: "const a = 1", newText: "const a = 2" },
+          { oldText: "TODO", newText: "FEITO", replaceAll: true },
+        ],
+      }),
+    ).toEqual({
+      command: "apply-patch",
+      input: {
+        path: "~/a.ts",
+        patches: [
+          { oldText: "const a = 1", newText: "const a = 2", replaceAll: false },
+          { oldText: "TODO", newText: "FEITO", replaceAll: true },
+        ],
+      },
+    })
+
+    expect(() =>
+      parseDeviceCommand("apply-patch", { path: "~/a.ts", patches: [] }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("apply-patch", {
+        path: "~/a.ts",
+        patches: [{ oldText: "", newText: "x" }],
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("apply-patch", {
+        path: "~/a.ts",
+        patches: Array.from({ length: 11 }, () => ({
+          oldText: "a",
+          newText: "b",
+        })),
+      }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+})

@@ -1,5 +1,6 @@
 import { z } from "zod"
 import {
+  DEVICE_COMMAND_NAMES,
   DEVICE_UI_ACTIONS,
   type DeviceCommand,
   type DeviceUiAction,
@@ -167,7 +168,7 @@ export const commandResultMessageSchema = z.object({
             .max(32),
           elevated: z.boolean(),
           locale: z.string().max(64).nullable(),
-          capabilities: z.array(z.string().min(1).max(64)).max(64),
+          capabilities: z.array(z.enum(DEVICE_COMMAND_NAMES)).max(64),
           collectedAt: z.string().min(1).max(64),
         })
         .optional(),
@@ -238,6 +239,52 @@ export const commandResultMessageSchema = z.object({
           replacements: z.number().int().nonnegative(),
           oldTextLength: z.number().int().nonnegative(),
           newTextLength: z.number().int().nonnegative(),
+        })
+        .optional(),
+      stat: z
+        .object({
+          path: z.string().min(1).max(1024),
+          type: z.enum(["file", "directory", "symlink", "other"]),
+          size: z.number().int().nonnegative().nullable(),
+          modifiedAt: z.string().max(64).nullable(),
+          createdAt: z.string().max(64).nullable(),
+          mode: z.number().int().nonnegative(),
+          isSymlink: z.boolean(),
+          linkTarget: z.string().max(1024).nullable(),
+        })
+        .optional(),
+      mkdir: z
+        .object({
+          path: z.string().min(1).max(1024),
+          created: z.boolean(),
+        })
+        .optional(),
+      copy: z
+        .object({
+          from: z.string().min(1).max(1024),
+          to: z.string().min(1).max(1024),
+          files: z.number().int().nonnegative(),
+          bytes: z.number().int().nonnegative(),
+        })
+        .optional(),
+      move: z
+        .object({
+          from: z.string().min(1).max(1024),
+          to: z.string().min(1).max(1024),
+        })
+        .optional(),
+      delete: z
+        .object({
+          path: z.string().min(1).max(1024),
+          deleted: z.boolean(),
+          toTrash: z.boolean(),
+        })
+        .optional(),
+      patch: z
+        .object({
+          path: z.string().min(1).max(1024),
+          applied: z.number().int().nonnegative(),
+          replacements: z.number().int().nonnegative(),
         })
         .optional(),
       run: z

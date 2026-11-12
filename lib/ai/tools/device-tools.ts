@@ -46,6 +46,7 @@ import {
   DEVICE_FILE_WRITE_MAX_BYTES,
   DEVICE_FILE_EDIT_MAX_OLD_TEXT,
   DEVICE_FILE_EDIT_MAX_NEW_TEXT,
+  DEVICE_FILE_PATCH_MAX_COUNT,
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
@@ -146,6 +147,12 @@ export const DEVICE_GREP_TOOL_NAME = "device-grep"
 export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
 export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
 export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
+export const DEVICE_MKDIR_TOOL_NAME = "device-mkdir"
+export const DEVICE_STAT_TOOL_NAME = "device-stat"
+export const DEVICE_COPY_TOOL_NAME = "device-copy"
+export const DEVICE_MOVE_TOOL_NAME = "device-move"
+export const DEVICE_DELETE_TOOL_NAME = "device-delete"
+export const DEVICE_APPLY_PATCH_TOOL_NAME = "device-apply-patch"
 export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 export const DEVICE_ENV_TOOL_NAME = "device-env"
 export const DEVICE_SHELL_TOOL_NAME = "device-shell"
@@ -886,6 +893,80 @@ export const deviceEditFileInputSchema = z.object({
   newText: z.string().max(DEVICE_FILE_EDIT_MAX_NEW_TEXT),
 })
 
+export const deviceMkdirInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  recursive: z
+    .boolean()
+    .default(true)
+    .describe("Cria os diretórios intermediários que faltarem."),
+})
+
+export const deviceStatInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+})
+
+export const deviceCopyInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  from: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  to: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe("Substitui arquivos já existentes no destino."),
+  recursive: z
+    .boolean()
+    .default(true)
+    .describe("Copia diretórios inteiros, arquivo por arquivo."),
+})
+
+export const deviceMoveInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  from: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  to: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe("Substitui um arquivo já existente no destino."),
+})
+
+export const deviceDeleteInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  recursive: z
+    .boolean()
+    .default(false)
+    .describe("Apaga diretórios com conteúdo."),
+  permanent: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Apaga de vez em vez de mover para a lixeira. Use apenas com confirmação explícita do usuário.",
+    ),
+})
+
+const devicePatchSchema = z.object({
+  oldText: z.string().min(1).max(DEVICE_FILE_EDIT_MAX_OLD_TEXT),
+  newText: z.string().max(DEVICE_FILE_EDIT_MAX_NEW_TEXT),
+  replaceAll: z
+    .boolean()
+    .default(false)
+    .describe("Substitui todas as ocorrências em vez de exigir uma única."),
+})
+
+export const deviceApplyPatchInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+  patches: z
+    .array(devicePatchSchema)
+    .min(1)
+    .max(DEVICE_FILE_PATCH_MAX_COUNT)
+    .describe(
+      `Lista atômica de trechos exatos a substituir (máximo ${DEVICE_FILE_PATCH_MAX_COUNT}).`,
+    ),
+})
+
 export const deviceRunCommandInputSchema = z.object({
   deviceId: deviceIdSchema,
   command: z.string().min(1).max(256),
@@ -1050,6 +1131,12 @@ function toCommandToolResult(
       : {}),
     ...(output.result.write ? { write: output.result.write } : {}),
     ...(output.result.edit ? { edit: output.result.edit } : {}),
+    ...(output.result.stat ? { stat: output.result.stat } : {}),
+    ...(output.result.mkdir ? { mkdir: output.result.mkdir } : {}),
+    ...(output.result.copy ? { copy: output.result.copy } : {}),
+    ...(output.result.move ? { move: output.result.move } : {}),
+    ...(output.result.delete ? { delete: output.result.delete } : {}),
+    ...(output.result.patch ? { patch: output.result.patch } : {}),
     ...(output.result.run ? { run: output.result.run } : {}),
     ...(output.result.env ? { env: output.result.env } : {}),
     ...(output.result.shell ? { shell: output.result.shell } : {}),
@@ -1313,6 +1400,51 @@ const editFileDescription = [
   "O texto antigo deve aparecer exatamente uma vez no arquivo.",
   "Use `device-read-file` para ler o conteúdo antes de editar.",
   "O arquivo resultante não pode exceder 1 MB.",
+].join("\n")
+
+const mkdirDescription = [
+  "Cria um diretório no dispositivo.",
+  "Com `recursive: true` (padrão) cria também os diretórios intermediários.",
+  "Se o diretório já existir, retorna `created: false` sem erro.",
+  "Use `device-stat` para confirmar o resultado.",
+].join("\n")
+
+const statDescription = [
+  "Consulta metadados de um caminho do dispositivo sem seguir links simbólicos.",
+  "Retorna tipo (file, directory, symlink, other), tamanho, datas, modo, se é link e o destino do link.",
+  "Use antes de copiar, mover ou apagar para confirmar o que existe no caminho.",
+].join("\n")
+
+const copyDescription = [
+  "Copia um arquivo ou diretório para outro caminho no dispositivo.",
+  "A origem e o destino precisam estar dentro do home ou da pasta padrão do dispositivo.",
+  "`overwrite: false` (padrão) falha se o arquivo de destino já existir.",
+  "`recursive: true` (padrão) copia diretórios arquivo por arquivo; links simbólicos são ignorados.",
+  "Não copie um diretório para dentro dele mesmo. Use `device-stat` para conferir o resultado.",
+].join("\n")
+
+const moveDescription = [
+  "Move (renomeia) um arquivo ou diretório no dispositivo.",
+  "A origem e o destino precisam estar dentro do home ou da pasta padrão do dispositivo.",
+  "`overwrite: false` (padrão) falha se o destino já existir.",
+  "Entre volumes diferentes o driver copia e apaga a origem automaticamente.",
+  "Para renomear no mesmo diretório, use `from` e `to` com o mesmo diretório pai.",
+].join("\n")
+
+const deleteDescription = [
+  "Apaga um arquivo ou diretório do dispositivo.",
+  "Por padrão envia para a lixeira do Windows; `permanent: true` apaga de vez e deve ser usado apenas com confirmação explícita.",
+  "Diretórios com conteúdo exigem `recursive: true`.",
+  "Links simbólicos são removidos como links, nunca seguidos.",
+  "As raízes permitidas (home e pasta padrão) não podem ser apagadas. Use `device-stat` depois para confirmar.",
+].join("\n")
+
+const applyPatchDescription = [
+  "Aplica vários trechos exatos em um arquivo de uma vez, de forma atômica.",
+  "Cada patch exige `oldText` e `newText`; por padrão o `oldText` deve aparecer exatamente uma vez.",
+  "Use `replaceAll: true` para substituir todas as ocorrências de um trecho.",
+  "Todos os patches são aplicados ou nenhum é gravado. CRLF e BOM são preservados.",
+  "Máximo de 10 patches e 1 MB de resultado. Use `device-read-file` antes de montar os patches.",
 ].join("\n")
 
 const runCommandDescription = [
@@ -1951,6 +2083,132 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-edit-file.",
+          }
+        }
+      },
+    }),
+    [DEVICE_MKDIR_TOOL_NAME]: tool({
+      description: mkdirDescription,
+      inputSchema: deviceMkdirInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "mkdir",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-mkdir.",
+          }
+        }
+      },
+    }),
+    [DEVICE_STAT_TOOL_NAME]: tool({
+      description: statDescription,
+      inputSchema: deviceStatInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "stat",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-stat.",
+          }
+        }
+      },
+    }),
+    [DEVICE_COPY_TOOL_NAME]: tool({
+      description: copyDescription,
+      inputSchema: deviceCopyInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "copy",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-copy.",
+          }
+        }
+      },
+    }),
+    [DEVICE_MOVE_TOOL_NAME]: tool({
+      description: moveDescription,
+      inputSchema: deviceMoveInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "move",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-move.",
+          }
+        }
+      },
+    }),
+    [DEVICE_DELETE_TOOL_NAME]: tool({
+      description: deleteDescription,
+      inputSchema: deviceDeleteInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "delete",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-delete.",
+          }
+        }
+      },
+    }),
+    [DEVICE_APPLY_PATCH_TOOL_NAME]: tool({
+      description: applyPatchDescription,
+      inputSchema: deviceApplyPatchInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "apply-patch",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-apply-patch.",
           }
         }
       },

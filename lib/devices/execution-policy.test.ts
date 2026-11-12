@@ -79,6 +79,12 @@ describe("device tool risk classification", () => {
     expect(classifyDeviceToolRisk("device-close-window", {})).toBe(
       "destructive",
     )
+    expect(classifyDeviceToolRisk("device-stat", {})).toBe("read")
+    expect(classifyDeviceToolRisk("device-mkdir", {})).toBe("write")
+    expect(classifyDeviceToolRisk("device-copy", {})).toBe("write")
+    expect(classifyDeviceToolRisk("device-move", {})).toBe("write")
+    expect(classifyDeviceToolRisk("device-apply-patch", {})).toBe("write")
+    expect(classifyDeviceToolRisk("device-delete", {})).toBe("destructive")
   })
 
   it("promotes dangerous shell scripts", () => {

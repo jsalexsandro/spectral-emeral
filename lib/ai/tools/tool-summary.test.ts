@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest"
 import {
+  DEVICE_APPLY_PATCH_TOOL_NAME,
   DEVICE_CLICK_TOOL_NAME,
+  DEVICE_COPY_TOOL_NAME,
+  DEVICE_DELETE_TOOL_NAME,
   DEVICE_DRAG_TOOL_NAME,
   DEVICE_INSPECT_UI_TOOL_NAME,
   DEVICE_LIST_WINDOWS_TOOL_NAME,
+  DEVICE_MKDIR_TOOL_NAME,
+  DEVICE_MOVE_TOOL_NAME,
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
+  DEVICE_STAT_TOOL_NAME,
   DEVICE_TYPE_TEXT_TOOL_NAME,
   DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
@@ -131,6 +137,46 @@ describe("summarizeToolInput", () => {
 
   it("cai no resumo genérico para tools desconhecidas", () => {
     expect(summarizeToolInput("tool-qualquer", { foo: "bar" })).toBe("foo=bar")
+  })
+
+  it("resume mkdir, stat e delete", () => {
+    expect(
+      summarizeToolInput(DEVICE_MKDIR_TOOL_NAME, { path: "~/projetos/novo" }),
+    ).toBe("~/projetos/novo")
+    expect(
+      summarizeToolInput(DEVICE_STAT_TOOL_NAME, { path: "~/a.txt" }),
+    ).toBe("~/a.txt")
+    expect(
+      summarizeToolInput(DEVICE_DELETE_TOOL_NAME, {
+        path: "~/a.txt",
+        permanent: true,
+        recursive: false,
+      }),
+    ).toBe("~/a.txt · permanente")
+  })
+
+  it("resume copy e move como origem e destino", () => {
+    expect(
+      summarizeToolInput(DEVICE_COPY_TOOL_NAME, {
+        from: "~/a.txt",
+        to: "~/b.txt",
+      }),
+    ).toBe("~/a.txt → ~/b.txt")
+    expect(
+      summarizeToolInput(DEVICE_MOVE_TOOL_NAME, {
+        from: "~/b.txt",
+        to: "~/c.txt",
+      }),
+    ).toBe("~/b.txt → ~/c.txt")
+  })
+
+  it("resume apply-patch com a contagem de patches", () => {
+    expect(
+      summarizeToolInput(DEVICE_APPLY_PATCH_TOOL_NAME, {
+        path: "~/a.ts",
+        patches: [{ oldText: "a", newText: "b" }],
+      }),
+    ).toBe("~/a.ts · 1 patch")
   })
 
   it("retorna vazio quando não há argumentos", () => {

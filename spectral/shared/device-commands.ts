@@ -22,6 +22,12 @@ export const DEVICE_COMMAND_NAMES = [
   "check-admin",
   "write-file",
   "edit-file",
+  "mkdir",
+  "stat",
+  "copy",
+  "move",
+  "delete",
+  "apply-patch",
   "run-command",
   "screenshot",
   "list-windows",
@@ -217,6 +223,8 @@ export const DEVICE_FILE_WRITE_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_OLD_TEXT = 10 * 1024
 export const DEVICE_FILE_EDIT_MAX_NEW_TEXT = 10 * 1024
+export const DEVICE_FILE_PATCH_MAX_COUNT = 10
+export const DEVICE_FILE_PATCH_MAX_BYTES = 1024 * 1024
 export const DEVICE_RUN_TIMEOUT_DEFAULT_MS = 15_000
 export const DEVICE_RUN_TIMEOUT_MAX_MS = 60_000
 export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
@@ -419,6 +427,53 @@ export type DeviceFileEditResult = {
   newTextLength: number
 }
 
+export type DeviceFileStat = {
+  path: string
+  type: DeviceFileEntryType
+  size: number | null
+  modifiedAt: string | null
+  createdAt: string | null
+  mode: number
+  isSymlink: boolean
+  /** Destino do link, quando `isSymlink` for true. */
+  linkTarget: string | null
+}
+
+export type DeviceFileMkdirResult = {
+  path: string
+  created: boolean
+}
+
+export type DeviceFileCopyResult = {
+  from: string
+  to: string
+  files: number
+  bytes: number
+}
+
+export type DeviceFileMoveResult = {
+  from: string
+  to: string
+}
+
+export type DeviceFileDeleteResult = {
+  path: string
+  deleted: boolean
+  toTrash: boolean
+}
+
+export type DeviceFilePatch = {
+  oldText: string
+  newText: string
+  replaceAll: boolean
+}
+
+export type DeviceFilePatchResult = {
+  path: string
+  applied: number
+  replacements: number
+}
+
 export type DeviceCommandRunResult = {
   command: string
   exitCode: number | null
@@ -589,6 +644,12 @@ export type DeviceCommandInputMap = {
     oldText: string
     newText: string
   }
+  mkdir: { path: string; recursive: boolean }
+  stat: { path: string }
+  copy: { from: string; to: string; overwrite: boolean; recursive: boolean }
+  move: { from: string; to: string; overwrite: boolean }
+  delete: { path: string; recursive: boolean; permanent: boolean }
+  "apply-patch": { path: string; patches: DeviceFilePatch[] }
   "run-command": {
     command: string
     args?: string[]
@@ -629,6 +690,12 @@ export type DeviceCommandSuccess = {
   admin?: boolean
   write?: DeviceFileWriteResult
   edit?: DeviceFileEditResult
+  stat?: DeviceFileStat
+  mkdir?: DeviceFileMkdirResult
+  copy?: DeviceFileCopyResult
+  move?: DeviceFileMoveResult
+  delete?: DeviceFileDeleteResult
+  patch?: DeviceFilePatchResult
   run?: DeviceCommandRunResult
   windows?: DeviceWindow[]
   window?: DeviceWindow
@@ -1397,6 +1464,19 @@ function readRequiredPath(input: unknown): string {
   return value
 }
 
+function readRequiredPathField(input: unknown, field: string): string {
+  const value = readOptionalPath(input, field)
+
+  if (!value) {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      `Campo "${field}" é obrigatório.`,
+    )
+  }
+
+  return value
+}
+
 function readPattern(
   input: unknown,
   field: string,
@@ -1679,6 +1759,104 @@ function parseEditFile(input: unknown): DeviceCommand {
   }
 
   return { command: "edit-file", input: { path, oldText, newText } }
+}
+
+function parseMkdir(input: unknown): DeviceCommand {
+  const path = readRequiredPath(input)
+  const recursive = readBoolean(input, "recursive", true)
+
+  return { command: "mkdir", input: { path, recursive } }
+}
+
+function parseStat(input: unknown): DeviceCommand {
+  return { command: "stat", input: { path: readRequiredPath(input) } }
+}
+
+function parseCopy(input: unknown): DeviceCommand {
+  const from = readRequiredPathField(input, "from")
+  const to = readRequiredPathField(input, "to")
+  const overwrite = readBoolean(input, "overwrite", false)
+  const recursive = readBoolean(input, "recursive", true)
+
+  return { command: "copy", input: { from, to, overwrite, recursive } }
+}
+
+function parseMove(input: unknown): DeviceCommand {
+  const from = readRequiredPathField(input, "from")
+  const to = readRequiredPathField(input, "to")
+  const overwrite = readBoolean(input, "overwrite", false)
+
+  return { command: "move", input: { from, to, overwrite } }
+}
+
+function parseDelete(input: unknown): DeviceCommand {
+  const path = readRequiredPath(input)
+  const recursive = readBoolean(input, "recursive", false)
+  const permanent = readBoolean(input, "permanent", false)
+
+  return { command: "delete", input: { path, recursive, permanent } }
+}
+
+function readPatches(input: unknown): DeviceFilePatch[] {
+  if (!isRecord(input) || !Array.isArray(input.patches)) {
+    throw new DeviceCommandValidationError(
+      "invalid_patches",
+      `Campo "patches" é obrigatório e deve ser uma lista de 1 a ${DEVICE_FILE_PATCH_MAX_COUNT} patches.`,
+    )
+  }
+
+  if (
+    input.patches.length === 0 ||
+    input.patches.length > DEVICE_FILE_PATCH_MAX_COUNT
+  ) {
+    throw new DeviceCommandValidationError(
+      "invalid_patches",
+      `Informe entre 1 e ${DEVICE_FILE_PATCH_MAX_COUNT} patches.`,
+    )
+  }
+
+  return input.patches.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new DeviceCommandValidationError(
+        "invalid_patches",
+        `O patch ${index + 1} deve ser um objeto com oldText e newText.`,
+      )
+    }
+
+    const oldText = readString(entry, "oldText", "invalid_oldText")
+    const newText = readString(entry, "newText", "invalid_newText")
+    const replaceAll = readBoolean(entry, "replaceAll", false)
+
+    if (oldText.length === 0) {
+      throw new DeviceCommandValidationError(
+        "invalid_oldText",
+        `O texto antigo do patch ${index + 1} não pode estar vazio.`,
+      )
+    }
+
+    if (Buffer.byteLength(oldText, "utf8") > DEVICE_FILE_EDIT_MAX_OLD_TEXT) {
+      throw new DeviceCommandValidationError(
+        "invalid_oldText",
+        `O texto antigo do patch ${index + 1} excede ${DEVICE_FILE_EDIT_MAX_OLD_TEXT} bytes.`,
+      )
+    }
+
+    if (Buffer.byteLength(newText, "utf8") > DEVICE_FILE_EDIT_MAX_NEW_TEXT) {
+      throw new DeviceCommandValidationError(
+        "invalid_newText",
+        `O texto novo do patch ${index + 1} excede ${DEVICE_FILE_EDIT_MAX_NEW_TEXT} bytes.`,
+      )
+    }
+
+    return { oldText, newText, replaceAll }
+  })
+}
+
+function parseApplyPatch(input: unknown): DeviceCommand {
+  const path = readRequiredPath(input)
+  const patches = readPatches(input)
+
+  return { command: "apply-patch", input: { path, patches } }
 }
 
 function parseRunCommand(input: unknown): DeviceCommand {
@@ -2105,6 +2283,18 @@ export function parseDeviceCommand(
       return parseWriteFile(input)
     case "edit-file":
       return parseEditFile(input)
+    case "mkdir":
+      return parseMkdir(input)
+    case "stat":
+      return parseStat(input)
+    case "copy":
+      return parseCopy(input)
+    case "move":
+      return parseMove(input)
+    case "delete":
+      return parseDelete(input)
+    case "apply-patch":
+      return parseApplyPatch(input)
     case "run-command":
       return parseRunCommand(input)
     case "screenshot":

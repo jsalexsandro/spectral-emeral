@@ -12,7 +12,7 @@ import { getDeviceEnv, getOsInfo } from "./system.js"
 import { DeviceShellError, runShell } from "./shell.js"
 import {
   DeviceFileError,
-  getDefaultFileSandbox,
+  getFileSandbox,
 } from "./files.js"
 import {
   DeviceWindowError,
@@ -43,8 +43,6 @@ const execFileAsync = promisify(execFile)
 const EXEC_TIMEOUT_MS = 10_000
 const MAX_BUFFER_BYTES = 1024 * 1024
 const MAX_ERROR_LENGTH = 900
-
-const files = getDefaultFileSandbox()
 
 function errorMessage(error: unknown): string {
   const message =
@@ -434,6 +432,8 @@ export async function executeDeviceCommand(
   options?: { defaultFolder?: string },
 ): Promise<DeviceCommandResult> {
   try {
+    const files = getFileSandbox(options?.defaultFolder)
+
     switch (command.command) {
       case "list-apps":
         return { ok: true, apps: listApps() }
@@ -537,6 +537,24 @@ export async function executeDeviceCommand(
 
       case "edit-file":
         return { ...(await files.editFile(command.input)), ok: true }
+
+      case "mkdir":
+        return { ...(await files.mkdir(command.input)), ok: true }
+
+      case "stat":
+        return { ...(await files.stat(command.input)), ok: true }
+
+      case "copy":
+        return { ...(await files.copy(command.input)), ok: true }
+
+      case "move":
+        return { ...(await files.move(command.input)), ok: true }
+
+      case "delete":
+        return { ...(await files.delete(command.input)), ok: true }
+
+      case "apply-patch":
+        return { ...(await files.applyPatch(command.input)), ok: true }
 
       case "run-command":
         return {

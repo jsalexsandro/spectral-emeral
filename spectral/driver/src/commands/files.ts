@@ -1,6 +1,18 @@
 import { realpathSync } from "node:fs"
 import { execFile } from "node:child_process"
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises"
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises"
 import { homedir } from "node:os"
 import {
   basename,
@@ -11,6 +23,7 @@ import {
   resolve,
   sep,
 } from "node:path"
+import { promisify } from "node:util"
 import { minimatch } from "minimatch"
 import type {
   DeviceCommandInputMap,
@@ -38,6 +51,9 @@ const MAX_GREP_LINE_LENGTH = 2000
 const MAX_GREP_MATCH_TEXT = 300
 const MAX_WALK_DEPTH = 12
 const MAX_WRITE_FILE_BYTES = 1024 * 1024
+const TRASH_TIMEOUT_MS = 20_000
+
+const execFileAsync = promisify(execFile)
 
 const RUN_COMMAND_ALLOWLIST_WINDOWS = new Set([
   "dir",
@@ -198,7 +214,12 @@ export class DeviceFileError extends Error {
 }
 
 export type FileSandboxOptions = {
+  /** Raiz do usuário: base do atalho "~". */
   root?: string
+  /** Diretório base para caminhos relativos (pasta padrão do dispositivo). */
+  base?: string
+  /** Raízes adicionais permitidas além de root e base. */
+  roots?: readonly string[]
   denyPatterns?: readonly string[]
 }
 
@@ -221,6 +242,14 @@ function normalizeRelative(value: string): string {
 function isInsideRoot(root: string, target: string): boolean {
   const rel = relative(root, target)
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+}
+
+function safeRealpath(value: string): string {
+  try {
+    return realpathSync(value)
+  } catch {
+    return value
+  }
 }
 
 function isBinaryBuffer(buffer: Buffer): boolean {
@@ -273,17 +302,20 @@ function safeRegex(pattern: string): boolean {
 
 export class FileSandbox {
   readonly root: string
+  readonly base: string
+  private readonly allowedRoots: readonly string[]
   private readonly denyPatterns: readonly string[]
 
   constructor(options: FileSandboxOptions = {}) {
-    const requestedRoot = resolve(options.root ?? homedir())
-
-    try {
-      this.root = realpathSync(requestedRoot)
-    } catch {
-      this.root = requestedRoot
-    }
-
+    this.root = safeRealpath(resolve(options.root ?? homedir()))
+    this.base = safeRealpath(resolve(options.base ?? this.root))
+    this.allowedRoots = [
+      ...new Set([
+        this.root,
+        this.base,
+        ...(options.roots ?? []).map((root) => safeRealpath(resolve(root))),
+      ]),
+    ]
     this.denyPatterns = options.denyPatterns ?? DEFAULT_DENY_PATTERNS
   }
 
@@ -298,6 +330,11 @@ export class FileSandbox {
     )
   }
 
+  /** True quando o caminho é uma das raízes permitidas (não pode ser apagada). */
+  isAllowedRoot(target: string): boolean {
+    return this.allowedRoots.some((root) => relative(root, target) === "")
+  }
+
   private expandHome(input: string): string {
     if (input === "~") {
       return this.root
@@ -310,6 +347,30 @@ export class FileSandbox {
     return input
   }
 
+  private assertAllowed(target: string): string {
+    for (const root of this.allowedRoots) {
+      if (!isInsideRoot(root, target)) {
+        continue
+      }
+
+      const relativePath = normalizeRelative(relative(root, target))
+
+      if (this.isDenied(relativePath)) {
+        throw new DeviceFileError(
+          "path_denied",
+          "O caminho é bloqueado por segurança.",
+        )
+      }
+
+      return relativePath
+    }
+
+    throw new DeviceFileError(
+      "path_outside_root",
+      "O caminho está fora do diretório permitido.",
+    )
+  }
+
   async resolvePath(
     input: string | undefined,
     mustExist = true,
@@ -317,7 +378,14 @@ export class FileSandbox {
     const candidate = this.expandHome(input ?? ".")
     const absolute = isAbsolute(candidate)
       ? resolve(candidate)
-      : resolve(this.root, candidate)
+      : resolve(this.base, candidate)
+
+    if (!this.allowedRoots.some((root) => isInsideRoot(root, absolute))) {
+      throw new DeviceFileError(
+        "path_outside_root",
+        "O caminho está fora do diretório permitido.",
+      )
+    }
 
     if (absolute !== this.root) {
       try {
@@ -364,21 +432,50 @@ export class FileSandbox {
       )
     }
 
-    if (!isInsideRoot(this.root, real)) {
+    const relativePath = this.assertAllowed(real)
+
+    return { absolute: real, relative: relativePath }
+  }
+
+  /**
+   * Resolve o caminho sem seguir o último componente: `lstat` continua vendo o
+   * link, mas o diretório pai é canonicalizado para bloquear escapes por link
+   * de diretório. Usado por `stat`, `mkdir`, `delete` e pela origem de
+   * `copy`/`move`.
+   */
+  async resolveEntryPath(input: string): Promise<ResolvedPath> {
+    const candidate = this.expandHome(input)
+    const absolute = isAbsolute(candidate)
+      ? resolve(candidate)
+      : resolve(this.base, candidate)
+
+    this.assertAllowed(absolute)
+
+    let parentReal: string
+
+    try {
+      parentReal = await realpath(dirname(absolute))
+    } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "path_not_found",
+          "O diretório pai do caminho não existe.",
+        )
+      }
+
       throw new DeviceFileError(
-        "path_outside_root",
-        "O caminho está fora do diretório permitido.",
+        "path_unreadable",
+        "Não foi possível acessar o caminho informado.",
       )
     }
 
-    const relativePath = normalizeRelative(relative(this.root, real))
-
-    if (this.isDenied(relativePath)) {
-      throw new DeviceFileError(
-        "path_denied",
-        "O caminho é bloqueado por segurança.",
-      )
-    }
+    const real = join(parentReal, basename(absolute))
+    const relativePath = this.assertAllowed(real)
 
     return { absolute: real, relative: relativePath }
   }
@@ -922,6 +1019,589 @@ export class FileSandbox {
     }
   }
 
+  async mkdir(
+    input: DeviceCommandInputMap["mkdir"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolveEntryPath(input.path)
+    const existing = await lstat(target.absolute).catch(() => null)
+
+    if (existing) {
+      if (existing.isDirectory()) {
+        return { ok: true, mkdir: { path: target.absolute, created: false } }
+      }
+
+      throw new DeviceFileError(
+        "path_exists",
+        "Já existe um arquivo com esse nome.",
+      )
+    }
+
+    try {
+      await mkdir(target.absolute, { recursive: input.recursive })
+    } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "parent_not_found",
+          "O diretório pai não existe. Use recursive: true para criar a árvore.",
+        )
+      }
+
+      if (code === "EEXIST") {
+        throw new DeviceFileError("path_exists", "O caminho já existe.")
+      }
+
+      if (code === "EACCES" || code === "EPERM") {
+        throw new DeviceFileError(
+          "permission_denied",
+          "Sem permissão para criar o diretório.",
+        )
+      }
+
+      throw new DeviceFileError(
+        "mkdir_failed",
+        "Não foi possível criar o diretório.",
+      )
+    }
+
+    return { ok: true, mkdir: { path: target.absolute, created: true } }
+  }
+
+  async stat(
+    input: DeviceCommandInputMap["stat"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolveEntryPath(input.path)
+    const stats = await lstat(target.absolute).catch((error: unknown) => {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "path_not_found",
+          "O caminho informado não existe.",
+        )
+      }
+
+      throw new DeviceFileError(
+        "path_unreadable",
+        "Não foi possível acessar o caminho informado.",
+      )
+    })
+
+    const type: DeviceFileEntryType = stats.isFile()
+      ? "file"
+      : stats.isDirectory()
+        ? "directory"
+        : stats.isSymbolicLink()
+          ? "symlink"
+          : "other"
+
+    return {
+      ok: true,
+      stat: {
+        path: target.absolute,
+        type,
+        size: stats.isDirectory() ? null : stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+        createdAt: stats.birthtime.toISOString(),
+        mode: stats.mode,
+        isSymlink: stats.isSymbolicLink(),
+        linkTarget: stats.isSymbolicLink()
+          ? await readlink(target.absolute).catch(() => null)
+          : null,
+      },
+    }
+  }
+
+  private async copyEntry(
+    source: string,
+    destination: string,
+    recursive: boolean,
+    overwrite: boolean,
+  ): Promise<{ files: number; bytes: number }> {
+    const stats = await lstat(source)
+
+    if (stats.isSymbolicLink()) {
+      throw new DeviceFileError(
+        "symlink_not_allowed",
+        "Links simbólicos não são copiados nem seguidos.",
+      )
+    }
+
+    if (stats.isDirectory()) {
+      if (!recursive) {
+        throw new DeviceFileError(
+          "directory_requires_recursive",
+          "A origem é um diretório. Use recursive: true para copiar a árvore.",
+        )
+      }
+
+      if (isInsideRoot(source, destination)) {
+        throw new DeviceFileError(
+          "invalid_destination",
+          "O destino não pode estar dentro da origem.",
+        )
+      }
+
+      const existing = await lstat(destination).catch(() => null)
+
+      if (existing && !existing.isDirectory()) {
+        throw new DeviceFileError(
+          "path_exists",
+          "O destino já existe e não é um diretório.",
+        )
+      }
+
+      await mkdir(destination, { recursive: true })
+
+      let files = 0
+      let bytes = 0
+      const entries = await readdir(source, { withFileTypes: true })
+
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+          continue
+        }
+
+        const result = await this.copyEntry(
+          join(source, entry.name),
+          join(destination, entry.name),
+          recursive,
+          overwrite,
+        )
+
+        files += result.files
+        bytes += result.bytes
+      }
+
+      return { files, bytes }
+    }
+
+    if (!stats.isFile()) {
+      throw new DeviceFileError(
+        "not_a_file",
+        "A origem não é um arquivo nem um diretório.",
+      )
+    }
+
+    const existing = await lstat(destination).catch(() => null)
+
+    if (existing) {
+      if (existing.isDirectory()) {
+        throw new DeviceFileError(
+          "path_exists",
+          "O destino é um diretório com o mesmo nome do arquivo.",
+        )
+      }
+
+      if (existing.isSymbolicLink()) {
+        throw new DeviceFileError(
+          "symlink_not_allowed",
+          "O destino é um link simbólico.",
+        )
+      }
+
+      if (!overwrite) {
+        throw new DeviceFileError(
+          "path_exists",
+          "O destino já existe. Use overwrite: true para substituir.",
+        )
+      }
+    }
+
+    try {
+      await copyFile(source, destination)
+    } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "destination_not_found",
+          "O diretório de destino não existe.",
+        )
+      }
+
+      if (code === "EACCES" || code === "EPERM") {
+        throw new DeviceFileError(
+          "permission_denied",
+          "Sem permissão para copiar para o destino.",
+        )
+      }
+
+      throw new DeviceFileError(
+        "copy_failed",
+        "Não foi possível copiar o arquivo.",
+      )
+    }
+
+    return { files: 1, bytes: stats.size }
+  }
+
+  async copy(
+    input: DeviceCommandInputMap["copy"],
+  ): Promise<DeviceCommandSuccess> {
+    const source = await this.resolveEntryPath(input.from)
+    const destination = await this.resolvePath(input.to, false)
+
+    if (source.absolute === destination.absolute) {
+      throw new DeviceFileError(
+        "invalid_destination",
+        "A origem e o destino são o mesmo caminho.",
+      )
+    }
+
+    const result = await this.copyEntry(
+      source.absolute,
+      destination.absolute,
+      input.recursive,
+      input.overwrite,
+    )
+
+    return {
+      ok: true,
+      copy: {
+        from: source.absolute,
+        to: destination.absolute,
+        files: result.files,
+        bytes: result.bytes,
+      },
+    }
+  }
+
+  async move(
+    input: DeviceCommandInputMap["move"],
+  ): Promise<DeviceCommandSuccess> {
+    const source = await this.resolveEntryPath(input.from)
+    const destination = await this.resolvePath(input.to, false)
+
+    if (isInsideRoot(source.absolute, destination.absolute)) {
+      throw new DeviceFileError(
+        "invalid_destination",
+        "O destino não pode ser a origem nem estar dentro dela.",
+      )
+    }
+
+    const sourceStats = await lstat(source.absolute)
+
+    if (sourceStats.isSymbolicLink()) {
+      throw new DeviceFileError(
+        "symlink_not_allowed",
+        "Links simbólicos não são movidos.",
+      )
+    }
+
+    const existing = await lstat(destination.absolute).catch(() => null)
+
+    if (existing) {
+      if (!input.overwrite) {
+        throw new DeviceFileError(
+          "path_exists",
+          "O destino já existe. Use overwrite: true para substituir.",
+        )
+      }
+
+      if (existing.isDirectory()) {
+        throw new DeviceFileError(
+          "path_exists",
+          "O destino é um diretório existente; mova os itens separadamente.",
+        )
+      }
+
+      await rm(destination.absolute, { force: true })
+    }
+
+    try {
+      await rename(source.absolute, destination.absolute)
+    } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "EXDEV") {
+        await this.copyEntry(source.absolute, destination.absolute, true, true)
+        await rm(source.absolute, { recursive: true, force: false })
+      } else if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "destination_not_found",
+          "O diretório de destino não existe.",
+        )
+      } else if (code === "EACCES" || code === "EPERM") {
+        throw new DeviceFileError(
+          "permission_denied",
+          "Sem permissão para mover para o destino.",
+        )
+      } else {
+        throw new DeviceFileError(
+          "move_failed",
+          "Não foi possível mover o caminho.",
+        )
+      }
+    }
+
+    return {
+      ok: true,
+      move: { from: source.absolute, to: destination.absolute },
+    }
+  }
+
+  private async trashWindows(target: string): Promise<void> {
+    const script = [
+      "Add-Type -AssemblyName Microsoft.VisualBasic",
+      "$p = $env:SPECTRAL_DELETE_PATH",
+      "if ([System.IO.Directory]::Exists($p)) {",
+      "  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)",
+      "} else {",
+      "  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)",
+      "}",
+    ].join("\n")
+
+    try {
+      await execFileAsync(
+        "powershell.exe",
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          script,
+        ],
+        {
+          timeout: TRASH_TIMEOUT_MS,
+          windowsHide: true,
+          maxBuffer: 64 * 1024,
+          env: { ...process.env, SPECTRAL_DELETE_PATH: target },
+        },
+      )
+    } catch {
+      throw new DeviceFileError(
+        "trash_failed",
+        "Não foi possível mover para a lixeira. Use permanent: true para apagar de vez, com confirmação.",
+      )
+    }
+  }
+
+  async delete(
+    input: DeviceCommandInputMap["delete"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolveEntryPath(input.path)
+    const stats = await lstat(target.absolute).catch((error: unknown) => {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "ENOENT") {
+        throw new DeviceFileError(
+          "path_not_found",
+          "O caminho informado não existe.",
+        )
+      }
+
+      throw new DeviceFileError(
+        "path_unreadable",
+        "Não foi possível acessar o caminho informado.",
+      )
+    })
+
+    if (this.isAllowedRoot(target.absolute)) {
+      throw new DeviceFileError(
+        "protected_path",
+        "As raízes permitidas (home e pasta padrão) não podem ser apagadas.",
+      )
+    }
+
+    if (stats.isDirectory() && !input.recursive) {
+      const entries = await readdir(target.absolute).catch(() => [])
+
+      if (entries.length > 0) {
+        throw new DeviceFileError(
+          "directory_not_empty",
+          "O diretório não está vazio. Use recursive: true para apagar a árvore.",
+        )
+      }
+    }
+
+    if (stats.isSymbolicLink()) {
+      await unlink(target.absolute)
+      return {
+        ok: true,
+        delete: { path: target.absolute, deleted: true, toTrash: false },
+      }
+    }
+
+    if (!input.permanent) {
+      if (!IS_WINDOWS) {
+        throw new DeviceFileError(
+          "unsupported_platform",
+          "A lixeira só está disponível no Windows nesta versão. Use permanent: true para apagar de vez.",
+        )
+      }
+
+      await this.trashWindows(target.absolute)
+
+      return {
+        ok: true,
+        delete: { path: target.absolute, deleted: true, toTrash: true },
+      }
+    }
+
+    try {
+      await rm(target.absolute, {
+        recursive: stats.isDirectory(),
+        force: false,
+      })
+    } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : ""
+
+      if (code === "EACCES" || code === "EPERM") {
+        throw new DeviceFileError(
+          "permission_denied",
+          "Sem permissão para apagar o caminho.",
+        )
+      }
+
+      if (code === "ENOTEMPTY" || code === "EEXIST") {
+        throw new DeviceFileError(
+          "directory_not_empty",
+          "O diretório não está vazio. Use recursive: true.",
+        )
+      }
+
+      throw new DeviceFileError(
+        "delete_failed",
+        "Não foi possível apagar o caminho.",
+      )
+    }
+
+    return {
+      ok: true,
+      delete: { path: target.absolute, deleted: true, toTrash: false },
+    }
+  }
+
+  async applyPatch(
+    input: DeviceCommandInputMap["apply-patch"],
+  ): Promise<DeviceCommandSuccess> {
+    const target = await this.resolvePath(input.path)
+    const stats = await lstat(target.absolute)
+
+    if (stats.isSymbolicLink()) {
+      throw new DeviceFileError(
+        "symlink_not_allowed",
+        "Links simbólicos não são editados.",
+      )
+    }
+
+    if (!stats.isFile()) {
+      throw new DeviceFileError(
+        "not_a_file",
+        "O caminho informado não é um arquivo.",
+      )
+    }
+
+    if (stats.size > MAX_WRITE_FILE_BYTES) {
+      throw new DeviceFileError(
+        "file_too_large",
+        `O arquivo tem ${stats.size} bytes e excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
+      )
+    }
+
+    const buffer = await readFile(target.absolute)
+
+    if (isBinaryBuffer(buffer)) {
+      throw new DeviceFileError(
+        "binary_file",
+        "O arquivo parece ser binário e não pode ser editado como texto.",
+      )
+    }
+
+    const hasBom =
+      buffer.length >= 3 &&
+      buffer[0] === 0xef &&
+      buffer[1] === 0xbb &&
+      buffer[2] === 0xbf
+    const text = buffer.subarray(hasBom ? 3 : 0).toString("utf8")
+    const eol = text.includes("\r\n")
+      ? "\r\n"
+      : text.includes("\r")
+        ? "\r"
+        : "\n"
+    const normalizeEol = (value: string) =>
+      value
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .join(eol)
+
+    let content = text
+    let replacements = 0
+
+    input.patches.forEach((patch, index) => {
+      const oldText = normalizeEol(patch.oldText)
+      const newText = normalizeEol(patch.newText)
+      const count = content.split(oldText).length - 1
+
+      if (count === 0) {
+        throw new DeviceFileError(
+          "text_not_found",
+          `O texto do patch ${index + 1} não foi encontrado no arquivo.`,
+        )
+      }
+
+      if (count > 1 && !patch.replaceAll) {
+        throw new DeviceFileError(
+          "multiple_matches",
+          `O texto do patch ${index + 1} foi encontrado ${count} vezes. Use replaceAll ou um trecho maior.`,
+        )
+      }
+
+      content = patch.replaceAll
+        ? content.split(oldText).join(newText)
+        : content.replace(oldText, newText)
+      replacements += patch.replaceAll ? count : 1
+    })
+
+    const contentBuffer = Buffer.from(content, "utf8")
+
+    if (contentBuffer.length > MAX_WRITE_FILE_BYTES) {
+      throw new DeviceFileError(
+        "file_too_large",
+        `O conteúdo resultante excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
+      )
+    }
+
+    await writeFile(
+      target.absolute,
+      hasBom
+        ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), contentBuffer])
+        : contentBuffer,
+    )
+
+    return {
+      ok: true,
+      patch: {
+        path: target.absolute,
+        applied: input.patches.length,
+        replacements,
+      },
+    }
+  }
+
   async runCommand(
     input: DeviceCommandInputMap["run-command"],
     defaultFolder?: string,
@@ -1020,11 +1700,27 @@ export class FileSandbox {
 }
 
 let defaultSandbox: FileSandbox | undefined
+const baseSandboxes = new Map<string, FileSandbox>()
 
-export function getDefaultFileSandbox(): FileSandbox {
-  if (!defaultSandbox) {
-    defaultSandbox = new FileSandbox()
+export function getFileSandbox(defaultFolder?: string): FileSandbox {
+  if (!defaultFolder) {
+    if (!defaultSandbox) {
+      defaultSandbox = new FileSandbox()
+    }
+
+    return defaultSandbox
   }
 
-  return defaultSandbox
+  let sandbox = baseSandboxes.get(defaultFolder)
+
+  if (!sandbox) {
+    sandbox = new FileSandbox({ base: defaultFolder })
+    baseSandboxes.set(defaultFolder, sandbox)
+  }
+
+  return sandbox
+}
+
+export function getDefaultFileSandbox(): FileSandbox {
+  return getFileSandbox()
 }

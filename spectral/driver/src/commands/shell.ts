@@ -76,6 +76,11 @@ export class BoundedOutput {
 
     while (this.tailBytes > this.tailLimit && this.tail.length > 1) {
       const oldest = this.tail[0]
+
+      if (!oldest) {
+        break
+      }
+
       const excess = this.tailBytes - this.tailLimit
 
       if (oldest.length <= excess) {

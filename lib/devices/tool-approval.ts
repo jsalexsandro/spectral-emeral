@@ -44,6 +44,27 @@ export function readDeviceToolCommand(
     return [record.command, ...args].join(" ")
   }
 
+  if (toolName === "device-delete" && typeof record.path === "string") {
+    return record.path
+  }
+
+  if (
+    (toolName === "device-copy" || toolName === "device-move") &&
+    typeof record.from === "string" &&
+    typeof record.to === "string"
+  ) {
+    return `${record.from} -> ${record.to}`
+  }
+
+  if (
+    (toolName === "device-mkdir" ||
+      toolName === "device-stat" ||
+      toolName === "device-apply-patch") &&
+    typeof record.path === "string"
+  ) {
+    return record.path
+  }
+
   return undefined
 }
 

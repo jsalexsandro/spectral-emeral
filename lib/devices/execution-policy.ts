@@ -112,6 +112,7 @@ const READ_TOOLS = new Set<string>([
   "device-read-file",
   "device-glob",
   "device-grep",
+  "device-stat",
   "device-check-admin",
   "device-list-windows",
   "device-inspect-ui",
@@ -138,6 +139,10 @@ const WRITE_TOOLS = new Set<string>([
   "device-write-clipboard",
   "device-write-file",
   "device-edit-file",
+  "device-mkdir",
+  "device-copy",
+  "device-move",
+  "device-apply-patch",
 ])
 
 const EXEC_TOOLS = new Set<string>([
@@ -145,7 +150,10 @@ const EXEC_TOOLS = new Set<string>([
   "device-shell",
 ])
 
-const DESTRUCTIVE_TOOLS = new Set<string>(["device-close-window"])
+const DESTRUCTIVE_TOOLS = new Set<string>([
+  "device-close-window",
+  "device-delete",
+])
 
 const SYSTEM_COMMAND_PATTERNS: RegExp[] = [
   /\bshutdown\b/i,
