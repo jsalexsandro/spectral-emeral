@@ -8,6 +8,7 @@ import {
   type DeviceAppInfo,
   type DeviceAppSource,
 } from "../../../shared/device-commands.js"
+import { listCatalogApps, resolveCatalogApp } from "./catalog.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -356,6 +357,7 @@ export async function listDiscoveredApps(
 
 async function collectApps(refresh: boolean): Promise<DeviceAppInfo[]> {
   const builtins = listApps()
+  const custom = await listCatalogApps()
   const discovered = (await listDiscoveredApps(refresh)).map<DeviceAppInfo>(
     (app) => ({
       id: app.id,
@@ -372,7 +374,9 @@ async function collectApps(refresh: boolean): Promise<DeviceAppInfo[]> {
   const seenIds = new Set(builtins.map((app) => app.id))
   const merged: DeviceAppInfo[] = [...builtins]
 
-  for (const app of discovered) {
+  // O catálogo local entra depois dos builtins e antes da descoberta: um app
+  // cadastrado explicitamente deve vencer a varredura do Menu Iniciar.
+  for (const app of [...custom, ...discovered]) {
     if (!app.target) {
       continue
     }
@@ -380,7 +384,10 @@ async function collectApps(refresh: boolean): Promise<DeviceAppInfo[]> {
     const file = basename(app.target).toLowerCase()
     const target = normalizeTarget(app.target)
 
-    if (builtinTargets.has(file) || seenTargets.has(target)) {
+    if (
+      app.source !== "custom" &&
+      (builtinTargets.has(file) || seenTargets.has(target))
+    ) {
       continue
     }
 
@@ -484,7 +491,20 @@ export async function findAvailableApps(input: {
 
 export async function resolveOpenableApp(
   appId: string,
-): Promise<{ name: string; target: string } | undefined> {
+): Promise<
+  { name: string; target: string; args?: string[]; cwd?: string } | undefined
+> {
+  const custom = await resolveCatalogApp(appId)
+
+  if (custom) {
+    return {
+      name: custom.name,
+      target: custom.path,
+      ...(custom.args ? { args: custom.args } : {}),
+      ...(custom.cwd ? { cwd: custom.cwd } : {}),
+    }
+  }
+
   const builtin = findApp(appId)
 
   if (builtin) {

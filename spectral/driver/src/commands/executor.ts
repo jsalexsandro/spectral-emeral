@@ -1,9 +1,11 @@
 import { execFile, spawn } from "node:child_process"
+import { stat } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, extname, join } from "node:path"
 import { promisify } from "node:util"
 import {
   DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
+  hasAppPathExtension,
   type DeviceCommand,
   type DeviceCommandResult,
   type DeviceKey,
@@ -15,6 +17,7 @@ import {
   listAvailableApps,
   resolveOpenableApp,
 } from "./apps.js"
+import { registerCatalogApp, removeCatalogApp, toCatalogAppInfo } from "./catalog.js"
 import { getDeviceEnv, getOsInfo } from "./system.js"
 import { DeviceShellError, runShell } from "./shell.js"
 import {
@@ -74,12 +77,17 @@ function unsupported(message: string): DeviceCommandExecutionError {
   return new DeviceCommandExecutionError("unsupported_platform", message)
 }
 
-function launch(file: string, args: string[]): Promise<void> {
+function launch(
+  file: string,
+  args: string[],
+  options?: { cwd?: string },
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
+      ...(options?.cwd ? { cwd: options.cwd } : {}),
     })
 
     child.once("error", reject)
@@ -326,12 +334,48 @@ async function openUrl(url: string): Promise<void> {
   throw unsupported("Abrir URLs não é suportado nesta plataforma.")
 }
 
+const CMD_UNSAFE_ARG = /["&|<>^%\r\n]/
+
+async function resolveAppCwd(
+  cwd: string | undefined,
+): Promise<string | undefined> {
+  if (!cwd) {
+    return undefined
+  }
+
+  const target = expandHomePath(cwd)
+
+  let info
+
+  try {
+    info = await stat(target)
+  } catch {
+    throw new DeviceCommandExecutionError(
+      "invalid_app_cwd",
+      "O diretório de trabalho informado não existe.",
+    )
+  }
+
+  if (!info.isDirectory()) {
+    throw new DeviceCommandExecutionError(
+      "invalid_app_cwd",
+      "O diretório de trabalho informado não é uma pasta.",
+    )
+  }
+
+  return target
+}
+
 async function openApp(input: {
   appId?: string
   path?: string
+  args?: string[]
+  cwd?: string
 }): Promise<string> {
   let target: string
   let name: string
+  let defaultArgs: string[] | undefined
+  let defaultCwd: string | undefined
 
   if (input.path) {
     target = expandHomePath(input.path)
@@ -374,24 +418,113 @@ async function openApp(input: {
 
     target = app.target
     name = app.name
+    defaultArgs = app.args
+    defaultCwd = app.cwd
   }
 
+  const args = input.args ?? defaultArgs ?? []
+  const cwd = await resolveAppCwd(input.cwd ?? defaultCwd)
+
   if (process.platform === "win32") {
-    await launch("cmd.exe", ["/c", "start", "", target])
+    const extension = extname(target).toLowerCase()
+    const shortcut =
+      extension === ".lnk" ||
+      extension === ".msc" ||
+      extension === ".appref-ms"
+
+    if (extension === ".cmd" || extension === ".bat") {
+      if (args.some((arg) => CMD_UNSAFE_ARG.test(arg))) {
+        throw new DeviceCommandExecutionError(
+          "invalid_app_args",
+          "Argumentos com aspas ou operadores de shell não são aceitos para scripts .cmd/.bat.",
+        )
+      }
+
+      await launch("cmd.exe", ["/d", "/s", "/c", target, ...args], { cwd })
+      return name
+    }
+
+    if (shortcut && args.length > 0) {
+      throw new DeviceCommandExecutionError(
+        "app_args_unsupported",
+        "Este tipo de atalho não aceita argumentos. Abra o app sem args ou informe o executável.",
+      )
+    }
+
+    if (shortcut) {
+      await launch("cmd.exe", ["/d", "/s", "/c", "start", "", target], {
+        cwd,
+      })
+      return name
+    }
+
+    await launch(target, args, { cwd })
     return name
   }
 
   if (process.platform === "darwin") {
-    await launch("open", ["-a", target])
+    await launch(
+      "open",
+      args.length > 0 ? ["-a", target, "--args", ...args] : ["-a", target],
+      { cwd },
+    )
     return name
   }
 
   if (process.platform === "linux") {
-    await launch(target, [])
+    await launch(target, args, { cwd })
     return name
   }
 
   throw unsupported("Abrir aplicativos não é suportado nesta plataforma.")
+}
+
+/**
+ * Abre arquivo ou pasta no app padrão. Executáveis são recusados aqui de
+ * propósito: esse caminho não pede aprovação, então não pode virar launch.
+ */
+async function openPath(path: string): Promise<string> {
+  const target = expandHomePath(path)
+
+  if (hasAppPathExtension(target)) {
+    throw new DeviceCommandExecutionError(
+      "invalid_path",
+      "Para abrir um executável ou atalho, use open-app com aprovação.",
+    )
+  }
+
+  let info
+
+  try {
+    info = await stat(target)
+  } catch {
+    throw new DeviceCommandExecutionError(
+      "path_not_found",
+      "O caminho não existe neste dispositivo.",
+    )
+  }
+
+  if (process.platform === "win32") {
+    if (info.isDirectory()) {
+      await launch("explorer.exe", [target])
+    } else {
+      await launch("rundll32.exe", ["url.dll,FileProtocolHandler", target])
+    }
+
+    return target
+  }
+
+  if (process.platform === "darwin") {
+    await launch("open", [target])
+    return target
+  }
+
+  if (process.platform === "linux") {
+    await launch("xdg-open", [target])
+    return target
+  }
+
+  throw unsupported("Abrir arquivos não é suportado nesta plataforma.")
 }
 
 function expandHomePath(value: string): string {
@@ -524,6 +657,48 @@ export async function executeDeviceCommand(
       case "open-app": {
         const name = await openApp(command.input)
         return { ok: true, output: "Aplicativo aberto: " + name }
+      }
+      case "open-path": {
+        const path = await openPath(command.input.path)
+        return { ok: true, output: "Caminho aberto: " + path }
+      }
+      case "register-app": {
+        const target = expandHomePath(command.input.path)
+
+        try {
+          await assertLaunchablePath(target)
+        } catch {
+          throw new DeviceCommandExecutionError(
+            "invalid_app_path",
+            "O caminho precisa existir e apontar para um executável ou atalho suportado.",
+          )
+        }
+
+        const cwd = await resolveAppCwd(command.input.cwd)
+        const app = await registerCatalogApp({
+          name: command.input.name,
+          path: target,
+          ...(command.input.args ? { args: command.input.args } : {}),
+          ...(cwd ? { cwd } : {}),
+        })
+
+        return {
+          ok: true,
+          apps: [toCatalogAppInfo(app)],
+          output: "Aplicativo cadastrado: " + app.name,
+        }
+      }
+      case "remove-app": {
+        const removed = await removeCatalogApp(command.input.appId)
+
+        if (!removed) {
+          throw new DeviceCommandExecutionError(
+            "app_not_found",
+            "Aplicativo não encontrado no catálogo deste dispositivo.",
+          )
+        }
+
+        return { ok: true, output: "Aplicativo removido do catálogo." }
       }
       case "type-text": {
         const window = await typeText(command.input.text, command.input.windowId)

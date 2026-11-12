@@ -1,6 +1,9 @@
 export const DEVICE_COMMAND_NAMES = [
   "open-url",
   "open-app",
+  "open-path",
+  "register-app",
+  "remove-app",
   "list-apps",
   "find-app",
   "get-os",
@@ -203,6 +206,9 @@ export const DEVICE_APP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 export const DEVICE_APP_QUERY_MAX_LENGTH = 120
 export const DEVICE_APP_RESULTS_MAX = 200
 export const DEVICE_APP_RESULTS_DEFAULT = 50
+export const DEVICE_APP_ARGS_MAX = 32
+export const DEVICE_APP_ARG_MAX_LENGTH = 512
+export const DEVICE_APP_NAME_MAX_LENGTH = 120
 
 /**
  * Extensões que o driver aceita abrir por caminho absoluto. A lista evita que
@@ -234,6 +240,15 @@ export function isAbsoluteAppPath(value: string): boolean {
     /^\\\\[^\\]+\\/.test(value) ||
     value.startsWith("/") ||
     /^~[\\/]/.test(value)
+  )
+}
+
+/** O caminho aponta para um tipo que o `open-app` sabe executar? */
+export function hasAppPathExtension(value: string): boolean {
+  const lower = value.toLowerCase()
+
+  return DEVICE_APP_PATH_EXTENSIONS.some((extension) =>
+    lower.endsWith(extension),
   )
 }
 
@@ -360,6 +375,10 @@ export type DeviceAppInfo = {
   source?: DeviceAppSource
   /** Caminho do executável quando a descoberta conseguiu resolvê-lo. */
   target?: string
+  /** Argumentos padrão gravados no catálogo do driver (`register-app`). */
+  args?: string[]
+  /** Diretório de trabalho padrão gravado no catálogo do driver. */
+  cwd?: string
 }
 
 export type DeviceOsInfo = {
@@ -623,7 +642,20 @@ export type DeviceMousePoint = {
 
 export type DeviceCommandInputMap = {
   "open-url": { url: string }
-  "open-app": { appId?: string; path?: string }
+  "open-app": {
+    appId?: string
+    path?: string
+    args?: string[]
+    cwd?: string
+  }
+  "open-path": { path: string }
+  "register-app": {
+    name: string
+    path: string
+    args?: string[]
+    cwd?: string
+  }
+  "remove-app": { appId: string }
   "list-apps": { query?: string; refresh?: boolean; limit?: number }
   "find-app": { query: string; refresh?: boolean; limit?: number }
   "get-os": Record<string, never>
@@ -1041,6 +1073,77 @@ function parseFindApp(input: unknown): DeviceCommand {
   }
 }
 
+function readAppArgs(input: unknown): string[] | undefined {
+  if (!isRecord(input) || input.args === undefined || input.args === null) {
+    return undefined
+  }
+
+  if (!Array.isArray(input.args)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_args",
+      'Campo "args" deve ser uma lista de textos.',
+    )
+  }
+
+  if (input.args.length > DEVICE_APP_ARGS_MAX) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_args",
+      `Informe no máximo ${DEVICE_APP_ARGS_MAX} argumentos.`,
+    )
+  }
+
+  const args: string[] = []
+
+  for (const item of input.args) {
+    if (typeof item !== "string") {
+      throw new DeviceCommandValidationError(
+        "invalid_app_args",
+        "Cada argumento deve ser um texto.",
+      )
+    }
+
+    if (item.length === 0 || item.length > DEVICE_APP_ARG_MAX_LENGTH) {
+      throw new DeviceCommandValidationError(
+        "invalid_app_args",
+        `Cada argumento deve ter entre 1 e ${DEVICE_APP_ARG_MAX_LENGTH} caracteres.`,
+      )
+    }
+
+    if (/[\u0000-\u001f\u007f]/.test(item)) {
+      throw new DeviceCommandValidationError(
+        "invalid_app_args",
+        "Os argumentos não podem conter caracteres de controle ou quebra de linha.",
+      )
+    }
+
+    args.push(item)
+  }
+
+  return args.length > 0 ? args : undefined
+}
+
+function readAppCwd(input: unknown): string | undefined {
+  const cwd = readOptionalTrimmedString(
+    input,
+    "cwd",
+    DEVICE_PATH_MAX_LENGTH,
+    "invalid_app_cwd",
+  )
+
+  if (cwd === undefined) {
+    return undefined
+  }
+
+  if (!isAbsoluteAppPath(cwd) || /[\u0000-\u001f\u007f]/.test(cwd)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_cwd",
+      "O diretório de trabalho deve ser um caminho absoluto válido.",
+    )
+  }
+
+  return cwd
+}
+
 function parseOpenApp(input: unknown): DeviceCommand {
   const appId = readOptionalTrimmedString(
     input,
@@ -1054,6 +1157,8 @@ function parseOpenApp(input: unknown): DeviceCommand {
     DEVICE_PATH_MAX_LENGTH,
     "invalid_app_path",
   )
+  const args = readAppArgs(input)
+  const cwd = readAppCwd(input)
 
   if ((appId === undefined) === (path === undefined)) {
     throw new DeviceCommandValidationError(
@@ -1072,7 +1177,14 @@ function parseOpenApp(input: unknown): DeviceCommand {
       )
     }
 
-    return { command: "open-app", input: { appId: normalized } }
+    return {
+      command: "open-app",
+      input: {
+        appId: normalized,
+        ...(args ? { args } : {}),
+        ...(cwd ? { cwd } : {}),
+      },
+    }
   }
 
   if (
@@ -1086,16 +1198,104 @@ function parseOpenApp(input: unknown): DeviceCommand {
     )
   }
 
-  const lower = path.toLowerCase()
-
-  if (!DEVICE_APP_PATH_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+  if (!hasAppPathExtension(path)) {
     throw new DeviceCommandValidationError(
       "invalid_app_path",
       "O caminho precisa apontar para um executável, atalho ou app.",
     )
   }
 
-  return { command: "open-app", input: { path } }
+  return {
+    command: "open-app",
+    input: {
+      path,
+      ...(args ? { args } : {}),
+      ...(cwd ? { cwd } : {}),
+    },
+  }
+}
+
+function parseOpenPath(input: unknown): DeviceCommand {
+  const path = readString(input, "path", "invalid_path").trim()
+
+  if (
+    path.length === 0 ||
+    path.length > DEVICE_PATH_MAX_LENGTH ||
+    !isAbsoluteAppPath(path) ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      "Informe um caminho absoluto para o arquivo ou pasta.",
+    )
+  }
+
+  if (hasAppPathExtension(path)) {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      "Para abrir um executável ou atalho, use open-app com aprovação.",
+    )
+  }
+
+  return { command: "open-path", input: { path } }
+}
+
+function parseRegisterApp(input: unknown): DeviceCommand {
+  const name = readString(input, "name", "invalid_app_name").trim()
+
+  if (name.length === 0 || name.length > DEVICE_APP_NAME_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_name",
+      `O nome do aplicativo deve ter entre 1 e ${DEVICE_APP_NAME_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(name)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_name",
+      "O nome do aplicativo contém caracteres de controle não suportados.",
+    )
+  }
+
+  const path = readString(input, "path", "invalid_app_path").trim()
+
+  if (
+    path.length === 0 ||
+    !isAbsoluteAppPath(path) ||
+    !hasAppPathExtension(path) ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_path",
+      "Informe um caminho absoluto para um executável ou atalho.",
+    )
+  }
+
+  const args = readAppArgs(input)
+  const cwd = readAppCwd(input)
+
+  return {
+    command: "register-app",
+    input: {
+      name,
+      path,
+      ...(args ? { args } : {}),
+      ...(cwd ? { cwd } : {}),
+    },
+  }
+}
+
+function parseRemoveApp(input: unknown): DeviceCommand {
+  const appId = readString(input, "appId", "invalid_app").trim().toLowerCase()
+
+  if (!DEVICE_APP_ID_PATTERN.test(appId)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app",
+      "Identificador de aplicativo inválido.",
+    )
+  }
+
+  return { command: "remove-app", input: { appId } }
 }
 
 function parseTypeText(input: unknown): DeviceCommand {
@@ -2483,6 +2683,12 @@ export function parseDeviceCommand(
       return parseOpenUrl(input)
     case "open-app":
       return parseOpenApp(input)
+    case "open-path":
+      return parseOpenPath(input)
+    case "register-app":
+      return parseRegisterApp(input)
+    case "remove-app":
+      return parseRemoveApp(input)
     case "type-text":
       return parseTypeText(input)
     case "press-key":
