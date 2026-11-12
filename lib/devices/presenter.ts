@@ -1,6 +1,7 @@
 import type { DeviceSummary } from "./types"
 import { isDeviceOnline } from "./types"
 import { parseDeviceExecutionPolicy } from "./execution-policy"
+import { parseDeviceCustomApps } from "./custom-apps"
 
 type DeviceRow = {
   id: string
@@ -13,6 +14,7 @@ type DeviceRow = {
   createdAt: Date
   defaultWorkingDirectory: string | null
   executionPolicy: unknown
+  customApps?: unknown
 }
 
 export function toDeviceSummary(device: DeviceRow): DeviceSummary {
@@ -28,5 +30,6 @@ export function toDeviceSummary(device: DeviceRow): DeviceSummary {
     createdAt: device.createdAt.toISOString(),
     defaultWorkingDirectory: device.defaultWorkingDirectory ?? null,
     executionPolicy: parseDeviceExecutionPolicy(device.executionPolicy),
+    customApps: parseDeviceCustomApps(device.customApps),
   }
 }

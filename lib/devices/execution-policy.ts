@@ -104,6 +104,7 @@ const READ_TOOLS = new Set<string>([
   "device-list",
   "device-online-list",
   "device-list-apps",
+  "device-find-app",
   "device-get-os",
   "device-get-env",
   "device-env",

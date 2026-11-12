@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 31
+export const SYSTEM_PROMPT_VERSION = 32
 
 export type SystemPromptChange = {
   version: number
@@ -186,5 +186,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-11",
     summary:
       "Adiciona as operações de arquivo que faltavam para operar a máquina como o Claude Code: device-mkdir, device-stat, device-copy, device-move, device-delete (lixeira por padrão) e device-apply-patch atômico com preservação de CRLF/BOM. As raízes do sandbox passam a incluir a pasta padrão do dispositivo.",
+  },
+  {
+    version: 32,
+    date: "2026-11-12",
+    summary:
+      "Descobre aplicativos instalados no Windows (Menu Iniciar e App Paths) e aceita apps personalizados por dispositivo. device-find-app verifica se um app existe e device-open-app abre por id descoberto ou caminho absoluto, substituindo a allowlist fixa.",
   },
 ]

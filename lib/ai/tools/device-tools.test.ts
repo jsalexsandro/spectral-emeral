@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   DEVICE_GET_OS_TOOL_NAME,
   DEVICE_LIST_APPS_TOOL_NAME,
+  DEVICE_FIND_APP_TOOL_NAME,
   DEVICE_LIST_FILES_TOOL_NAME,
   DEVICE_LIST_TOOL_NAME,
   DEVICE_ONLINE_LIST_TOOL_NAME,
@@ -46,6 +47,8 @@ import {
   deviceDragInputSchema,
   deviceScreenshotInputSchema,
   deviceOpenAppInputSchema,
+  deviceListAppsInputSchema,
+  deviceFindAppInputSchema,
   deviceOpenUrlInputSchema,
   devicePressKeyInputSchema,
   deviceListFilesInputSchema,
@@ -122,6 +125,7 @@ describe("device tools", () => {
         DEVICE_OPEN_URL_TOOL_NAME,
         DEVICE_OPEN_APP_TOOL_NAME,
         DEVICE_LIST_APPS_TOOL_NAME,
+        DEVICE_FIND_APP_TOOL_NAME,
         DEVICE_GET_OS_TOOL_NAME,
         DEVICE_TYPE_TEXT_TOOL_NAME,
         DEVICE_PRESS_KEY_TOOL_NAME,
@@ -187,6 +191,60 @@ describe("device tools", () => {
       deviceOpenAppInputSchema.safeParse({
         deviceId: "device-1",
         appId: "Chrome; rm -rf /",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        appId: "chrome",
+        path: "C:\\Programas\\Chrome\\chrome.exe",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\Programas\\Zed\\Zed.exe",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceOpenAppInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "Zed.exe",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida busca e listagem de apps", () => {
+    expect(
+      deviceFindAppInputSchema.safeParse({
+        deviceId: "device-1",
+        query: "Zed",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceFindAppInputSchema.safeParse({
+        deviceId: "device-1",
+        query: "",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceListAppsInputSchema.safeParse({
+        deviceId: "device-1",
+        query: "code",
+        refresh: true,
+        limit: 20,
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceListAppsInputSchema.safeParse({
+        deviceId: "device-1",
+        limit: 0,
       }).success,
     ).toBe(false)
   })

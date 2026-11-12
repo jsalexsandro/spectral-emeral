@@ -27,6 +27,12 @@ export const devices = pgTable(
     revokedAt: timestamp("revokedAt", { mode: "date" }),
     defaultWorkingDirectory: text("defaultWorkingDirectory"),
     /**
+     * Apps cadastrados pelo usuário para este dispositivo:
+     * `[{ name, path }]`. Usados por `device-open-app` para abrir executáveis
+     * fora da descoberta automática.
+     */
+    customApps: jsonb("customApps").$type<{ name: string; path: string }[]>(),
+    /**
      * Preferência de confirmação do dispositivo. Estrutura:
      * `{ confirmDestructive: boolean, updatedAt?: string }`.
      * A ausência do campo equivale a pedir confirmação.

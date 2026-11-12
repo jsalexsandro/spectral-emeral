@@ -79,6 +79,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
             updatedAt: new Date().toISOString(),
           },
         }),
+        ...(parsed.data.customApps !== undefined && {
+          customApps: parsed.data.customApps,
+        }),
         updatedAt: new Date(),
       })
       .where(

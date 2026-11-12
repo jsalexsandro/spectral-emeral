@@ -1,5 +1,6 @@
 import { z } from "zod"
 import {
+  DEVICE_APP_SOURCES,
   DEVICE_COMMAND_NAMES,
   DEVICE_UI_ACTIONS,
   type DeviceCommand,
@@ -113,10 +114,14 @@ export const commandResultMessageSchema = z.object({
           z.object({
             id: z.string().min(1).max(64),
             name: z.string().min(1).max(128),
+            source: z.enum(DEVICE_APP_SOURCES).optional(),
+            target: z.string().min(1).max(1024).optional(),
           }),
         )
         .max(200)
         .optional(),
+      found: z.boolean().optional(),
+      query: z.string().max(120).optional(),
       os: z
         .object({
           platform: z.string().min(1).max(64),

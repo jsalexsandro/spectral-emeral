@@ -3,6 +3,7 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { devices } from "@/db/schema"
 import { sendDeviceCommand } from "@/lib/devices/command-client"
+import { findCustomApp, parseDeviceCustomApps } from "@/lib/devices/custom-apps"
 import { checkRateLimit } from "@/lib/devices/rate-limit"
 import { openDeviceAppSchema } from "@/lib/validations/device"
 
@@ -14,12 +15,14 @@ const RATE_LIMIT_WINDOW_MS = 10_000
 function statusForCommandError(code: string): number {
   switch (code) {
     case "device_not_found":
+    case "app_not_found":
       return 404
     case "device_offline":
     case "device_busy":
     case "device_disconnected":
     case "command_failed":
     case "invalid_app":
+    case "unsupported_app_path":
       return 409
     case "command_timeout":
       return 504
@@ -82,7 +85,7 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   try {
     const [device] = await db
-      .select({ id: devices.id })
+      .select({ id: devices.id, customApps: devices.customApps })
       .from(devices)
       .where(
         and(
@@ -97,12 +100,17 @@ export async function POST(request: Request, { params }: RouteContext) {
       return Response.json({ error: "device_not_found" }, { status: 404 })
     }
 
+    const custom = findCustomApp(
+      parseDeviceCustomApps(device.customApps),
+      parsed.data.appId,
+    )
+
     const output = await sendDeviceCommand({
       userId,
       deviceId: id,
       command: {
         command: "open-app",
-        input: { appId: parsed.data.appId },
+        input: custom ? { path: custom.path } : { appId: parsed.data.appId },
       },
     })
 

@@ -134,6 +134,42 @@ describe("commandResultMessageSchema", () => {
     expect(parsed.success).toBe(false)
   })
 
+  it("preserva a descoberta de apps e o resultado de find-app", () => {
+    const parsed = parseResult({
+      ok: true,
+      query: "Zed",
+      found: true,
+      apps: [
+        {
+          id: "zed-1a2b3c",
+          name: "Zed",
+          source: "start-menu",
+          target: "C:\\Users\\ana\\AppData\\Local\\Programs\\Zed\\Zed.exe",
+        },
+      ],
+    })
+
+    expect(parsed.success).toBe(true)
+
+    if (!parsed.success || !parsed.data.result.ok) {
+      throw new Error("Esperava um resultado ok.")
+    }
+
+    expect(parsed.data.result.found).toBe(true)
+    expect(parsed.data.result.query).toBe("Zed")
+    expect(parsed.data.result.apps?.[0]?.source).toBe("start-menu")
+    expect(parsed.data.result.apps?.[0]?.target).toContain("Zed.exe")
+  })
+
+  it("rejeita origem de app desconhecida", () => {
+    const parsed = parseResult({
+      ok: true,
+      apps: [{ id: "zed", name: "Zed", source: "inventado" }],
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
   it("preserva os resultados das operações de arquivo", () => {
     const parsed = parseResult({
       ok: true,

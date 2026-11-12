@@ -9,6 +9,7 @@ import {
   DEVICE_LIST_WINDOWS_TOOL_NAME,
   DEVICE_MKDIR_TOOL_NAME,
   DEVICE_MOVE_TOOL_NAME,
+  DEVICE_OPEN_APP_TOOL_NAME,
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
   DEVICE_STAT_TOOL_NAME,
@@ -113,6 +114,24 @@ describe("summarizeToolInput", () => {
         url: "https://www.youtube.com/watch?v=abc",
       }),
     ).toBe("www.youtube.com")
+  })
+
+  it("resume open-app pelo id ou caminho", () => {
+    expect(
+      summarizeToolInput(DEVICE_OPEN_APP_TOOL_NAME, { appId: "zed-1a2b3c" }),
+    ).toBe("zed-1a2b3c")
+    expect(
+      summarizeToolInput(DEVICE_OPEN_APP_TOOL_NAME, {
+        path: "C:\\Program Files\\Zed\\Zed.exe",
+      }),
+    ).toBe("C:\\Program Files\\Zed\\Zed.exe")
+  })
+
+  it("resume find-app com a busca", () => {
+    expect(summarizeToolInput("device-find-app", { query: "Zed" })).toBe('"Zed"')
+    expect(
+      summarizeToolInput("device-find-app", { query: "Zed", refresh: true }),
+    ).toBe('"Zed" · atualizado')
   })
 
   it("resume window-action com ação e janela", () => {

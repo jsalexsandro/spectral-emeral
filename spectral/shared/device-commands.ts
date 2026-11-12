@@ -2,6 +2,7 @@ export const DEVICE_COMMAND_NAMES = [
   "open-url",
   "open-app",
   "list-apps",
+  "find-app",
   "get-os",
   "get-env",
   "shell",
@@ -199,6 +200,64 @@ export type DeviceMouseScrollDirection =
   (typeof DEVICE_MOUSE_SCROLL_DIRECTIONS)[number]
 
 export const DEVICE_APP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
+export const DEVICE_APP_QUERY_MAX_LENGTH = 120
+export const DEVICE_APP_RESULTS_MAX = 200
+export const DEVICE_APP_RESULTS_DEFAULT = 50
+
+/**
+ * Extensões que o driver aceita abrir por caminho absoluto. A lista evita que
+ * um caminho arbitrário vire execução de script sem extensão ou documento
+ * inesperado; apps personalizados usam .exe ou .lnk na prática.
+ */
+export const DEVICE_APP_PATH_EXTENSIONS = [
+  ".exe",
+  ".cmd",
+  ".bat",
+  ".com",
+  ".lnk",
+  ".msc",
+  ".appref-ms",
+  ".app",
+] as const
+
+/**
+ * Caminho absoluto aceito em `open-app`: drive do Windows, UNC, POSIX ou `~`.
+ * A validação final (existência e extensão) fica no driver.
+ */
+export function isAbsoluteAppPath(value: string): boolean {
+  if (value.length === 0 || value.length > DEVICE_PATH_MAX_LENGTH) {
+    return false
+  }
+
+  return (
+    /^[a-zA-Z]:[\\/]/.test(value) ||
+    /^\\\\[^\\]+\\/.test(value) ||
+    value.startsWith("/") ||
+    /^~[\\/]/.test(value)
+  )
+}
+
+/** Deriva um id estável e compatível com DEVICE_APP_ID_PATTERN. */
+export function deviceAppIdFromTarget(name: string, target: string): string {
+  const slug =
+    name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 28) || "app"
+
+  const normalizedTarget = target.toLowerCase()
+  let hash = 0x811c9dc5
+
+  for (let index = 0; index < normalizedTarget.length; index += 1) {
+    hash ^= normalizedTarget.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+
+  return `${slug}-${hash.toString(16).padStart(8, "0").slice(0, 6)}`
+}
 export const DEVICE_COMMAND_TIMEOUT_MIN_MS = 1_000
 export const DEVICE_COMMAND_TIMEOUT_MAX_MS = 60_000
 export const DEVICE_COMMAND_TIMEOUT_DEFAULT_MS = 15_000
@@ -286,9 +345,21 @@ export const DEVICE_SCREENSHOT_MONITOR_MAX = 15
  */
 export const DEVICE_SCREENSHOT_NORMALIZED_COORD_MAX = 1000
 
+export const DEVICE_APP_SOURCES = [
+  "builtin",
+  "start-menu",
+  "app-path",
+  "custom",
+] as const
+
+export type DeviceAppSource = (typeof DEVICE_APP_SOURCES)[number]
+
 export type DeviceAppInfo = {
   id: string
   name: string
+  source?: DeviceAppSource
+  /** Caminho do executável quando a descoberta conseguiu resolvê-lo. */
+  target?: string
 }
 
 export type DeviceOsInfo = {
@@ -552,8 +623,9 @@ export type DeviceMousePoint = {
 
 export type DeviceCommandInputMap = {
   "open-url": { url: string }
-  "open-app": { appId: string }
-  "list-apps": Record<string, never>
+  "open-app": { appId?: string; path?: string }
+  "list-apps": { query?: string; refresh?: boolean; limit?: number }
+  "find-app": { query: string; refresh?: boolean; limit?: number }
   "get-os": Record<string, never>
   "get-env": Record<string, never>
   shell: {
@@ -677,6 +749,10 @@ export type DeviceCommandSuccess = {
   ok: true
   output?: string
   apps?: DeviceAppInfo[]
+  /** Presente em `find-app`: true quando ao menos um app casou com a busca. */
+  found?: boolean
+  /** Eco da busca feita em `find-app`/`list-apps`. */
+  query?: string
   os?: DeviceOsInfo
   env?: DeviceEnv
   shell?: DeviceShellResult
@@ -851,19 +927,175 @@ function parseOpenUrl(input: unknown): DeviceCommand {
   return { command: "open-url", input: { url } }
 }
 
-function parseOpenApp(input: unknown): DeviceCommand {
-  const appId = readString(input, "appId", "invalid_app")
-    .trim()
-    .toLowerCase()
+function readOptionalTrimmedString(
+  input: unknown,
+  field: string,
+  maxLength: number,
+  code: string,
+): string | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
 
-  if (!DEVICE_APP_ID_PATTERN.test(appId)) {
+  const value = input[field]
+
+  if (typeof value !== "string") {
     throw new DeviceCommandValidationError(
-      "invalid_app",
-      "Identificador de aplicativo inválido.",
+      code,
+      `Campo "${field}" deve ser um texto.`,
     )
   }
 
-  return { command: "open-app", input: { appId } }
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    return undefined
+  }
+
+  if (trimmed.length > maxLength) {
+    throw new DeviceCommandValidationError(
+      code,
+      `Campo "${field}" deve ter no máximo ${maxLength} caracteres.`,
+    )
+  }
+
+  return trimmed
+}
+
+function readOptionalBoolean(
+  input: unknown,
+  field: string,
+  code: string,
+): boolean | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
+
+  if (typeof input[field] !== "boolean") {
+    throw new DeviceCommandValidationError(
+      code,
+      `Campo "${field}" deve ser booleano.`,
+    )
+  }
+
+  return input[field]
+}
+
+function parseListApps(input: unknown): DeviceCommand {
+  const query = readOptionalTrimmedString(
+    input,
+    "query",
+    DEVICE_APP_QUERY_MAX_LENGTH,
+    "invalid_app_query",
+  )
+  const refresh = readOptionalBoolean(input, "refresh", "invalid_app_query")
+  const limit = readOptionalInteger(
+    input,
+    "limit",
+    1,
+    DEVICE_APP_RESULTS_MAX,
+  )
+
+  return {
+    command: "list-apps",
+    input: {
+      ...(query !== undefined ? { query } : {}),
+      ...(refresh !== undefined ? { refresh } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    },
+  }
+}
+
+function parseFindApp(input: unknown): DeviceCommand {
+  const query = readString(input, "query", "invalid_app_query").trim()
+
+  if (query.length === 0 || query.length > DEVICE_APP_QUERY_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_query",
+      `A busca deve ter entre 1 e ${DEVICE_APP_QUERY_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(query)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_query",
+      "A busca contém caracteres de controle não suportados.",
+    )
+  }
+
+  const refresh = readOptionalBoolean(input, "refresh", "invalid_app_query")
+  const limit = readOptionalInteger(
+    input,
+    "limit",
+    1,
+    DEVICE_APP_RESULTS_MAX,
+  )
+
+  return {
+    command: "find-app",
+    input: {
+      query,
+      ...(refresh !== undefined ? { refresh } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    },
+  }
+}
+
+function parseOpenApp(input: unknown): DeviceCommand {
+  const appId = readOptionalTrimmedString(
+    input,
+    "appId",
+    64,
+    "invalid_app",
+  )
+  const path = readOptionalTrimmedString(
+    input,
+    "path",
+    DEVICE_PATH_MAX_LENGTH,
+    "invalid_app_path",
+  )
+
+  if ((appId === undefined) === (path === undefined)) {
+    throw new DeviceCommandValidationError(
+      "invalid_app",
+      'Informe "appId" ou "path", mas não os dois.',
+    )
+  }
+
+  if (appId !== undefined) {
+    const normalized = appId.toLowerCase()
+
+    if (!DEVICE_APP_ID_PATTERN.test(normalized)) {
+      throw new DeviceCommandValidationError(
+        "invalid_app",
+        "Identificador de aplicativo inválido.",
+      )
+    }
+
+    return { command: "open-app", input: { appId: normalized } }
+  }
+
+  if (
+    !path ||
+    !isAbsoluteAppPath(path) ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_path",
+      "Informe um caminho absoluto para o aplicativo.",
+    )
+  }
+
+  const lower = path.toLowerCase()
+
+  if (!DEVICE_APP_PATH_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    throw new DeviceCommandValidationError(
+      "invalid_app_path",
+      "O caminho precisa apontar para um executável, atalho ou app.",
+    )
+  }
+
+  return { command: "open-app", input: { path } }
 }
 
 function parseTypeText(input: unknown): DeviceCommand {
@@ -2238,7 +2470,9 @@ export function parseDeviceCommand(
 
   switch (command) {
     case "list-apps":
-      return { command, input: {} }
+      return parseListApps(input)
+    case "find-app":
+      return parseFindApp(input)
     case "get-os":
       return { command, input: {} }
     case "get-env":

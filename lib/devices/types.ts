@@ -1,5 +1,6 @@
 import { DEVICE_ONLINE_WINDOW_MS } from "./constants"
 import type { DeviceExecutionPolicy } from "./execution-policy"
+import type { DeviceCustomApp } from "./custom-apps"
 
 export type DeviceStatus = "online" | "offline"
 
@@ -15,6 +16,7 @@ export type DeviceSummary = {
   createdAt: string
   defaultWorkingDirectory: string | null
   executionPolicy: DeviceExecutionPolicy
+  customApps: DeviceCustomApp[]
 }
 
 export type PairingStatus = "pending" | "paired" | "expired"

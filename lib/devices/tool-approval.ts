@@ -49,6 +49,17 @@ export function readDeviceToolCommand(
   }
 
   if (
+    toolName === "device-open-app" &&
+    (typeof record.appId === "string" || typeof record.path === "string")
+  ) {
+    return typeof record.path === "string" ? record.path : String(record.appId)
+  }
+
+  if (toolName === "device-find-app" && typeof record.query === "string") {
+    return record.query
+  }
+
+  if (
     (toolName === "device-copy" || toolName === "device-move") &&
     typeof record.from === "string" &&
     typeof record.to === "string"

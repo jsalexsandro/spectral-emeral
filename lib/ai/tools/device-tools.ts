@@ -7,7 +7,16 @@ import {
   type SendDeviceCommandOutput,
 } from "@/lib/devices/command-client"
 import {
+  findCustomApp,
+  matchCustomApps,
+  parseDeviceCustomApps,
+  type DeviceCustomApp,
+} from "@/lib/devices/custom-apps"
+import {
   DEVICE_APP_ID_PATTERN,
+  DEVICE_APP_QUERY_MAX_LENGTH,
+  DEVICE_APP_RESULTS_MAX,
+  DEVICE_APP_RESULTS_DEFAULT,
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
@@ -28,6 +37,7 @@ import {
   DEVICE_URL_MAX_LENGTH,
   DEVICE_PATH_MAX_LENGTH,
   DEVICE_PATTERN_MAX_LENGTH,
+  isAbsoluteAppPath,
   DEVICE_FILE_DEPTH_DEFAULT,
   DEVICE_FILE_DEPTH_MAX,
   DEVICE_FILE_DEPTH_MIN,
@@ -94,6 +104,7 @@ import {
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   parseDeviceCommand,
+  type DeviceAppInfo,
   type DeviceCommand,
   type DeviceKey,
   type DeviceKeyModifier,
@@ -131,6 +142,7 @@ export const DEVICE_ONLINE_LIST_TOOL_NAME = "device-online-list"
 export const DEVICE_OPEN_URL_TOOL_NAME = "device-open-url"
 export const DEVICE_OPEN_APP_TOOL_NAME = "device-open-app"
 export const DEVICE_LIST_APPS_TOOL_NAME = "device-list-apps"
+export const DEVICE_FIND_APP_TOOL_NAME = "device-find-app"
 export const DEVICE_GET_OS_TOOL_NAME = "device-get-os"
 export const DEVICE_TYPE_TEXT_TOOL_NAME = "device-type-text"
 export const DEVICE_PRESS_KEY_TOOL_NAME = "device-press-key"
@@ -192,16 +204,81 @@ export const deviceOpenUrlInputSchema = z.object({
     }),
 })
 
-export const deviceOpenAppInputSchema = z.object({
-  deviceId: deviceIdSchema,
-  appId: z
-    .string()
-    .regex(DEVICE_APP_ID_PATTERN, "Identificador de aplicativo inválido.")
-    .describe("Id do aplicativo retornado por device-list-apps."),
-})
+export const deviceOpenAppInputSchema = z
+  .object({
+    deviceId: deviceIdSchema,
+    appId: z
+      .string()
+      .regex(DEVICE_APP_ID_PATTERN, "Identificador de aplicativo inválido.")
+      .optional()
+      .describe(
+        "Id do aplicativo retornado por device-list-apps ou device-find-app.",
+      ),
+    path: z
+      .string()
+      .trim()
+      .min(1)
+      .max(DEVICE_PATH_MAX_LENGTH)
+      .refine(isAbsoluteAppPath, {
+        message: "Use um caminho absoluto para o executável ou atalho.",
+      })
+      .optional()
+      .describe(
+        "Caminho absoluto do executável ou atalho, para apps fora da descoberta automática.",
+      ),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.appId === undefined) === (value.path === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe "appId" ou "path", mas não os dois.',
+        path: ["appId"],
+      })
+    }
+  })
 
 export const deviceListAppsInputSchema = z.object({
   deviceId: deviceIdSchema,
+  query: z
+    .string()
+    .trim()
+    .max(DEVICE_APP_QUERY_MAX_LENGTH)
+    .optional()
+    .describe("Filtra por nome, id ou caminho do aplicativo."),
+  refresh: z
+    .boolean()
+    .optional()
+    .describe(
+      "Refaz a descoberta de apps instalados (Menu Iniciar e App Paths) em vez de usar o cache.",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICE_APP_RESULTS_MAX)
+    .default(DEVICE_APP_RESULTS_DEFAULT)
+    .describe("Máximo de aplicativos retornados."),
+})
+
+export const deviceFindAppInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  query: z
+    .string()
+    .trim()
+    .min(1)
+    .max(DEVICE_APP_QUERY_MAX_LENGTH)
+    .describe("Nome, id ou parte do caminho do aplicativo procurado."),
+  refresh: z
+    .boolean()
+    .optional()
+    .describe("Refaz a descoberta de apps instalados em vez de usar o cache."),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICE_APP_RESULTS_MAX)
+    .default(10)
+    .describe("Máximo de correspondências retornadas."),
 })
 
 export const deviceGetOsInputSchema = z.object({
@@ -1091,6 +1168,51 @@ async function listOwnedDevices(userId: string): Promise<DeviceToolSummary[]> {
   return rows.map((row) => toDeviceToolSummary(row, now))
 }
 
+async function listDeviceCustomApps(
+  userId: string,
+  deviceId: string,
+): Promise<DeviceCustomApp[]> {
+  const { db } = await import("@/db")
+
+  const [row] = await db
+    .select({ customApps: devices.customApps })
+    .from(devices)
+    .where(
+      and(
+        eq(devices.id, deviceId),
+        eq(devices.userId, userId),
+        isNull(devices.revokedAt),
+      ),
+    )
+    .limit(1)
+
+  return parseDeviceCustomApps(row?.customApps)
+}
+
+function mergeApps(
+  base: readonly DeviceAppInfo[],
+  extra: readonly DeviceAppInfo[],
+  limit: number,
+): DeviceAppInfo[] {
+  const merged: DeviceAppInfo[] = []
+  const seen = new Set<string>()
+
+  for (const app of [...base, ...extra]) {
+    if (seen.has(app.id)) {
+      continue
+    }
+
+    seen.add(app.id)
+    merged.push(app)
+
+    if (merged.length >= limit) {
+      break
+    }
+  }
+
+  return merged
+}
+
 function toCommandToolResult(
   deviceId: string,
   output: SendDeviceCommandOutput,
@@ -1112,6 +1234,12 @@ function toCommandToolResult(
     deviceId,
     ...(output.result.output ? { output: output.result.output } : {}),
     ...(output.result.apps ? { apps: output.result.apps } : {}),
+    ...(output.result.found !== undefined
+      ? { found: output.result.found }
+      : {}),
+    ...(output.result.query !== undefined
+      ? { query: output.result.query }
+      : {}),
     ...(output.result.os ? { os: output.result.os } : {}),
     ...(output.result.entries ? { entries: output.result.entries } : {}),
     ...(output.result.file ? { file: output.result.file } : {}),
@@ -1258,14 +1386,24 @@ const openUrlDescription = [
 ].join("\n")
 
 const openAppDescription = [
-  "Abre um aplicativo permitido em um dispositivo online.",
-  "Informe o deviceId e um appId retornado por device-list-apps.",
-  "Apenas aplicativos da allowlist do driver podem ser abertos.",
+  "Abre um aplicativo em um dispositivo online.",
+  "Informe `appId` de um app retornado por device-list-apps ou device-find-app, ou `path` absoluto de um executável/atalho para apps fora da descoberta.",
+  "No Windows, a descoberta cobre atalhos do Menu Iniciar e o registro App Paths; apps cadastrados pelo usuário em Configurações → Dispositivos também aparecem na lista.",
+  "Use device-find-app quando não souber o id exato; use `refresh: true` se o usuário acabou de instalar o app.",
 ].join("\n")
 
 const listAppsDescription = [
-  "Lista os aplicativos que o driver permite abrir em um dispositivo online.",
-  "Use antes de device-open-app para descobrir os appIds válidos.",
+  "Lista os aplicativos que o driver consegue abrir em um dispositivo online.",
+  "No Windows, inclui apps fixos, atalhos do Menu Iniciar e entradas do App Paths, além dos apps personalizados cadastrados no dispositivo.",
+  "Use `query` para filtrar por nome, id ou caminho e `refresh: true` para refazer a descoberta após instalar algo.",
+  "Use o `id` retornado em device-open-app.",
+].join("\n")
+
+const findAppDescription = [
+  "Verifica se um aplicativo existe no PC e retorna as correspondências.",
+  "Aceita nome, id ou parte do caminho; a resposta traz `found` e a lista de apps com id, nome, origem e caminho quando disponível.",
+  "Use antes de device-open-app quando não tiver certeza do id ou quando o usuário perguntar se um app está instalado.",
+  "`refresh: true` refaz a descoberta (Menu Iniciar + App Paths) em vez de usar o cache.",
 ].join("\n")
 
 const getOsDescription = [
@@ -1579,8 +1717,33 @@ export function createDeviceTools(
     [DEVICE_OPEN_APP_TOOL_NAME]: tool({
       description: openAppDescription,
       inputSchema: deviceOpenAppInputSchema,
-      execute: async ({ deviceId, appId }) => {
+      execute: async ({ deviceId, appId, path }) => {
         try {
+          if (path) {
+            return await runCommand(deviceId, {
+              command: "open-app",
+              input: { path },
+            })
+          }
+
+          if (!appId) {
+            return {
+              ok: false as const,
+              code: "invalid_app",
+              error: 'Informe "appId" ou "path" para abrir um aplicativo.',
+            }
+          }
+
+          const customApps = await listDeviceCustomApps(userId, deviceId)
+          const custom = findCustomApp(customApps, appId)
+
+          if (custom) {
+            return await runCommand(deviceId, {
+              command: "open-app",
+              input: { path: custom.path },
+            })
+          }
+
           return await runCommand(deviceId, {
             command: "open-app",
             input: { appId },
@@ -1600,12 +1763,31 @@ export function createDeviceTools(
     [DEVICE_LIST_APPS_TOOL_NAME]: tool({
       description: listAppsDescription,
       inputSchema: deviceListAppsInputSchema,
-      execute: async ({ deviceId }) => {
+      execute: async ({ deviceId, query, refresh, limit }) => {
         try {
-          return await runCommand(deviceId, {
-            command: "list-apps",
-            input: {},
-          })
+          const [result, customApps] = await Promise.all([
+            runCommand(deviceId, {
+              command: "list-apps",
+              input: {
+                ...(query !== undefined && query.length > 0 ? { query } : {}),
+                ...(refresh !== undefined ? { refresh } : {}),
+                limit,
+              },
+            }),
+            listDeviceCustomApps(userId, deviceId),
+          ])
+
+          if (!result.ok) {
+            return result
+          }
+
+          const apps = mergeApps(
+            result.apps ?? [],
+            matchCustomApps(customApps, query, limit),
+            limit,
+          )
+
+          return { ...result, apps }
         } catch (error) {
           return {
             ok: false as const,
@@ -1614,6 +1796,46 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-list-apps.",
+          }
+        }
+      },
+    }),
+    [DEVICE_FIND_APP_TOOL_NAME]: tool({
+      description: findAppDescription,
+      inputSchema: deviceFindAppInputSchema,
+      execute: async ({ deviceId, query, refresh, limit }) => {
+        try {
+          const [result, customApps] = await Promise.all([
+            runCommand(deviceId, {
+              command: "find-app",
+              input: {
+                query,
+                ...(refresh !== undefined ? { refresh } : {}),
+                limit,
+              },
+            }),
+            listDeviceCustomApps(userId, deviceId),
+          ])
+
+          if (!result.ok) {
+            return result
+          }
+
+          const apps = mergeApps(
+            result.apps ?? [],
+            matchCustomApps(customApps, query, limit),
+            limit,
+          )
+
+          return { ...result, query, found: apps.length > 0, apps }
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-find-app.",
           }
         }
       },

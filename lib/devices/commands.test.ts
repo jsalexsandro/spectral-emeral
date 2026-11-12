@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   DeviceCommandValidationError,
+  deviceAppIdFromTarget,
+  isAbsoluteAppPath,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
   parseDeviceCommand,
@@ -96,6 +98,68 @@ describe("device command contract", () => {
       command: "get-os",
       input: {},
     })
+  })
+
+  it("normaliza busca e filtros de apps", () => {
+    expect(
+      parseDeviceCommand("list-apps", {
+        query: "  Zed ",
+        refresh: true,
+        limit: 10,
+      }),
+    ).toEqual({
+      command: "list-apps",
+      input: { query: "Zed", refresh: true, limit: 10 },
+    })
+
+    expect(parseDeviceCommand("find-app", { query: " Zed " })).toEqual({
+      command: "find-app",
+      input: { query: "Zed" },
+    })
+
+    expect(() => parseDeviceCommand("find-app", { query: "   " })).toThrow(
+      DeviceCommandValidationError,
+    )
+    expect(() =>
+      parseDeviceCommand("find-app", { query: "a".repeat(121) }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() => parseDeviceCommand("find-app", { query: "a\u0000b" })).toThrow(
+      DeviceCommandValidationError,
+    )
+  })
+
+  it("abre apps por caminho absoluto suportado", () => {
+    expect(
+      parseDeviceCommand("open-app", { path: "C:\\Programas\\Zed\\Zed.exe" }),
+    ).toEqual({
+      command: "open-app",
+      input: { path: "C:\\Programas\\Zed\\Zed.exe" },
+    })
+
+    expect(() =>
+      parseDeviceCommand("open-app", { appId: "zed", path: "C:\\Zed.exe" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("open-app", { path: "Zed.exe" }),
+    ).toThrow(DeviceCommandValidationError)
+    expect(() =>
+      parseDeviceCommand("open-app", { path: "C:\\Zed.txt" }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("valida caminho absoluto e deriva ids estáveis", () => {
+    expect(isAbsoluteAppPath("C:\\Zed.exe")).toBe(true)
+    expect(isAbsoluteAppPath("~/Zed.exe")).toBe(true)
+    expect(isAbsoluteAppPath("/usr/bin/zed")).toBe(true)
+    expect(isAbsoluteAppPath("Zed.exe")).toBe(false)
+
+    const first = deviceAppIdFromTarget("Zed", "C:\\Zed\\Zed.exe")
+    const second = deviceAppIdFromTarget("Zed", "C:\\Zed\\Zed.exe")
+
+    expect(first).toBe(second)
+    expect(first).toMatch(/^[a-z0-9][a-z0-9-]{0,39}$/)
+    expect(first.startsWith("zed-")).toBe(true)
+    expect(deviceAppIdFromTarget("Zed", "D:\\Zed\\Zed.exe")).not.toBe(first)
   })
 
   it("normalizes list-files with defaults", () => {

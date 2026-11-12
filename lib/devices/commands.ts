@@ -1,5 +1,10 @@
 export {
   DEVICE_APP_ID_PATTERN,
+  DEVICE_APP_QUERY_MAX_LENGTH,
+  DEVICE_APP_RESULTS_MAX,
+  DEVICE_APP_RESULTS_DEFAULT,
+  DEVICE_APP_PATH_EXTENSIONS,
+  DEVICE_APP_SOURCES,
   DEVICE_COMMAND_NAMES,
   DEVICE_COMMAND_TIMEOUT_DEFAULT_MS,
   DEVICE_COMMAND_TIMEOUT_MAX_MS,
@@ -103,11 +108,14 @@ export {
   isDeviceCommandName,
   isDeviceKey,
   isDeviceWindowId,
+  deviceAppIdFromTarget,
+  isAbsoluteAppPath,
   parseDeviceCommand,
 } from "@/spectral/shared/device-commands"
 
 export type {
   DeviceAppInfo,
+  DeviceAppSource,
   DeviceClipboardContent,
   DeviceCommand,
   DeviceCommandFailure,

@@ -1,5 +1,12 @@
 import { z } from "zod"
-import { DEVICE_APP_ID_PATTERN } from "@/lib/devices/commands"
+import {
+  DEVICE_APP_ID_PATTERN,
+  isAbsoluteAppPath,
+} from "@/lib/devices/commands"
+import {
+  DEVICE_CUSTOM_APPS_MAX,
+  DEVICE_CUSTOM_APP_NAME_MAX_LENGTH,
+} from "@/lib/devices/custom-apps"
 import { DEVICE_NAME_MAX_LENGTH } from "@/lib/devices/constants"
 
 const hostnameSchema = z
@@ -54,6 +61,26 @@ export const confirmPairingSchema = z.object({
     .max(16, "Código inválido"),
 })
 
+const customAppPathSchema = z
+  .string()
+  .trim()
+  .min(1, "Informe o caminho do aplicativo")
+  .max(1024, "Caminho muito longo")
+  .refine(isAbsoluteAppPath, "Use um caminho absoluto para o executável.")
+  .refine(
+    (value) => !/[\u0000-\u001f\u007f]/.test(value),
+    "O caminho contém caracteres inválidos.",
+  )
+
+const customAppSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Informe um nome")
+    .max(DEVICE_CUSTOM_APP_NAME_MAX_LENGTH, "Nome muito longo"),
+  path: customAppPathSchema,
+})
+
 export const renameDeviceSchema = z.object({
   name: z
     .string()
@@ -68,11 +95,32 @@ export const renameDeviceSchema = z.object({
     .boolean()
     .describe("Pedir confirmação para ações destrutivas ou de sistema.")
     .optional(),
+  customApps: z
+    .array(customAppSchema)
+    .max(DEVICE_CUSTOM_APPS_MAX, "Muitos aplicativos personalizados.")
+    .refine((apps) => {
+      const names = new Set<string>()
+
+      for (const app of apps) {
+        const key = app.name.toLowerCase()
+
+        if (names.has(key)) {
+          return false
+        }
+
+        names.add(key)
+      }
+
+      return true
+    }, "Os nomes dos aplicativos devem ser únicos.")
+    .describe("Apps fora da descoberta automática, com nome e caminho.")
+    .optional(),
 }).refine(
   (data) =>
     data.name !== undefined ||
     data.defaultWorkingDirectory !== undefined ||
-    data.confirmDestructive !== undefined,
+    data.confirmDestructive !== undefined ||
+    data.customApps !== undefined,
   {
     message: "Informe ao menos um campo para atualizar.",
     path: ["name"],

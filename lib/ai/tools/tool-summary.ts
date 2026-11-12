@@ -16,6 +16,8 @@ const DEVICE_TYPE_TEXT = "device-type-text"
 const DEVICE_PRESS_KEY = "device-press-key"
 const DEVICE_OPEN_URL = "device-open-url"
 const DEVICE_OPEN_APP = "device-open-app"
+const DEVICE_LIST_APPS = "device-list-apps"
+const DEVICE_FIND_APP = "device-find-app"
 const DEVICE_WRITE_CLIPBOARD = "device-write-clipboard"
 const DEVICE_LIST_FILES = "device-list-files"
 const DEVICE_READ_FILE = "device-read-file"
@@ -250,9 +252,34 @@ export function summarizeToolInput(
       break
     }
 
-    case DEVICE_OPEN_APP:
-      summary = joinParts([readString(record, "appId")])
+    case DEVICE_OPEN_APP: {
+      const appId = readString(record, "appId")
+      const path = readString(record, "path")
+
+      summary = joinParts([
+        appId,
+        path ? (path.length > 60 ? `${path.slice(0, 59)}…` : path) : undefined,
+      ])
       break
+    }
+
+    case DEVICE_LIST_APPS: {
+      const query = readString(record, "query")
+      summary = joinParts([
+        query ? `"${query}"` : undefined,
+        record.refresh === true ? "atualizado" : undefined,
+      ])
+      break
+    }
+
+    case DEVICE_FIND_APP: {
+      const query = readString(record, "query")
+      summary = joinParts([
+        query ? `"${query}"` : undefined,
+        record.refresh === true ? "atualizado" : undefined,
+      ])
+      break
+    }
 
     case DEVICE_WRITE_CLIPBOARD: {
       const text = readString(record, "text")

@@ -1,4 +1,6 @@
 import { execFile, spawn } from "node:child_process"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
 import { promisify } from "node:util"
 import {
   DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
@@ -7,7 +9,12 @@ import {
   type DeviceKey,
   type DeviceKeyModifier,
 } from "../../../shared/device-commands.js"
-import { findApp, getAppTarget, listApps } from "./apps.js"
+import {
+  assertLaunchablePath,
+  findAvailableApps,
+  listAvailableApps,
+  resolveOpenableApp,
+} from "./apps.js"
 import { getDeviceEnv, getOsInfo } from "./system.js"
 import { DeviceShellError, runShell } from "./shell.js"
 import {
@@ -319,38 +326,84 @@ async function openUrl(url: string): Promise<void> {
   throw unsupported("Abrir URLs não é suportado nesta plataforma.")
 }
 
-async function openApp(appId: string): Promise<string> {
-  const app = findApp(appId)
+async function openApp(input: {
+  appId?: string
+  path?: string
+}): Promise<string> {
+  let target: string
+  let name: string
 
-  if (!app) {
-    throw new DeviceCommandExecutionError(
-      "app_not_allowed",
-      "Aplicativo não permitido.",
-    )
-  }
+  if (input.path) {
+    target = expandHomePath(input.path)
 
-  const target = getAppTarget(app)
+    try {
+      await assertLaunchablePath(target)
+    } catch (error) {
+      const code =
+        error instanceof Error && error.message === "unsupported_app_path"
+          ? "unsupported_app_path"
+          : "app_not_found"
 
-  if (!target) {
-    throw unsupported("Este aplicativo não está disponível nesta plataforma.")
+      throw new DeviceCommandExecutionError(
+        code,
+        code === "app_not_found"
+          ? "O aplicativo não foi encontrado neste dispositivo."
+          : "O caminho informado não aponta para um executável ou atalho suportado.",
+      )
+    }
+
+    name = basename(target)
+  } else {
+    const appId = input.appId
+
+    if (!appId) {
+      throw new DeviceCommandExecutionError(
+        "invalid_app",
+        'Informe "appId" ou "path" para abrir um aplicativo.',
+      )
+    }
+
+    const app = await resolveOpenableApp(appId)
+
+    if (!app) {
+      throw new DeviceCommandExecutionError(
+        "app_not_found",
+        "Aplicativo não encontrado neste dispositivo.",
+      )
+    }
+
+    target = app.target
+    name = app.name
   }
 
   if (process.platform === "win32") {
     await launch("cmd.exe", ["/c", "start", "", target])
-    return app.name
+    return name
   }
 
   if (process.platform === "darwin") {
     await launch("open", ["-a", target])
-    return app.name
+    return name
   }
 
   if (process.platform === "linux") {
     await launch(target, [])
-    return app.name
+    return name
   }
 
   throw unsupported("Abrir aplicativos não é suportado nesta plataforma.")
+}
+
+function expandHomePath(value: string): string {
+  if (value === "~") {
+    return homedir()
+  }
+
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return join(homedir(), value.slice(2))
+  }
+
+  return value
 }
 
 async function typeText(
@@ -436,7 +489,16 @@ export async function executeDeviceCommand(
 
     switch (command.command) {
       case "list-apps":
-        return { ok: true, apps: listApps() }
+        return { ok: true, apps: await listAvailableApps(command.input) }
+      case "find-app": {
+        const apps = await findAvailableApps(command.input)
+        return {
+          ok: true,
+          query: command.input.query,
+          found: apps.length > 0,
+          apps,
+        }
+      }
       case "get-os":
         return { ok: true, os: getOsInfo() }
       case "get-env":
@@ -460,7 +522,7 @@ export async function executeDeviceCommand(
         await openUrl(command.input.url)
         return { ok: true }
       case "open-app": {
-        const name = await openApp(command.input.appId)
+        const name = await openApp(command.input)
         return { ok: true, output: "Aplicativo aberto: " + name }
       }
       case "type-text": {
