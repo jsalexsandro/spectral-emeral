@@ -108,6 +108,48 @@ describe("device tool risk classification", () => {
     ).toBe("destructive")
   })
 
+  it("classifica lançamentos de apps no shell como launch", () => {
+    const scripts = [
+      "Start-Process 'C:\\Zed\\Zed.exe' -ArgumentList '.'",
+      "start \"\" \"C:\\Zed\\Zed.exe\" .",
+      "xdg-open /home/user/projeto",
+      "explorer.exe C:\\Users\\eujos\\projeto",
+      "open -a Safari",
+      "open .",
+      "& 'C:\\Zed\\Zed.exe' .",
+      "\"C:\\Zed\\Zed.exe\" .",
+    ]
+
+    for (const script of scripts) {
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("launch")
+    }
+  })
+
+  it("mantém system e destructive acima de launch", () => {
+    expect(
+      classifyDeviceToolRisk("device-shell", {
+        script: "Start-Process powershell -Verb RunAs",
+      }),
+    ).toBe("system")
+    expect(
+      classifyDeviceToolRisk("device-shell", {
+        script: "Start-Process cmd -ArgumentList '/c del /s /q C:\\temp'",
+      }),
+    ).toBe("destructive")
+  })
+
+  it("não promove comandos comuns de build a launch", () => {
+    for (const script of [
+      "npm test",
+      "git status",
+      "Write-Output 'ok'",
+      "Get-Item C:\\Zed\\Zed.exe",
+      "python script.py",
+    ]) {
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("exec")
+    }
+  })
+
   it("promotes dangerous run-command invocations", () => {
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "taskkill" }),

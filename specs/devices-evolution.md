@@ -301,8 +301,8 @@ Risco considera exposição de segurança ao liberar o recurso.
   `deviceAppIdFromTarget` (slug + FNV-1a) e a descoberta tem cache de 5 minutos.
   `open-app` aceita `args` (até 32, máximo 512 chars cada, sem controle) e
   `cwd` (diretório existente); com args/cwd o risco é `launch` (aprovação no
-  build). `open-path` recusa a denylist de extensões de app (`invalid_path`).
-  `register-app` valida
+  build). `open-path` recusa extensões de app e a blocklist de scripts,
+  instaladores e documentos com macro (`invalid_path`). `register-app` valida
   o caminho na hora e grava em `apps.json` (escrita atômica, dedupe por caminho,
   máx. 100). Fora do Windows só os apps fixos e `open-path` funcionam.
 - **Pronto quando:** "o Zed está instalado?", "abre o Zed" e "abre o Zed nesta
@@ -311,18 +311,21 @@ Risco considera exposição de segurança ao liberar o recurso.
   aparecer em `device-list-apps` sem cadastro manual em Configurações. ✅
 - **Esforço:** M · **Risco:** médio (abrir executável arbitrário via `path`;
   args/cwd pedem aprovação como lançamento).
-- **Pendências (teste ao vivo 2026-11-12):** o executor foi exercitado direto e
-  o contrato passou, mas dois gaps ficaram abertos e só documentados:
-  1. `open-path` executa scripts/instaladores fora da denylist de apps (`.vbs`,
+- **Pendências resolvidas (teste ao vivo 2026-11-12):** o executor foi
+  exercitado direto e os dois gaps encontrados foram corrigidos:
+  1. `open-path` executava scripts/instaladores fora da denylist de apps (`.vbs`,
      `.js`, `.msi`, `.hta`, `.scr`, `.cpl`, `.jar`, `.reg`, `.url`) sem
-     aprovação. Proposta: `DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS` no contrato e no
-     driver, ou allowlist de extensões de documento, com testes.
-  2. `device-shell` com `Start-Process`/`start`/`open`/`xdg-open`/`explorer` é
-     classificado como `exec` e roda sem aprovação no build com confirmação,
-     contornando o `launch` do `open-app`. Proposta: classificar esses scripts
-     como `launch` (ou exigir aprovação para `exec` com `confirmDestructive`).
+     aprovação. Correção: `DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS` no contrato e no
+     driver (scripts, instaladores, handlers e documentos com macro; no driver
+     só para arquivos), com testes.
+  2. `device-shell` com `Start-Process`/`start`/`open`/`xdg-open`/`explorer` era
+     classificado como `exec` e contornava o `launch` do `open-app`. Correção:
+     esses scripts e a invocação direta de `.exe`/`.cmd` agora são `launch`,
+     depois de `system`/`destructive`.
 
-  Detalhes e evidências em `device-execution.md` §4.3c.
+  Limites restantes: `cmd /c start`, `Invoke-Expression`, `schtasks` e outras
+  entradas indiretas ainda escapam da heurística. Detalhes em
+  `device-execution.md` §4.3c.
 
 ### Bloco B — Controle real do PC
 

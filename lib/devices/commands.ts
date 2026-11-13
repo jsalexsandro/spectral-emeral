@@ -7,6 +7,7 @@ export {
   DEVICE_APP_RESULTS_MAX,
   DEVICE_APP_RESULTS_DEFAULT,
   DEVICE_APP_PATH_EXTENSIONS,
+  DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS,
   DEVICE_APP_SOURCES,
   DEVICE_COMMAND_NAMES,
   DEVICE_COMMAND_TIMEOUT_DEFAULT_MS,
@@ -113,6 +114,7 @@ export {
   isDeviceWindowId,
   deviceAppIdFromTarget,
   hasAppPathExtension,
+  hasBlockedOpenPathExtension,
   isAbsoluteAppPath,
   parseDeviceCommand,
 } from "@/spectral/shared/device-commands"

@@ -180,7 +180,7 @@ const SYSTEM_COMMAND_PATTERNS: RegExp[] = [
   /\bvssadmin\s+delete\b/i,
   /\bwbadmin\s+delete\b/i,
   /\bcipher\s+\/w/i,
-  /\bstart-process\b[^\n]*\b-verb\s+runas\b/i,
+  /\bstart-process\b[^\n]*\s-verb\s+runas\b/i,
   /\b(set|change)\s+.*\bpassword\b/i,
   /\bpasswd\b/i,
   /\bsudo\b/i,
@@ -207,6 +207,23 @@ const DESTRUCTIVE_COMMAND_PATTERNS: RegExp[] = [
   /\b(drop|truncate)\s+table\b/i,
   /\bdelete\s+from\b/i,
   /\bnpm\s+publish\b/i,
+]
+
+/**
+ * Scripts que iniciam outro aplicativo. O `open-app` com argumentos já é
+ * `launch`; sem estes padrões, o mesmo lançamento via `device-shell` rodaria
+ * como `exec` e contornaria a aprovação. É heurística: entradas indiretas
+ * (`cmd /c start`, `Invoke-Expression`, `schtasks`) ainda não são cobertas.
+ */
+const LAUNCH_COMMAND_PATTERNS: RegExp[] = [
+  /\bstart-process\b/i,
+  /(?:^|[;&|]\s*)start(?:\s|$)/im,
+  /\bxdg-open\b/i,
+  /\bexplorer(?:\.exe)?\s+[^\n]/i,
+  /(?:^|[;&|]\s*)open\s+-[a-zA-Z-]+\s+/im,
+  /(?:^|[;&|]\s*)open\s+(?:["'~./\\]|https?:\/\/)/im,
+  /^\s*&\s*["']?[a-z]:\\[^\n]*\.(?:exe|com|bat|cmd|lnk|msc)["']?/im,
+  /(?:^|[;&|]\s*)["']?[a-z]:\\[^\n]*\.(?:exe|com|bat|cmd|lnk|msc)["']?(?:\s|$)/im,
 ]
 
 function collectCommandText(toolName: string, input: unknown): string {
@@ -319,6 +336,10 @@ export function classifyDeviceToolRisk(
 
     if (matchesAny(DESTRUCTIVE_COMMAND_PATTERNS, text)) {
       return "destructive"
+    }
+
+    if (matchesAny(LAUNCH_COMMAND_PATTERNS, text)) {
+      return "launch"
     }
 
     return "exec"

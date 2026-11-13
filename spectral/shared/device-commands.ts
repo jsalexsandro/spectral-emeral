@@ -243,11 +243,79 @@ export function isAbsoluteAppPath(value: string): boolean {
   )
 }
 
+/**
+ * Extensões que o `open-path` recusa. O handler padrão do sistema executa
+ * scripts, instaladores e documentos com macro ao "abrir" esses tipos, então
+ * eles não podem passar por um comando que não pede aprovação.
+ */
+export const DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS = [
+  // Executáveis e atalhos
+  ".exe",
+  ".com",
+  ".scr",
+  ".pif",
+  ".cpl",
+  ".msc",
+  ".lnk",
+  ".appref-ms",
+  ".app",
+  ".gadget",
+  // Scripts
+  ".bat",
+  ".cmd",
+  ".vbs",
+  ".vbe",
+  ".js",
+  ".jse",
+  ".wsf",
+  ".wsh",
+  ".hta",
+  ".ps1",
+  ".psm1",
+  ".psd1",
+  ".py",
+  ".pyw",
+  ".jar",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".command",
+  ".run",
+  // Instaladores e pacotes
+  ".msi",
+  ".msp",
+  ".mst",
+  ".msix",
+  ".appx",
+  ".appxbundle",
+  ".msixbundle",
+  // Registro e handlers
+  ".reg",
+  ".inf",
+  ".url",
+  ".scf",
+  ".application",
+  ".chm",
+  // Documentos com macro
+  ".docm",
+  ".xlsm",
+  ".pptm",
+] as const
+
 /** O caminho aponta para um tipo que o `open-app` sabe executar? */
 export function hasAppPathExtension(value: string): boolean {
   const lower = value.toLowerCase()
 
   return DEVICE_APP_PATH_EXTENSIONS.some((extension) =>
+    lower.endsWith(extension),
+  )
+}
+
+/** O `open-path` recusaria este caminho por poder executar código? */
+export function hasBlockedOpenPathExtension(value: string): boolean {
+  const lower = value.toLowerCase()
+
+  return DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS.some((extension) =>
     lower.endsWith(extension),
   )
 }
@@ -1234,6 +1302,13 @@ function parseOpenPath(input: unknown): DeviceCommand {
     throw new DeviceCommandValidationError(
       "invalid_path",
       "Para abrir um executável ou atalho, use open-app com aprovação.",
+    )
+  }
+
+  if (hasBlockedOpenPathExtension(path)) {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      "Scripts e instaladores não abrem por open-path. Use open-app com aprovação.",
     )
   }
 

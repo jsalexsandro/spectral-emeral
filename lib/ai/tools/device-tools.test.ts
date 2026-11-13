@@ -294,6 +294,20 @@ describe("device tools", () => {
     expect(
       deviceOpenPathInputSchema.safeParse({
         deviceId: "device-1",
+        path: "C:\\Users\\eujos\\script.py",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\Users\\eujos\\planilha.xlsm",
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceOpenPathInputSchema.safeParse({
+        deviceId: "device-1",
         path: "relatorio.pdf",
       }).success,
     ).toBe(false)

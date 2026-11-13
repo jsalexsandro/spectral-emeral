@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import {
   DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
   hasAppPathExtension,
+  hasBlockedOpenPathExtension,
   type DeviceCommand,
   type DeviceCommandResult,
   type DeviceKey,
@@ -486,13 +487,6 @@ async function openApp(input: {
 async function openPath(path: string): Promise<string> {
   const target = expandHomePath(path)
 
-  if (hasAppPathExtension(target)) {
-    throw new DeviceCommandExecutionError(
-      "invalid_path",
-      "Para abrir um executável ou atalho, use open-app com aprovação.",
-    )
-  }
-
   let info
 
   try {
@@ -502,6 +496,22 @@ async function openPath(path: string): Promise<string> {
       "path_not_found",
       "O caminho não existe neste dispositivo.",
     )
+  }
+
+  if (!info.isDirectory()) {
+    if (hasAppPathExtension(target)) {
+      throw new DeviceCommandExecutionError(
+        "invalid_path",
+        "Para abrir um executável ou atalho, use open-app com aprovação.",
+      )
+    }
+
+    if (hasBlockedOpenPathExtension(target)) {
+      throw new DeviceCommandExecutionError(
+        "invalid_path",
+        "Scripts e instaladores não abrem por open-path. Use open-app com aprovação.",
+      )
+    }
   }
 
   if (process.platform === "win32") {

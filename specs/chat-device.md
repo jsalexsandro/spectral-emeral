@@ -85,9 +85,9 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   `cwd` precisa ser um diretório existente. Com `args` ou `cwd` o risco é
   `launch` e o build pede aprovação; sem eles o risco é `input`.
 - `device-open-path` abre um arquivo ou pasta no app padrão, sem aprovação.
-  Recusa a denylist de extensões de app (`invalid_path`), mas não é uma allowlist:
-  scripts e instaladores fora dela ainda passam (ver `device-execution.md` §4.3c,
-  Achado 1).
+  Recusa extensões de app e a blocklist de scripts, instaladores, handlers e
+  documentos com macro (`invalid_path`). No driver a blocklist só vale para
+  arquivos; pastas continuam abrindo.
 - `device-find-app` é a verificação de existência: aceita nome, id ou trecho do
   caminho, retorna `found` e lista as correspondências com `source`
   (`builtin`, `start-menu`, `app-path` ou `custom`). No Windows a descoberta
@@ -324,14 +324,15 @@ carga do widget.
   recebe argumentos e diretório de trabalho, então o lançamento pede aprovação no
   Modo Construtor. `open-app` sem `args`/`cwd` continua `input`.
 - `device-open-path` abre arquivo ou pasta no app padrão como `input` (sem
-  aprovação). Ele recusa a denylist de extensões de app, mas não é allowlist:
-  scripts e instaladores fora dela ainda passam (ver
-  `device-execution.md` §4.3c, Achado 1).
+  aprovação). Ele recusa extensões de app e a blocklist de scripts,
+  instaladores, handlers e documentos com macro; para esses tipos, use
+  `device-open-app` com aprovação ou `device-shell`.
 - `device-shell` continua sendo a válvula de escape do Modo Construtor (`exec`).
   Scripts que lançam apps (`Start-Process`, `start`, `open`, `xdg-open`,
-  `explorer`) ainda não são classificados como `launch`, então o fallback via
-  terminal contorna a aprovação do `open-app` (ver `device-execution.md` §4.3c,
-  Achado 2).
+  `explorer`) e a invocação direta de `.exe`/`.cmd` são classificados como
+  `launch`, então o fallback via terminal não contorna a aprovação do
+  `open-app` (ver `device-execution.md` §4.3c, Achado 2). Entradas indiretas
+  (`cmd /c start`, `Invoke-Expression`, `schtasks`) ainda não são cobertas.
 - Quando uma tool exige aprovação, o app usa o primitivo nativo do AI SDK
   (`toolApproval` + `tool-approval-request`) e o usuário decide no card
   Permitir/Negar. O pedido é assinado no servidor; o modelo nunca recebe a

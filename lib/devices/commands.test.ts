@@ -147,6 +147,38 @@ describe("device command contract", () => {
     ).toThrow(DeviceCommandValidationError)
   })
 
+  it("recusa scripts e instaladores no open-path", () => {
+    for (const extension of [
+      ".vbs",
+      ".js",
+      ".msi",
+      ".hta",
+      ".ps1",
+      ".py",
+      ".docm",
+      ".reg",
+      ".url",
+    ]) {
+      expect(() =>
+        parseDeviceCommand("open-path", {
+          path: `C:\\Users\\eujos\\arquivo${extension}`,
+        }),
+      ).toThrow(DeviceCommandValidationError)
+    }
+
+    for (const path of [
+      "C:\\Users\\eujos\\relatorio.pdf",
+      "C:\\Users\\eujos\\notas.md",
+      "C:\\Users\\eujos\\imagem.png",
+      "C:\\Users\\eujos\\projeto",
+    ]) {
+      expect(parseDeviceCommand("open-path", { path })).toEqual({
+        command: "open-path",
+        input: { path },
+      })
+    }
+  })
+
   it("valida caminho absoluto e deriva ids estáveis", () => {
     expect(isAbsoluteAppPath("C:\\Zed.exe")).toBe(true)
     expect(isAbsoluteAppPath("~/Zed.exe")).toBe(true)

@@ -36,6 +36,7 @@ import {
   DEVICE_PATTERN_MAX_LENGTH,
   isAbsoluteAppPath,
   hasAppPathExtension,
+  hasBlockedOpenPathExtension,
   DEVICE_FILE_DEPTH_DEFAULT,
   DEVICE_FILE_DEPTH_MAX,
   DEVICE_FILE_DEPTH_MIN,
@@ -281,6 +282,10 @@ export const deviceOpenPathInputSchema = z.object({
     .refine((value) => !hasAppPathExtension(value), {
       message:
         "Arquivos executáveis devem ser abertos com device-open-app, que pede aprovação.",
+    })
+    .refine((value) => !hasBlockedOpenPathExtension(value), {
+      message:
+        "Scripts e instaladores devem ser abertos com device-open-app, que pede aprovação.",
     })
     .describe("Caminho absoluto de um arquivo ou pasta a abrir no app padrão."),
 })
