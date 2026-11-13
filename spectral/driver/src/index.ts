@@ -1,5 +1,6 @@
 import { sleep } from "./api.js"
 import { loadConfig } from "./config.js"
+import { shutdownJobs } from "./commands/jobs.js"
 import {
   loadOrCreateIdentity,
   saveDeviceId,
@@ -60,7 +61,15 @@ async function main() {
     console.log("Encerrando driver...")
     activeConnection?.disconnect()
 
-    setTimeout(() => process.exit(0), 1_000).unref()
+    const forceExit = setTimeout(() => process.exit(0), 2_000)
+    forceExit.unref()
+
+    // Jobs são filhos do driver; sem isso eles ficariam órfãos até o
+    // `maxRuntimeMs` (ou para sempre, no Unix).
+    void shutdownJobs().finally(() => {
+      clearTimeout(forceExit)
+      process.exit(0)
+    })
   })
 
   let backoff = MIN_BACKOFF_MS

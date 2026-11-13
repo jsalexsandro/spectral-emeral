@@ -22,6 +22,14 @@ import { registerCatalogApp, removeCatalogApp, toCatalogAppInfo } from "./catalo
 import { getDeviceEnv, getOsInfo } from "./system.js"
 import { DeviceShellError, runShell } from "./shell.js"
 import {
+  DeviceJobError,
+  cancelJob,
+  getJob,
+  listJobs,
+  readJobOutput,
+  startJob,
+} from "./jobs.js"
+import {
   DeviceFileError,
   getFileSandbox,
 } from "./files.js"
@@ -661,6 +669,35 @@ export async function executeDeviceCommand(
           shell: await runShell(command.input, options?.defaultFolder),
         }
       }
+      case "job-start": {
+        if (process.platform !== "win32") {
+          throw unsupported(
+            "Os jobs de execução estão disponíveis apenas no Windows nesta versão.",
+          )
+        }
+
+        return {
+          ok: true,
+          job: await startJob(command.input, options?.defaultFolder),
+        }
+      }
+      case "job-status":
+        return { ok: true, job: getJob(command.input.jobId) }
+      case "job-output":
+        return {
+          ok: true,
+          jobOutput: readJobOutput(
+            command.input.jobId,
+            command.input.cursor,
+            command.input.maxBytes,
+          ),
+        }
+      case "job-cancel": {
+        const result = await cancelJob(command.input.jobId)
+        return { ok: true, cancelled: result.cancelled, job: result.job }
+      }
+      case "job-list":
+        return { ok: true, jobs: listJobs() }
       case "open-url":
         await openUrl(command.input.url)
         return { ok: true }
@@ -873,6 +910,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceShellError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceJobError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

@@ -117,7 +117,7 @@ export class BoundedOutput {
   }
 }
 
-type ShellCandidate = {
+export type ShellCandidate = {
   kind: Exclude<DeviceShellKind, "auto">
   command: string
   args: string[]
@@ -335,7 +335,7 @@ function isInsideRoot(root: string, target: string): boolean {
   )
 }
 
-async function resolveWorkingDirectory(
+export async function resolveWorkingDirectory(
   input: string | undefined,
   defaultFolder: string | undefined,
 ): Promise<string> {
@@ -440,7 +440,6 @@ export function buildShellEnv(
 type ShellRunOptions = {
   scriptPath: string
   candidate: ShellCandidate
-  args: string[]
   cwd: string
   env: NodeJS.ProcessEnv
   stdin: string | undefined
@@ -459,7 +458,7 @@ type ShellRunOutcome = {
   timedOut: boolean
 }
 
-async function killTree(pid: number) {
+export async function killTree(pid: number) {
   try {
     if (IS_WINDOWS) {
       await execFileAsync("taskkill.exe", ["/pid", String(pid), "/T", "/F"], {
@@ -487,12 +486,7 @@ function runProcess(options: ShellRunOptions): Promise<ShellRunOutcome> {
     const stderr = new BoundedOutput(options.maxOutputBytes)
     const startedAt = Date.now()
 
-    const child = spawn(candidate.command, [
-      ...options.args,
-      ...(candidate.kind === "cmd" && IS_WINDOWS
-        ? [`"${options.scriptPath}"`]
-        : [options.scriptPath]),
-    ], {
+    const child = spawn(candidate.command, shellCommandArgs(candidate, options.scriptPath), {
       cwd: options.cwd,
       env: options.env,
       windowsHide: true,
@@ -596,34 +590,62 @@ function wrapScript(kind: ShellCandidate["kind"], script: string): string {
   return script
 }
 
+/** Monta os argumentos do shell para executar o script temporário. */
+export function shellCommandArgs(
+  candidate: ShellCandidate,
+  scriptPath: string,
+): string[] {
+  return [
+    ...candidate.args,
+    ...(candidate.kind === "cmd" && IS_WINDOWS
+      ? [`"${scriptPath}"`]
+      : [scriptPath]),
+  ]
+}
+
+/**
+ * Grava o script num arquivo temporário com nome aleatório. O chamador é dono
+ * do diretório e precisa removê-lo (o shell curto remove ao terminar; o job
+ * remove quando o processo sai).
+ */
+export async function prepareShellScript(
+  candidate: ShellCandidate,
+  script: string,
+): Promise<{ directory: string; scriptPath: string }> {
+  const directory = await mkdtemp(join(tmpdir(), "spectral-shell-"))
+  const scriptPath = join(
+    directory,
+    `script-${randomUUID().slice(0, 8)}.${candidate.scriptExtension}`,
+  )
+  const wrapped = wrapScript(candidate.kind, script)
+
+  // BOM no PowerShell: sem ele, o Windows PowerShell 5.1 lê UTF-8 como ANSI
+  // e corrompe acentos em comandos e caminhos.
+  const content =
+    candidate.kind === "pwsh" || candidate.kind === "powershell"
+      ? `\ufeff${wrapped}`
+      : wrapped
+
+  await writeFile(scriptPath, content, { encoding: "utf8", mode: 0o700 })
+
+  return { directory, scriptPath }
+}
+
 export async function runShell(
   input: DeviceCommandInputMap["shell"],
   defaultFolder?: string,
 ): Promise<DeviceShellResult> {
   const cwd = await resolveWorkingDirectory(input.cwd, defaultFolder)
   const { info, candidate } = await detectShell(input.shell)
-  const directory = await mkdtemp(join(tmpdir(), "spectral-shell-"))
-  const scriptPath = join(
-    directory,
-    `script-${randomUUID().slice(0, 8)}.${candidate.scriptExtension}`,
+  const { directory, scriptPath } = await prepareShellScript(
+    candidate,
+    input.script,
   )
 
   try {
-    const wrapped = wrapScript(candidate.kind, input.script)
-
-    // BOM no PowerShell: sem ele, o Windows PowerShell 5.1 lê UTF-8 como ANSI
-    // e corrompe acentos em comandos e caminhos.
-    const content =
-      candidate.kind === "pwsh" || candidate.kind === "powershell"
-        ? `\ufeff${wrapped}`
-        : wrapped
-
-    await writeFile(scriptPath, content, { encoding: "utf8", mode: 0o700 })
-
     const outcome = await runProcess({
       scriptPath,
       candidate,
-      args: candidate.args,
       cwd,
       env: buildShellEnv(input.env),
       stdin: input.stdin,

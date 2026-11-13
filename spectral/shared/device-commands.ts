@@ -33,6 +33,11 @@ export const DEVICE_COMMAND_NAMES = [
   "delete",
   "apply-patch",
   "run-command",
+  "job-start",
+  "job-status",
+  "job-output",
+  "job-cancel",
+  "job-list",
   "screenshot",
   "list-windows",
   "focus-window",
@@ -406,6 +411,31 @@ export const DEVICE_SHELL_ENV_VALUE_MAX_LENGTH = 4096
 export const DEVICE_SHELL_ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 export const DEVICE_ENV_RUNTIMES_MAX = 24
 
+/**
+ * Jobs são processos de fundo: o `job-start` responde na hora e a saída é lida
+ * por cursor. O buffer fica abaixo do `maxPayload` do WebSocket e o teto de
+ * execução evita processo esquecido.
+ */
+export const DEVICE_JOB_MAX_ACTIVE = 3
+export const DEVICE_JOB_ID_MAX_LENGTH = 128
+export const DEVICE_JOB_LABEL_MAX_LENGTH = 80
+export const DEVICE_JOB_MAX_RUNTIME_MIN_MS = 1_000
+export const DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS = 30 * 60_000
+export const DEVICE_JOB_MAX_RUNTIME_MS = 60 * 60_000
+export const DEVICE_JOB_OUTPUT_MIN_BYTES = 1024
+export const DEVICE_JOB_OUTPUT_MAX_BYTES = 256 * 1024
+export const DEVICE_JOB_OUTPUT_DEFAULT_BYTES = 64 * 1024
+export const DEVICE_JOB_BUFFER_BYTES = 1024 * 1024
+export const DEVICE_JOB_RETENTION_MS = 10 * 60_000
+export const DEVICE_JOB_STATUSES = [
+  "running",
+  "exited",
+  "killed",
+  "failed",
+] as const
+
+export type DeviceJobStatus = (typeof DEVICE_JOB_STATUSES)[number]
+
 export const DEVICE_SCREENSHOT_FORMATS = ["jpeg", "png"] as const
 
 export type DeviceScreenshotFormat = (typeof DEVICE_SCREENSHOT_FORMATS)[number]
@@ -690,6 +720,47 @@ export type DeviceShellResult = {
   timedOut: boolean
 }
 
+/** Retrato de um processo de fundo mantido pelo driver. */
+export type DeviceJob = {
+  id: string
+  label: string | null
+  status: DeviceJobStatus
+  shell: Exclude<DeviceShellKind, "auto">
+  shellPath: string
+  cwd: string
+  /** ISO 8601. */
+  startedAt: string
+  durationMs: number
+  exitCode: number | null
+  /** Motivo da falha quando o processo nem chegou a rodar. */
+  error: string | null
+  stdoutBytes: number
+  stderrBytes: number
+  /** Total de caracteres já emitidos, base do cursor de `job-output`. */
+  outputChars: number
+  truncated: boolean
+  timedOut: boolean
+  cancelled: boolean
+}
+
+export type DeviceJobStream = "stdout" | "stderr"
+
+export type DeviceJobChunk = {
+  /** Posição do primeiro caractere do chunk no fluxo combinado. */
+  cursor: number
+  stream: DeviceJobStream
+  text: string
+}
+
+export type DeviceJobOutput = {
+  jobId: string
+  /** Cursor do primeiro caractere ainda retido no buffer. */
+  startCursor: number
+  chunks: DeviceJobChunk[]
+  nextCursor: number
+  truncated: boolean
+}
+
 export type DeviceGrepMatch = {
   path: string
   line: number
@@ -828,6 +899,18 @@ export type DeviceCommandInputMap = {
     timeoutMs?: number
     cwd?: string
   }
+  "job-start": {
+    script: string
+    shell: DeviceShellKind
+    cwd?: string
+    env?: Record<string, string>
+    label?: string
+    maxRuntimeMs: number
+  }
+  "job-status": { jobId: string }
+  "job-output": { jobId: string; cursor: number; maxBytes: number }
+  "job-cancel": { jobId: string }
+  "job-list": Record<string, never>
   screenshot: {
     monitor?: number
     region?: DeviceWindowBounds
@@ -891,6 +974,11 @@ export type DeviceCommandSuccess = {
   delete?: DeviceFileDeleteResult
   patch?: DeviceFilePatchResult
   run?: DeviceCommandRunResult
+  job?: DeviceJob
+  jobs?: DeviceJob[]
+  jobOutput?: DeviceJobOutput
+  /** Presente em `job-cancel`: true quando um job em execução recebeu o sinal. */
+  cancelled?: boolean
   windows?: DeviceWindow[]
   window?: DeviceWindow
   screenshot?: DeviceScreenshot
@@ -2474,7 +2562,7 @@ function parseRunCommand(input: unknown): DeviceCommand {
   }
 }
 
-function parseShell(input: unknown): DeviceCommand {
+function readShellScript(input: unknown): string {
   const script = readString(input, "script", "invalid_script")
 
   if (script.trim().length === 0) {
@@ -2498,19 +2586,29 @@ function parseShell(input: unknown): DeviceCommand {
     )
   }
 
+  return script
+}
+
+function readShellKind(input: unknown): DeviceShellKind {
   const rawShell = isRecord(input) ? input.shell : undefined
-  let kind: DeviceShellKind = "auto"
 
-  if (rawShell !== undefined && rawShell !== null) {
-    if (typeof rawShell !== "string" || !DEVICE_SHELL_KIND_SET.has(rawShell)) {
-      throw new DeviceCommandValidationError(
-        "invalid_shell",
-        `Shell inválido. Use um de: ${DEVICE_SHELL_KINDS.join(", ")}.`,
-      )
-    }
-
-    kind = rawShell as DeviceShellKind
+  if (rawShell === undefined || rawShell === null) {
+    return "auto"
   }
+
+  if (typeof rawShell !== "string" || !DEVICE_SHELL_KIND_SET.has(rawShell)) {
+    throw new DeviceCommandValidationError(
+      "invalid_shell",
+      `Shell inválido. Use um de: ${DEVICE_SHELL_KINDS.join(", ")}.`,
+    )
+  }
+
+  return rawShell as DeviceShellKind
+}
+
+function parseShell(input: unknown): DeviceCommand {
+  const script = readShellScript(input)
+  const kind = readShellKind(input)
 
   const timeoutMs = readInteger(
     input,
@@ -2542,6 +2640,119 @@ function parseShell(input: unknown): DeviceCommand {
       ...(env ? { env } : {}),
     },
   }
+}
+
+function readJobId(input: unknown): string {
+  const value = readString(input, "jobId", "invalid_job_id").trim()
+
+  if (value.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_job_id",
+      "O id do job não pode estar vazio.",
+    )
+  }
+
+  if (value.length > DEVICE_JOB_ID_MAX_LENGTH) {
+    throw new DeviceCommandValidationError(
+      "invalid_job_id",
+      `O id do job excede o limite de ${DEVICE_JOB_ID_MAX_LENGTH} caracteres.`,
+    )
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_job_id",
+      "O id do job contém caracteres de controle.",
+    )
+  }
+
+  return value
+}
+
+function parseJobStart(input: unknown): DeviceCommand {
+  const script = readShellScript(input)
+  const shell = readShellKind(input)
+  const cwd = readOptionalPath(input, "cwd")
+  const env = readShellEnv(input)
+  const maxRuntimeMs = readInteger(
+    input,
+    "maxRuntimeMs",
+    DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
+    DEVICE_JOB_MAX_RUNTIME_MIN_MS,
+    DEVICE_JOB_MAX_RUNTIME_MS,
+  )
+
+  let label: string | undefined
+
+  if (isRecord(input) && input.label !== undefined && input.label !== null) {
+    if (typeof input.label !== "string") {
+      throw new DeviceCommandValidationError(
+        "invalid_label",
+        'Campo "label" deve ser um texto.',
+      )
+    }
+
+    const trimmed = input.label.trim()
+
+    if (trimmed.length > DEVICE_JOB_LABEL_MAX_LENGTH) {
+      throw new DeviceCommandValidationError(
+        "invalid_label",
+        `O rótulo excede o limite de ${DEVICE_JOB_LABEL_MAX_LENGTH} caracteres.`,
+      )
+    }
+
+    if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+      throw new DeviceCommandValidationError(
+        "invalid_label",
+        "O rótulo contém caracteres de controle.",
+      )
+    }
+
+    if (trimmed.length > 0) {
+      label = trimmed
+    }
+  }
+
+  return {
+    command: "job-start",
+    input: {
+      script,
+      shell,
+      maxRuntimeMs,
+      ...(cwd ? { cwd } : {}),
+      ...(env ? { env } : {}),
+      ...(label ? { label } : {}),
+    },
+  }
+}
+
+function parseJobStatus(input: unknown): DeviceCommand {
+  return { command: "job-status", input: { jobId: readJobId(input) } }
+}
+
+function parseJobCancel(input: unknown): DeviceCommand {
+  return { command: "job-cancel", input: { jobId: readJobId(input) } }
+}
+
+function parseJobOutput(input: unknown): DeviceCommand {
+  return {
+    command: "job-output",
+    input: {
+      jobId: readJobId(input),
+      cursor: readInteger(input, "cursor", 0, 0, Number.MAX_SAFE_INTEGER),
+      maxBytes: readInteger(
+        input,
+        "maxBytes",
+        DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+        DEVICE_JOB_OUTPUT_MIN_BYTES,
+        DEVICE_JOB_OUTPUT_MAX_BYTES,
+      ),
+    },
+  }
+}
+
+function parseJobList(): DeviceCommand {
+  return { command: "job-list", input: {} }
 }
 
 function readOptionalShellStdin(input: unknown): string | undefined {
@@ -2830,6 +3041,16 @@ export function parseDeviceCommand(
       return parseApplyPatch(input)
     case "run-command":
       return parseRunCommand(input)
+    case "job-start":
+      return parseJobStart(input)
+    case "job-status":
+      return parseJobStatus(input)
+    case "job-output":
+      return parseJobOutput(input)
+    case "job-cancel":
+      return parseJobCancel(input)
+    case "job-list":
+      return parseJobList()
     case "screenshot":
       return parseScreenshot(input)
     case "list-windows":

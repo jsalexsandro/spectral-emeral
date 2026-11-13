@@ -2,6 +2,7 @@ import { z } from "zod"
 import {
   DEVICE_APP_SOURCES,
   DEVICE_COMMAND_NAMES,
+  DEVICE_JOB_STATUSES,
   DEVICE_UI_ACTIONS,
   type DeviceCommand,
   type DeviceUiAction,
@@ -100,6 +101,50 @@ const deviceUiActionResultSchema = z.object({
   element: deviceUiElementSchema,
   waitedMs: z.number().int().nonnegative(),
   hint: z.string().max(300).optional(),
+})
+
+const deviceShellKindSchema = z.enum([
+  "pwsh",
+  "powershell",
+  "cmd",
+  "bash",
+  "sh",
+  "zsh",
+])
+
+const deviceJobSchema = z.object({
+  id: z.string().min(1).max(128),
+  label: z.string().max(80).nullable(),
+  status: z.enum(DEVICE_JOB_STATUSES),
+  shell: deviceShellKindSchema,
+  shellPath: z.string().min(1).max(1024),
+  cwd: z.string().min(1).max(1024),
+  startedAt: z.string().min(1).max(64),
+  durationMs: z.number().int().nonnegative(),
+  exitCode: z.number().int().nullable(),
+  error: z.string().max(1000).nullable(),
+  stdoutBytes: z.number().int().nonnegative(),
+  stderrBytes: z.number().int().nonnegative(),
+  outputChars: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  timedOut: z.boolean(),
+  cancelled: z.boolean(),
+})
+
+const deviceJobOutputSchema = z.object({
+  jobId: z.string().min(1).max(128),
+  startCursor: z.number().int().nonnegative(),
+  chunks: z
+    .array(
+      z.object({
+        cursor: z.number().int().nonnegative(),
+        stream: z.enum(["stdout", "stderr"]),
+        text: z.string().max(300_000),
+      }),
+    )
+    .max(64),
+  nextCursor: z.number().int().nonnegative(),
+  truncated: z.boolean(),
 })
 
 export const commandResultMessageSchema = z.object({
@@ -301,6 +346,10 @@ export const commandResultMessageSchema = z.object({
           durationMs: z.number().int().nonnegative(),
         })
         .optional(),
+      job: deviceJobSchema.optional(),
+      jobs: z.array(deviceJobSchema).max(200).optional(),
+      jobOutput: deviceJobOutputSchema.optional(),
+      cancelled: z.boolean().optional(),
       windows: z.array(deviceWindowSchema).max(30).optional(),
       window: deviceWindowSchema.optional(),
       clipboard: z

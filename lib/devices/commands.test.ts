@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   DeviceCommandValidationError,
+  DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
+  DEVICE_JOB_MAX_RUNTIME_MS,
+  DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
   deviceAppIdFromTarget,
   deviceCommandTimeoutMs,
   isAbsoluteAppPath,
@@ -850,5 +853,93 @@ describe("device file operation contract", () => {
     expect(
       deviceCommandTimeoutMs(parseDeviceCommand("list-apps", {})),
     ).toBeUndefined()
+  })
+})
+
+describe("device job contract", () => {
+  it("normaliza job-start com defaults de shell, rótulo e maxRuntimeMs", () => {
+    expect(
+      parseDeviceCommand("job-start", {
+        script: "npm run build",
+        shell: "pwsh",
+        cwd: "~/projeto",
+        env: { NODE_ENV: "production" },
+        label: " build ",
+      }),
+    ).toEqual({
+      command: "job-start",
+      input: {
+        script: "npm run build",
+        shell: "pwsh",
+        cwd: "~/projeto",
+        env: { NODE_ENV: "production" },
+        label: "build",
+        maxRuntimeMs: DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
+      },
+    })
+
+    expect(
+      parseDeviceCommand("job-start", { script: "npm test" }),
+    ).toEqual({
+      command: "job-start",
+      input: {
+        script: "npm test",
+        shell: "auto",
+        maxRuntimeMs: DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
+      },
+    })
+  })
+
+  it("normaliza status, output, cancel e list", () => {
+    expect(parseDeviceCommand("job-status", { jobId: " abc " })).toEqual({
+      command: "job-status",
+      input: { jobId: "abc" },
+    })
+
+    expect(
+      parseDeviceCommand("job-output", { jobId: "abc", cursor: 42 }),
+    ).toEqual({
+      command: "job-output",
+      input: {
+        jobId: "abc",
+        cursor: 42,
+        maxBytes: DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+      },
+    })
+
+    expect(parseDeviceCommand("job-cancel", { jobId: "abc" })).toEqual({
+      command: "job-cancel",
+      input: { jobId: "abc" },
+    })
+
+    expect(parseDeviceCommand("job-list", {})).toEqual({
+      command: "job-list",
+      input: {},
+    })
+  })
+
+  it("rejeita id vazio, cursor negativo e maxRuntimeMs acima do teto", () => {
+    expect(() => parseDeviceCommand("job-status", { jobId: "   " })).toThrow(
+      DeviceCommandValidationError,
+    )
+
+    expect(() =>
+      parseDeviceCommand("job-output", { jobId: "abc", cursor: -1 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("job-start", { script: "npm test", maxRuntimeMs: 0 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("job-start", {
+        script: "npm test",
+        maxRuntimeMs: DEVICE_JOB_MAX_RUNTIME_MS + 1,
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("job-start", { script: "   " }),
+    ).toThrow(DeviceCommandValidationError)
   })
 })
