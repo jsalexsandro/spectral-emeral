@@ -5,10 +5,8 @@ import type {
   DeviceCommandResult,
 } from "../../../shared/device-commands.js"
 import { config } from "../config.js"
+import { commandTransportTimeoutMs } from "./command-timeout.js"
 import type { ServerMessage } from "./messages.js"
-
-const MIN_TIMEOUT_MS = 1_000
-const MAX_TIMEOUT_MS = 60_000
 
 type PendingCommand = {
   deviceId: string
@@ -32,16 +30,6 @@ export class DeviceCommandError extends Error {
 const connections = new Map<string, WebSocket>()
 const pendingCommands = new Map<string, PendingCommand>()
 const inFlightByDevice = new Map<string, string>()
-
-function clampTimeout(timeoutMs: number | undefined): number {
-  const value = timeoutMs ?? config.commandTimeoutMs
-
-  if (!Number.isFinite(value)) {
-    return config.commandTimeoutMs
-  }
-
-  return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.trunc(value)))
-}
 
 function removePending(id: string, entry: PendingCommand) {
   clearTimeout(entry.timer)
@@ -138,7 +126,10 @@ export function sendDeviceCommand(
   }
 
   const id = randomUUID()
-  const timeout = clampTimeout(timeoutMs)
+  const timeout = commandTransportTimeoutMs(
+    timeoutMs,
+    config.commandTimeoutMs,
+  )
 
   return new Promise<DeviceCommandResult>((resolve, reject) => {
     const timer = setTimeout(() => {

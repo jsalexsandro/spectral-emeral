@@ -113,6 +113,7 @@ export {
   isDeviceKey,
   isDeviceWindowId,
   deviceAppIdFromTarget,
+  deviceCommandTimeoutMs,
   hasAppPathExtension,
   hasBlockedOpenPathExtension,
   isAbsoluteAppPath,

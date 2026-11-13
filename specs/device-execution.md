@@ -49,7 +49,7 @@
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira) | `zip`/`unzip` via shell |
 | Abrir aplicativos | `open`/atalhos do sistema | ✅ `open-app`, `list-apps`, `find-app` (descoberta no Windows), `open-path`, `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` |
 | Processos | `ps`, `kill`, `top` | ❌ | item 8 |
-| Comandos longos | background + streaming | ❌ timeout 60 s, 1 por PC | jobs (item 13) |
+| Comandos longos | background + streaming | ❌ teto de 60 s honrado de ponta a ponta, 1 por PC | jobs (item 13) |
 | Rede | `curl`/WebFetch | ❌ (bloqueado) | via `shell` no Modo Construtor |
 | GUI nativa | ❌ | ✅ UIA, mouse, screenshot, janelas | diferencial |
 | Clipboard | limitado | ✅ texto | — |
@@ -93,6 +93,12 @@ comando longo:
   são eventos/polling curtos;
 - binários grandes → canal separado (item 6), não base64 no comando.
 
+O orçamento declarado pelo comando (`timeoutMs` de `shell` e `run-command`) é
+honrado de ponta a ponta: a tool repassa o valor ao transporte e o backend espera
+o orçamento **mais 5s de folga** para receber o resultado depois do kill da
+árvore. Sem a folga, um comando que usa os 60s inteiros empata com o timer do
+backend e vira `command_timeout` mesmo tendo terminado.
+
 ---
 
 ## 4. Contrato proposto
@@ -106,7 +112,7 @@ Entrada:
   script: string                 // comando único ou script multilinha
   shell?: "auto" | "pwsh" | "powershell" | "cmd" | "bash" | "sh" | "zsh"
   cwd?: string                   // dentro do home ou da pasta padrão
-  timeoutMs?: number             // 1s..60s; acima disso use job
+  timeoutMs?: number             // 1s..60s, honrado no transporte +5s; acima disso use job
   env?: Record<string, string>   // até 32 variáveis extras, sem segredos
   stdin?: string                 // até 64 KB
   maxOutputBytes?: number        // 1KB..512KB por stream, padrão 64KB
@@ -139,7 +145,8 @@ Execução (decisão de projeto):
     -File <tmp>.ps1`.
   - Unix: `bash <tmp>.sh` (sem forçar `-e`; o script decide).
 - Timeout mata a **árvore** de processos (job object no Windows; grupo de
-  processos no Unix), não só o pai.
+  processos no Unix), não só o pai. O driver devolve `timedOut: true` e o
+  transporte ainda aguarda 5s para entregar esse resultado.
 - `env` é allowlist: `PATH`, `HOME`, `TEMP`, etc. + variáveis explícitas.
   Nunca herdar segredos do processo do driver.
 - Saída em UTF-8; no Windows, decodificar conforme o code page quando o comando

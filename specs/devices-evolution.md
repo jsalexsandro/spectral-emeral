@@ -440,8 +440,10 @@ Risco considera exposição de segurança ao liberar o recurso.
 
 - **O que:** comandos longos com `jobId`, progresso, streaming de saída e
   cancelamento, com eventos WS → app.
-- **Por quê:** hoje builds, scripts e capturas em loop morrem no timeout de 15s
-  (máximo 60s) e só há um comando em voo por PC.
+- **Por quê:** o orçamento do `shell` já vale de ponta a ponta (até 60s), mas
+  builds, scripts e capturas em loop ainda morrem no teto de 60s, não há saída
+  incremental e só há um comando em voo por PC. Jobs removem essas três
+  limitações.
 - **Onde mexer:** `spectral/backend/src/websocket/command-bus.ts`,
   `spectral/backend/src/http/internal.ts`, driver, tools e UI.
 - **Esforço:** G · **Risco:** médio.

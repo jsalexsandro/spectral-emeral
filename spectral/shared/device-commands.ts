@@ -845,6 +845,24 @@ export type DeviceCommand = {
   }
 }[DeviceCommandName]
 
+/**
+ * Orçamento real de execução no driver, quando o comando declara um. O
+ * transporte precisa esperar esse valor; usar o default do cliente cortava
+ * scripts que o driver ainda estava executando.
+ */
+export function deviceCommandTimeoutMs(
+  command: DeviceCommand,
+): number | undefined {
+  switch (command.command) {
+    case "shell":
+      return command.input.timeoutMs
+    case "run-command":
+      return command.input.timeoutMs
+    default:
+      return undefined
+  }
+}
+
 export type DeviceCommandSuccess = {
   ok: true
   output?: string

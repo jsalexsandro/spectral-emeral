@@ -102,6 +102,7 @@ import {
   DEVICE_UI_RUNTIME_ID_PATTERN,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
+  deviceCommandTimeoutMs,
   parseDeviceCommand,
   type DeviceCommand,
   type DeviceKey,
@@ -1326,9 +1327,10 @@ async function runDeviceCommand(
   const executionMode = context?.executionMode ?? "plan"
   const toolName = `device-${command.command}`
   const risk = classifyDeviceToolRisk(toolName, command.input)
+  const timeoutMs = deviceCommandTimeoutMs(command)
 
   if (!risk || risk === "read") {
-    const output = await sendDeviceCommand({ userId, deviceId, command })
+    const output = await sendDeviceCommand({ userId, deviceId, command, timeoutMs })
     return toCommandToolResult(deviceId, output)
   }
 
@@ -1371,7 +1373,12 @@ async function runDeviceCommand(
   }
 
   const startedAt = Date.now()
-  const output = await sendDeviceCommand({ userId, deviceId, command })
+  const output = await sendDeviceCommand({
+    userId,
+    deviceId,
+    command,
+    timeoutMs,
+  })
   const durationMs = Date.now() - startedAt
   const failed = !output.ok || !output.result.ok
 

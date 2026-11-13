@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   DeviceCommandValidationError,
   deviceAppIdFromTarget,
+  deviceCommandTimeoutMs,
   isAbsoluteAppPath,
   isAllowedDeviceUrl,
   isBlockedKeyCombination,
@@ -820,5 +821,34 @@ describe("device file operation contract", () => {
         })),
       }),
     ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("expõe o orçamento de execução declarado pelo comando", () => {
+    expect(
+      deviceCommandTimeoutMs(
+        parseDeviceCommand("shell", { script: "npm test", timeoutMs: 45_000 }),
+      ),
+    ).toBe(45_000)
+
+    expect(
+      deviceCommandTimeoutMs(parseDeviceCommand("shell", { script: "npm test" })),
+    ).toBe(30_000)
+
+    expect(
+      deviceCommandTimeoutMs(
+        parseDeviceCommand("run-command", { command: "git", timeoutMs: 20_000 }),
+      ),
+    ).toBe(20_000)
+
+    // O default de `run-command` é omitido pelo contrato.
+    expect(
+      deviceCommandTimeoutMs(
+        parseDeviceCommand("run-command", { command: "git" }),
+      ),
+    ).toBeUndefined()
+
+    expect(
+      deviceCommandTimeoutMs(parseDeviceCommand("list-apps", {})),
+    ).toBeUndefined()
   })
 })

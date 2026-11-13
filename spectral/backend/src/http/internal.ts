@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { z } from "zod"
 import {
   DeviceCommandValidationError,
+  deviceCommandTimeoutMs,
   parseDeviceCommand,
 } from "../../../shared/device-commands.js"
 import { config } from "../config.js"
@@ -135,7 +136,11 @@ async function handleCommand(
   }
 
   const command = parseDeviceCommand(body.command, body.input)
-  const result = await sendDeviceCommand(deviceId, command, body.timeoutMs)
+  const result = await sendDeviceCommand(
+    deviceId,
+    command,
+    body.timeoutMs ?? deviceCommandTimeoutMs(command),
+  )
 
   sendJson(response, 200, { ok: true, result })
 }
