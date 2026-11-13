@@ -34,7 +34,10 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-list-apps` | Lista os aplicativos que o driver consegue abrir, com busca e cache de descoberta | `{ deviceId, query?, refresh?, limit? }` | `apps[]` com `id`, `name`, `source` e `target` quando conhecido |
 | `device-find-app` | Verifica se um aplicativo existe no PC e retorna as correspondências | `{ deviceId, query, refresh?, limit? }` | `found`, `query` e `apps[]` ordenados por relevância |
 | `device-open-url` | Abre uma URL no navegador padrão do PC | `{ deviceId, url }` | `ok` |
-| `device-open-app` | Abre um aplicativo por id descoberto ou caminho absoluto | `{ deviceId, appId? , path? }` | `ok` + `output` |
+| `device-open-app` | Abre um aplicativo por id descoberto ou caminho absoluto, com argumentos opcionais | `{ deviceId, appId?, path?, args?, cwd? }` | `ok` + `output` |
+| `device-open-path` | Abre um arquivo ou pasta no app padrão do PC | `{ deviceId, path }` | `ok` + `output` |
+| `device-register-app` | Cadastra um app no catálogo local do dispositivo | `{ deviceId, name, path, args?, cwd? }` | `ok` + `output` + `apps[]` |
+| `device-remove-app` | Remove um app do catálogo local do dispositivo | `{ deviceId, appId }` | `ok` + `output` |
 | `device-type-text` | Digita texto na janela alvo do PC | `{ deviceId, text, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-press-key` | Pressiona uma tecla ou combinação na janela alvo do PC | `{ deviceId, key, modifiers?, windowId? }` | `ok` + `window` (requer confirmação em texto antes de executar) |
 | `device-read-clipboard` | Lê o texto atual da área de transferência do PC | `{ deviceId }` | `clipboard` com `text`, `length` e `truncated` (usar apenas quando o usuário pedir) |
@@ -77,16 +80,24 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   extensão suportada (`.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`,
   `.appref-ms`, `.app`). Use `device-find-app`/`device-list-apps` antes para
   descobrir o id. Ids desconhecidos retornam `app_not_found`; caminhos sem
-  extensão suportada retornam `unsupported_app_path`.
+  extensão suportada retornam `unsupported_app_path`. `args` aceita até 32
+  argumentos de 1–512 caracteres, sem caracteres de controle ou quebra de linha;
+  `cwd` precisa ser um diretório existente. Com `args` ou `cwd` o risco é
+  `launch` e o build pede aprovação; sem eles o risco é `input`.
+- `device-open-path` abre um arquivo ou pasta no app padrão, sem aprovação.
+  Recusa a denylist de extensões de app (`invalid_path`), mas não é uma allowlist:
+  scripts e instaladores fora dela ainda passam (ver `device-execution.md` §4.3c,
+  Achado 1).
 - `device-find-app` é a verificação de existência: aceita nome, id ou trecho do
   caminho, retorna `found` e lista as correspondências com `source`
   (`builtin`, `start-menu`, `app-path` ou `custom`). No Windows a descoberta
   cobre atalhos do Menu Iniciar e o registro App Paths, com cache de 5 minutos;
   `refresh: true` refaz a varredura.
-- Apps personalizados são cadastrados por dispositivo em Configurações →
-  Dispositivos (até 50, nome único e caminho absoluto). Eles aparecem como
-  `source: "custom"` e são resolvidos pelo app para um `path` antes de chegar ao
-  driver.
+- Apps personalizados ficam no catálogo local do driver
+  (`~/.spectral/driver/apps.json`, até 100, dedupe por caminho) e são
+  cadastrados por `device-register-app`; aparecem como `source: "custom"`.
+  `device-remove-app` só esquece a entrada, não desinstala nem apaga o
+  executável.
 - `device-type-text` aceita de 1 a 2000 caracteres e rejeita caracteres de
   controle (exceto tab, CR e LF). Sem `windowId`, o texto vai para a janela que
   estiver em foco; com `windowId`, o driver foca a janela e digita no mesmo
@@ -306,9 +317,21 @@ carga do widget.
   (`plan` → `build`) é escolhido no composer e chega ao app por um campo
   estruturado (`executionMode`) — nunca por instrução do modelo.
 - `plan` (Modo Leitura, padrão) permite apenas leitura e nega `input`, `write`,
-  `exec`, `destructive` e `system`. `build` (Modo Construtor) libera `input`,
-  `write` e `exec`; `destructive` e `system` pedem aprovação, exceto quando o
-  dispositivo está em Poder Total (`confirmDestructive: false`).
+  `exec`, `launch`, `destructive` e `system`. `build` (Modo Construtor) libera
+  `input`, `write` e `exec`; `launch`, `destructive` e `system` pedem aprovação,
+  exceto quando o dispositivo está em Poder Total (`confirmDestructive: false`).
+- `launch` é abrir um app com instruções (`open-app` com `args`/`cwd`): o app
+  recebe argumentos e diretório de trabalho, então o lançamento pede aprovação no
+  Modo Construtor. `open-app` sem `args`/`cwd` continua `input`.
+- `device-open-path` abre arquivo ou pasta no app padrão como `input` (sem
+  aprovação). Ele recusa a denylist de extensões de app, mas não é allowlist:
+  scripts e instaladores fora dela ainda passam (ver
+  `device-execution.md` §4.3c, Achado 1).
+- `device-shell` continua sendo a válvula de escape do Modo Construtor (`exec`).
+  Scripts que lançam apps (`Start-Process`, `start`, `open`, `xdg-open`,
+  `explorer`) ainda não são classificados como `launch`, então o fallback via
+  terminal contorna a aprovação do `open-app` (ver `device-execution.md` §4.3c,
+  Achado 2).
 - Quando uma tool exige aprovação, o app usa o primitivo nativo do AI SDK
   (`toolApproval` + `tool-approval-request`) e o usuário decide no card
   Permitir/Negar. O pedido é assinado no servidor; o modelo nunca recebe a
@@ -344,6 +367,9 @@ carga do widget.
 - Ações destrutivas (fechar janela/aba, matar processo, exclusão) pedem
   aprovação no Modo Construtor, exceto com Poder Total. O fechamento de janela
   continua gracioso.
+- Lançamentos com instruções (`device-open-app` com `args`/`cwd`) pedem
+  aprovação no Modo Construtor pelo card Permitir/Negar. `device-open-path` e
+  `device-open-app` sem argumentos rodam como `input`.
 - Ações não destrutivas de UIA (`select`, `toggle`, `expand`, `collapse`,
   `focus`) e `invoke` em controles de navegação rodam direto no Modo Construtor;
   o `invoke` de controles destrutivos continua exigindo autorização.

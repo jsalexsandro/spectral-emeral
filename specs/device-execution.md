@@ -221,7 +221,7 @@ no driver. Substitui a allowlist fixa e o cadastro manual em Configurações.
 | `list-apps` | `{ query?, refresh?, limit? }` | `apps: [{ id, name, source?, target?, args?, cwd? }]` | read | fixos + descobertos + catálogo local (`custom`); `limit` 1–200 |
 | `find-app` | `{ query, refresh?, limit? }` | `found`, `query`, `apps[]` | read | busca ranqueada por nome/id/caminho |
 | `open-app` | `{ appId?, path?, args?, cwd? }` | `output` com o nome aberto | input sem args; **launch** com args/cwd | exatamente um entre `appId` e `path` |
-| `open-path` | `{ path }` | `output` com o caminho aberto | input | recusa executáveis/atalhos (`invalid_path`) |
+| `open-path` | `{ path }` | `output` com o caminho aberto | input | recusa a denylist de extensões de app; scripts/instaladores fora dela passam (ver 4.3c) |
 | `register-app` | `{ name, path, args?, cwd? }` | `apps: [{...}]` | write | grava em `~/.spectral/driver/apps.json` |
 | `remove-app` | `{ appId }` | `output` de remoção | write | remove do catálogo local |
 
@@ -240,8 +240,10 @@ Regras implementadas:
   (aprovação no build). Erros: `app_not_found`, `unsupported_app_path`,
   `app_args_unsupported` (atalho com args), `invalid_app_args`,
   `invalid_app_cwd`.
-- `open-path` abre arquivo ou pasta no app padrão, sem aprovação. Recusa
-  executáveis/atalhos (`invalid_path`). Erros: `path_not_found`.
+- `open-path` abre arquivo ou pasta no app padrão, sem aprovação. Recusa a
+  denylist de extensões de app (`invalid_path`), mas não é uma allowlist: tipos
+  como `.vbs`, `.js`, `.msi`, `.hta` e `.scr` passam (ver 4.3c). Erros:
+  `path_not_found`.
 - Catálogo local do driver em `~/.spectral/driver/apps.json` (versão 1, escrita
   atômica, dedupe por caminho, máx. 100). `register-app` valida o caminho na
   hora (`assertLaunchablePath`) e cadastra/atualiza pelo caminho; `remove-app`
@@ -255,6 +257,49 @@ Regras implementadas:
 - Tools no app: `device-find-app`, `device-list-apps`, `device-open-app`,
   `device-open-path`, `device-register-app`, `device-remove-app`.
 - Driver roda em `tsx watch`; dispositivo de teste online.
+
+### 4.3c Teste ao vivo dos apps (2026-11-12) — dois achados pendentes
+
+O executor foi exercitado direto (`executeDeviceCommand`), sem passar pelo
+`toolApproval`, para validar o driver e a classificação de risco. Resultados:
+
+| Cenário | Resultado |
+|---|---|
+| `list-apps` com `query: "python"` | catálogo local retorna `source: custom` (`python-3-11-b4ea90`) |
+| `find-app` com `query: "zed"` | `zed-7eb333` → `...\Zed\Zed.exe` |
+| `open-app` sem args | abre na pasta padrão (home), não no projeto |
+| `open-app` com `args: ["."]` + `cwd` do projeto | abre o projeto (`zed .`) |
+| `open-app` com `args: ["README.md"]` + `cwd` | abre o arquivo no Zed |
+| `open-path` em pasta | abre no Explorer |
+| `open-path` em `.exe` | `invalid_path` |
+| `register-app` repetido | idempotente, preserva o id |
+| `remove-app` de id inexistente | `app_not_found` |
+| `run-command` com `taskkill` | `command_not_allowed` (allowlist) |
+| `shell` com `Write-Output` | exit 0, saída capturada |
+
+**Achado 1 — `open-path` executa scripts fora da denylist.** Um arquivo `.vbs`
+aberto por `open-path` foi executado pelo Windows Script Host via
+`rundll32 url.dll,FileProtocolHandler` e criou um arquivo marcador, sem
+aprovação. O mesmo vale para tipos como `.js`, `.msi`, `.hta`, `.scr`, `.cpl`,
+`.jar`, `.reg` e `.url`. A checagem atual (`hasAppPathExtension`) só cobre as
+extensões de app (`.exe`, `.cmd`, `.bat`, `.com`, `.lnk`, `.msc`,
+`.appref-ms`, `.app`). Correção proposta (não implementada):
+`DEVICE_OPEN_PATH_BLOCKED_EXTENSIONS` aplicada no contrato e no driver, ou uma
+allowlist de extensões de documento; testes de contrato + driver.
+
+**Achado 2 — o fallback via `device-shell` contorna a aprovação de `launch`.**
+`device-shell` com `Start-Process <app>.exe -ArgumentList '.'` é classificado
+como `exec`, então roda sem aprovação no build com confirmação, enquanto o
+mesmo lançamento via `open-app` com `args` é `launch` e pede aprovação. Os
+regexes de `destructive`/`system` também são heurísticos e não são sandbox.
+Correção proposta (não implementada): classificar scripts que lançam apps
+(`Start-Process`, `start`, `open`, `xdg-open`, `explorer`) como `launch`; a
+alternativa forte é exigir aprovação para `exec` quando `confirmDestructive` é
+`true`.
+
+O harness chamou o executor diretamente, então o card Permitir/Negar e a
+auditoria não foram exercitados nesse teste; para isso, use o chat do Spectral.
+
 ### 4.4 Processos (item 8)
 
 ```ts
