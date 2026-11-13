@@ -683,13 +683,16 @@ job-cancel: { jobId } → { cancelled }
 job-list:   {} → { jobs[] }
 ```
 
-- Buffer circular de 1 MB + log completo em arquivo temporário.
+- Buffer circular de 1 MB com cursor monotônico (code units UTF-16) no fluxo combinado stdout+stderr; `startCursor` indica descarte do começo.
 - `job-output` incremental por `cursor`; o modelo não relê tudo.
-- `maxRuntimeMs` padrão de 30 min; cancelar mata a árvore de processos.
-- Até 3 jobs por dispositivo; comandos curtos não bloqueiam.
-- Backend mantém o registro e emite eventos; abortar o chat cancela os jobs.
-- Sessão persistente/PTY (`shell-session-*`) é opcional: cwd/env explícitos por
-  comando cobrem quase tudo; PTY só para REPLs interativos.
+- `maxRuntimeMs` padrão 30 min (mínimo 1s, máximo 60 min); cancelar mata a árvore de processos (`taskkill /T` no Windows, grupo no Unix).
+- Até 3 jobs simultâneos por dispositivo; quarto `job-start` retorna `job_limit`.
+- Job concluído fica retido ~10 min, depois some (`job_not_found`).
+- Driver é a fonte da verdade; backend só proxy, sem tabela nem migração. Reiniciar o driver perde jobs em andamento.
+- Sem PTY/sessão persistente nesta fase: `cwd`/`env` explícitos por comando cobrem quase tudo; PTY só para REPLs interativos (depois).
+- Sem WebSocket app↔backend: o modelo faz polling pelas tools.
+- `job-start` é risco `exec`: negado no Modo Leitura, aprovação no Construtor, liberado em Poder Total. `job-cancel` é `input` (sem aprovação extra). `job-status/job-output/job-list` são `read`.
+- Windows primeiro; macOS/Linux retornam `unsupported_platform`.
 
 **Pronto quando:** `npm run dev`, builds longos e watchers ficarem vivos além de
 60 s, com saída incremental, cancelamento e sem processo órfão.
@@ -722,7 +725,7 @@ job-list:   {} → { jobs[] }
 |---|---|---|---|
 | 1 | Fase 2 — arquivos completos ✅ | M | alto (organizar projetos) |
 | 2 | Fase 3 — processos | M | alto ("o que travou?") |
-| 3 | Fase 4 — jobs/background | G | altíssimo (dev server, builds) |
+| 3 | Fase 4 — jobs/background ✅ | G | altíssimo (dev server, builds) |
 | 4 | Fase 5a/5b — transferência + sistema | G/M | alto (uso diário) |
 | 5 | Fase 5d — Playwright | G | alto (web sem UIA) |
 | 6 | Fase 6 — macOS/Linux | G | expansão |

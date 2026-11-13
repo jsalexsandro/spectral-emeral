@@ -335,18 +335,29 @@ kill-process: { pid?, name?, force? } →
 ```ts
 job-start:  { script, shell?, cwd?, env?, label?, maxRuntimeMs? } → { jobId }
 job-status: { jobId } → { status: "running" | "exited" | "killed" | "failed",
-                          exitCode?, startedAt, durationMs, bytesOut }
+                          exitCode?, startedAt, durationMs, stdoutBytes, stderrBytes,
+                          outputChars, truncated, timedOut, cancelled, error? }
 job-output: { jobId, cursor, maxBytes? } →
-  { chunks: [{ cursor, stream: "stdout" | "stderr", text }], nextCursor }
-job-cancel: { jobId } → { cancelled: boolean }
+  { chunks: [{ cursor, stream: "stdout" | "stderr", text }], nextCursor, startCursor, truncated }
+job-cancel: { jobId } → { cancelled: boolean, job: {...} }
 job-list:   { } → { jobs: [...] }
 ```
 
-- Buffer circular por job (ex.: 1 MB) + log completo em arquivo temporário.
+- Driver é a fonte da verdade dos jobs; backend só proxy, sem tabela nem migração.
+- Buffer circular por job (1 MB) com cursor monotônico de code units UTF-16 no fluxo
+  combinado stdout+stderr; `startCursor` indica descarte do começo do buffer.
 - `job-output` é incremental por `cursor` para não reenviar tudo ao modelo.
-- Backend mantém o registro e emite eventos ao app; o driver mantém o processo.
-- `maxRuntimeMs` (ex.: 30 min) encerra o job e mata a árvore.
-- Um job é isolado por dispositivo e por chat; `job-list` mostra os ativos.
+- `maxRuntimeMs` padrão 30 min (mínimo 1s, máximo 60 min); estouro mata a árvore.
+- Até 3 jobs simultâneos por dispositivo; quarto `job-start` retorna `job_limit`.
+- Job concluído fica retido ~10 min, depois some (`job_not_found`).
+- `job-cancel` mata a árvore de processos (`taskkill /T` no Windows, grupo no Unix)
+  e não exige aprovação adicional (risco `input`).
+- `job-start` é risco `exec`: negado no Modo Leitura, aprovação no Construtor sem
+  Poder Total, liberado em Poder Total.
+- Reiniciar o driver perde jobs em andamento (documentado).
+- Sem PTY/sessão persistente nesta fase; `cwd`/`env` explícitos por comando.
+- Sem WebSocket app↔backend: o modelo faz polling pelas tools.
+- Windows primeiro; macOS/Linux retornam `unsupported_platform`.
 
 ### 4.6 Rede
 

@@ -30,6 +30,11 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 | `device-online-list` | Lista apenas os PCs online agora | `{}` | `devices[]` somente online, com `confirmDestructive` |
 | `device-env` | Retrato da máquina para o modelo não adivinhar shell, caminhos e runtimes | `{ deviceId }` | `env` com plataforma, arquitetura, hostname, usuário, home, temp, cwd, shell padrão, shells e runtimes instalados, elevação, locale e `capabilities` |
 | `device-shell` | Executa um script de shell na máquina (build, git, rede, testes) | `{ deviceId, script, shell?, cwd?, env?, stdin?, maxOutputBytes?, timeoutMs? }` | `shell` com `shell`, `shellPath`, `cwd`, `exitCode`, `stdout`, `stderr`, tamanhos, `durationMs`, `truncated` e `timedOut` |
+| `device-job-start` | Inicia um script em segundo plano e retorna `jobId` imediatamente (até 3 simultâneos; `maxRuntimeMs` padrão 30 min) | `{ deviceId, script, shell?, cwd?, env?, label?, maxRuntimeMs? }` | `job` com `id`, `status`, `shell`, `cwd`, `startedAt`, `label` |
+| `device-job-status` | Consulta o status de um job (`running`/`exited`/`killed`/`failed`) | `{ deviceId, jobId }` | `job` com `status`, `exitCode`, `startedAt`, `durationMs`, `timedOut`, `cancelled` |
+| `device-job-output` | Lê saída incremental por `cursor` (não relê tudo) | `{ deviceId, jobId, cursor?, maxBytes? }` | `jobOutput` com `chunks[]` (`cursor`, `stream`, `text`), `nextCursor`, `startCursor`, `truncated` |
+| `device-job-cancel` | Cancela um job e mata a árvore de processos | `{ deviceId, jobId }` | `cancelled`, `job` |
+| `device-job-list` | Lista todos os jobs do dispositivo | `{ deviceId }` | `jobs[]` |
 | `device-get-os` | Consulta o sistema operacional do PC | `{ deviceId }` | `os` com `platform`, `type`, `release`, `version`, `architecture` e `elevated` |
 | `device-list-apps` | Lista os aplicativos que o driver consegue abrir, com busca e cache de descoberta | `{ deviceId, query?, refresh?, limit? }` | `apps[]` com `id`, `name`, `source` e `target` quando conhecido |
 | `device-find-app` | Verifica se um aplicativo existe no PC e retorna as correspondências | `{ deviceId, query, refresh?, limit? }` | `found`, `query` e `apps[]` ordenados por relevância |
