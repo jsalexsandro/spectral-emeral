@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 33
+export const SYSTEM_PROMPT_VERSION = 34
 
 export type SystemPromptChange = {
   version: number
@@ -198,5 +198,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-12",
     summary:
       "device-open-app aceita argumentos (args) e diretório de trabalho (cwd) para abrir apps como `zed .` e `zed x`; abertura com args pede aprovação como lançamento (risco launch). Novo device-open-path para abrir arquivo/pasta no app padrão sem aprovação, sem aceitar executáveis. Catálogo de apps passa a viver no driver (~/.spectral/driver/apps.json) com device-register-app e device-remove-app, acessível via device-list-apps (source: custom); cadastro manual em Configurações é retirado. Se a API interna não estiver disponível, o modelo usa o terminal interno (device-shell): Start-Process no Windows, open no macOS e xdg-open no Linux.",
+  },
+  {
+    version: 34,
+    date: "2026-11-13",
+    summary:
+      "Adiciona jobs de execução em segundo plano: device-job-start inicia um script e retorna jobId imediatamente; device-job-status, device-job-output (leitura incremental por cursor), device-job-cancel e device-job-list gerenciam o ciclo de vida. Até 3 jobs simultâneos por dispositivo, maxRuntimeMs padrão de 30 min (máximo 60 min) e cancelamento mata a árvore de processos. Jobs acima de 60s devem ser usados em vez de device-shell; o modelo faz polling com device-job-output sem reler a saída inteira.",
   },
 ]

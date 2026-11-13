@@ -14,6 +14,14 @@ import {
   DEVICE_APP_ARGS_MAX,
   DEVICE_APP_ARG_MAX_LENGTH,
   DEVICE_APP_NAME_MAX_LENGTH,
+  DEVICE_JOB_ID_MAX_LENGTH,
+  DEVICE_JOB_LABEL_MAX_LENGTH,
+  DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
+  DEVICE_JOB_MAX_RUNTIME_MS,
+  DEVICE_JOB_MAX_RUNTIME_MIN_MS,
+  DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+  DEVICE_JOB_OUTPUT_MAX_BYTES,
+  DEVICE_JOB_OUTPUT_MIN_BYTES,
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
@@ -170,6 +178,11 @@ export const DEVICE_APPLY_PATCH_TOOL_NAME = "device-apply-patch"
 export const DEVICE_RUN_COMMAND_TOOL_NAME = "device-run-command"
 export const DEVICE_ENV_TOOL_NAME = "device-env"
 export const DEVICE_SHELL_TOOL_NAME = "device-shell"
+export const DEVICE_JOB_START_TOOL_NAME = "device-job-start"
+export const DEVICE_JOB_STATUS_TOOL_NAME = "device-job-status"
+export const DEVICE_JOB_OUTPUT_TOOL_NAME = "device-job-output"
+export const DEVICE_JOB_CANCEL_TOOL_NAME = "device-job-cancel"
+export const DEVICE_JOB_LIST_TOOL_NAME = "device-job-list"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
@@ -1183,6 +1196,76 @@ export const deviceShellInputSchema = z.object({
     .describe("Teto de saída por stream. Acima disso, cabeça e cauda são mantidas."),
 })
 
+export const deviceJobStartInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  script: z
+    .string()
+    .min(1)
+    .max(DEVICE_SHELL_SCRIPT_MAX_LENGTH)
+    .describe("Script completo a executar em segundo plano. Não é interpolado numa linha de comando."),
+  shell: z
+    .enum(DEVICE_SHELL_KINDS)
+    .default("auto")
+    .describe("Shell desejado. `auto` usa pwsh, depois powershell e por fim cmd no Windows."),
+  cwd: z
+    .string()
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .optional()
+    .describe("Diretório de trabalho. Precisa estar dentro do home ou da pasta padrão do dispositivo."),
+  env: z
+    .record(
+      z.string().max(DEVICE_SHELL_ENV_NAME_MAX_LENGTH),
+      z.string().max(DEVICE_SHELL_ENV_VALUE_MAX_LENGTH),
+    )
+    .optional()
+    .describe("Variáveis de ambiente extras (máximo 32)."),
+  label: z
+    .string()
+    .trim()
+    .max(DEVICE_JOB_LABEL_MAX_LENGTH)
+    .optional()
+    .describe("Rótulo amigável para identificar o job na listagem."),
+  maxRuntimeMs: z
+    .number()
+    .int()
+    .min(DEVICE_JOB_MAX_RUNTIME_MIN_MS)
+    .max(DEVICE_JOB_MAX_RUNTIME_MS)
+    .default(DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS)
+    .describe("Teto de execução em ms. Padrão 30 min; máximo 60 min. Ao estourar, a árvore de processos é encerrada."),
+})
+
+export const deviceJobStatusInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  jobId: z.string().min(1).max(DEVICE_JOB_ID_MAX_LENGTH).describe("Id do job retornado por device-job-start."),
+})
+
+export const deviceJobOutputInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  jobId: z.string().min(1).max(DEVICE_JOB_ID_MAX_LENGTH).describe("Id do job retornado por device-job-start."),
+  cursor: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe("Cursor de leitura (contagem de caracteres UTF-16). Comece em 0 e use o nextCursor da resposta anterior."),
+  maxBytes: z
+    .number()
+    .int()
+    .min(DEVICE_JOB_OUTPUT_MIN_BYTES)
+    .max(DEVICE_JOB_OUTPUT_MAX_BYTES)
+    .default(DEVICE_JOB_OUTPUT_DEFAULT_BYTES)
+    .describe("Teto de bytes UTF-8 para esta leitura."),
+})
+
+export const deviceJobCancelInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  jobId: z.string().min(1).max(DEVICE_JOB_ID_MAX_LENGTH).describe("Id do job retornado por device-job-start."),
+})
+
+export const deviceJobListInputSchema = z.object({
+  deviceId: deviceIdSchema,
+})
+
 type DeviceRow = {
   id: string
   name: string
@@ -1304,6 +1387,12 @@ function toCommandToolResult(
     ...(output.result.run ? { run: output.result.run } : {}),
     ...(output.result.env ? { env: output.result.env } : {}),
     ...(output.result.shell ? { shell: output.result.shell } : {}),
+    ...(output.result.job ? { job: output.result.job } : {}),
+    ...(output.result.jobs ? { jobs: output.result.jobs } : {}),
+    ...(output.result.jobOutput ? { jobOutput: output.result.jobOutput } : {}),
+    ...(output.result.cancelled !== undefined
+      ? { cancelled: output.result.cancelled }
+      : {}),
     ...(output.result.windows ? { windows: output.result.windows } : {}),
     ...(output.result.window ? { window: output.result.window } : {}),
     ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
@@ -1493,6 +1582,41 @@ const shellDescription = [
   "Timeout padrão 30s (máximo 60s). Ao estourar, a árvore de processos é encerrada e `timedOut` vem true.",
   "A ação passa pela política do dispositivo: comandos longos ou destrutivos podem exigir aprovação no chat. Nunca rode scripts que fecham janelas/apps sem o usuário pedir.",
   "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",
+].join("\n")
+
+const jobStartDescription = [
+  "Inicia um script de shell como job em segundo plano no dispositivo e retorna imediatamente o `jobId`.",
+  "Use para build, testes, servidores de desenvolvimento, compilações longas ou qualquer processo que exceda os 60s do `device-shell`.",
+  "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`. Informe `cwd` dentro do home ou da pasta padrão do dispositivo.",
+  "O `maxRuntimeMs` padrão é 30 min (máximo 60 min); ao estourar, a árvore de processos é encerrada.",
+  "Até 3 jobs rodam simultâneos por dispositivo. Se o limite estiver atingido, cancele um job existente com `device-job-cancel` ou espere terminar.",
+  "Leia a saída aos poucos com `device-job-output` passando o `cursor` da resposta anterior; nunca releia tudo do zero.",
+  "Passa pela política do dispositivo: `device-job-start` exige aprovação no Modo Construtor (risco execução) e é negado no Modo Leitura.",
+  "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",
+].join("\n")
+
+const jobStatusDescription = [
+  "Consulta o status de um job: `running`, `exited`, `killed` ou `failed`, com `exitCode`, `startedAt`, `durationMs`, `bytesOut` e `cancelled`.",
+  "Use `device-job-status` para saber se um job terminou antes de ler mais saída com `device-job-output`.",
+].join("\n")
+
+const jobOutputDescription = [
+  "Lê a saída de um job de forma incremental por `cursor` (contagem de caracteres UTF-16 do fluxo combinado stdout+stderr).",
+  "Comece com `cursor: 0` e, nas próximas leituras, passe o `nextCursor` da resposta anterior para não repetir trechos.",
+  "Informe `maxBytes` para limitar o tamanho desta leitura. O resultado traz `chunks[]` com `cursor`, `stream` (`stdout`/`stderr`) e `text`, além de `nextCursor` e `startCursor`.",
+  "Se `startCursor` for maior que o `cursor` pedido, o começo do buffer foi descartado (retenção de 1 MB) e você perdeu trechos antigos.",
+  "Um job concluído fica retido por ~10 min; depois disso `device-job-status` e `device-job-output` retornam `job_not_found`.",
+].join("\n")
+
+const jobCancelDescription = [
+  "Cancela um job em execução e mata a árvore de processos dele no dispositivo.",
+  "Retorna `cancelled: true` quando o sinal foi enviado e `cancelled: false` quando o job já não está mais em execução.",
+  "Cancelar um job que você iniciou não exige aprovação adicional.",
+].join("\n")
+
+const jobListDescription = [
+  "Lista todos os jobs do dispositivo (ativos e concluídos dentro da retenção de ~10 min), ordenados do mais recente para o mais antigo.",
+  "Use para encontrar o `jobId` de um job em andamento ou para verificar quantos dos 3 slots de job estão ocupados.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -2010,6 +2134,111 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-shell.",
+          }
+        }
+      },
+    }),
+    [DEVICE_JOB_START_TOOL_NAME]: tool({
+      description: jobStartDescription,
+      inputSchema: deviceJobStartInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(
+            deviceId,
+            parseDeviceCommand("job-start", input),
+          )
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-job-start.",
+          }
+        }
+      },
+    }),
+    [DEVICE_JOB_STATUS_TOOL_NAME]: tool({
+      description: jobStatusDescription,
+      inputSchema: deviceJobStatusInputSchema,
+      execute: async ({ deviceId, jobId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "job-status",
+            input: { jobId },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-job-status.",
+          }
+        }
+      },
+    }),
+    [DEVICE_JOB_OUTPUT_TOOL_NAME]: tool({
+      description: jobOutputDescription,
+      inputSchema: deviceJobOutputInputSchema,
+      execute: async ({ deviceId, jobId, cursor = 0, maxBytes = DEVICE_JOB_OUTPUT_DEFAULT_BYTES }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "job-output",
+            input: { jobId, cursor, maxBytes },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-job-output.",
+          }
+        }
+      },
+    }),
+    [DEVICE_JOB_CANCEL_TOOL_NAME]: tool({
+      description: jobCancelDescription,
+      inputSchema: deviceJobCancelInputSchema,
+      execute: async ({ deviceId, jobId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "job-cancel",
+            input: { jobId },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-job-cancel.",
+          }
+        }
+      },
+    }),
+    [DEVICE_JOB_LIST_TOOL_NAME]: tool({
+      description: jobListDescription,
+      inputSchema: deviceJobListInputSchema,
+      execute: async ({ deviceId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "job-list",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-job-list.",
           }
         }
       },

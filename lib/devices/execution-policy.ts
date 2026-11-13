@@ -119,6 +119,9 @@ const READ_TOOLS = new Set<string>([
   "device-list-windows",
   "device-inspect-ui",
   "device-screenshot",
+  "device-job-status",
+  "device-job-output",
+  "device-job-list",
 ])
 
 const INPUT_TOOLS = new Set<string>([
@@ -135,6 +138,7 @@ const INPUT_TOOLS = new Set<string>([
   "device-maximize-window",
   "device-restore-window",
   "device-ui-action",
+  "device-job-cancel",
 ])
 
 const WRITE_TOOLS = new Set<string>([
@@ -152,6 +156,7 @@ const WRITE_TOOLS = new Set<string>([
 const EXEC_TOOLS = new Set<string>([
   "device-run-command",
   "device-shell",
+  "device-job-start",
 ])
 
 const DESTRUCTIVE_TOOLS = new Set<string>([

@@ -203,6 +203,22 @@ describe("device tool risk classification", () => {
       classifyDeviceToolRisk("device-remove-app", { appId: "zed-7eb333" }),
     ).toBe("write")
   })
+
+  it("classifica tools de jobs", () => {
+    expect(classifyDeviceToolRisk("device-job-start", { script: "npm test" })).toBe(
+      "exec",
+    )
+    expect(classifyDeviceToolRisk("device-job-status", { jobId: "abc" })).toBe(
+      "read",
+    )
+    expect(classifyDeviceToolRisk("device-job-output", { jobId: "abc", cursor: 0 })).toBe(
+      "read",
+    )
+    expect(classifyDeviceToolRisk("device-job-cancel", { jobId: "abc" })).toBe(
+      "input",
+    )
+    expect(classifyDeviceToolRisk("device-job-list", {})).toBe("read")
+  })
 })
 
 describe("parseDeviceExecutionPolicy", () => {
