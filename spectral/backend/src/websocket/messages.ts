@@ -145,6 +145,9 @@ const deviceJobOutputSchema = z.object({
     .max(64),
   nextCursor: z.number().int().nonnegative(),
   truncated: z.boolean(),
+  status: z.enum(DEVICE_JOB_STATUSES),
+  exitCode: z.number().int().nullable(),
+  cancelled: z.boolean(),
 })
 
 export const commandResultMessageSchema = z.object({
