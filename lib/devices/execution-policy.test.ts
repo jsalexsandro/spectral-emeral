@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { homedir } from "node:os"
 import {
   classifyDeviceToolRisk,
   evaluateDeviceToolCall,
@@ -218,6 +219,46 @@ describe("device tool risk classification", () => {
       "input",
     )
     expect(classifyDeviceToolRisk("device-job-list", {})).toBe("read")
+  })
+
+  it("escrita dentro do home e escrita fora do home", () => {
+    const home = homedir()
+
+    // Dentro do home: escrita normal
+    expect(
+      classifyDeviceToolRisk("device-write-file", { path: `${home}\\arquivo.txt` }),
+    ).toBe("write")
+    expect(
+      classifyDeviceToolRisk("device-edit-file", { path: `${home}\\projeto\\code.ts` }),
+    ).toBe("write")
+    expect(
+      classifyDeviceToolRisk("device-mkdir", { path: `${home}\\nova-pasta` }),
+    ).toBe("write")
+
+    // Fora do home: escrita vira destrutiva (precisa de aprovacao)
+    expect(
+      classifyDeviceToolRisk("device-write-file", { path: "D:\\projetos\\arquivo.txt" }),
+    ).toBe("destructive")
+    expect(
+      classifyDeviceToolRisk("device-edit-file", { path: "C:\\Windows\\system.ini" }),
+    ).toBe("destructive")
+    expect(
+      classifyDeviceToolRisk("device-copy", { from: "D:\\a.txt", to: "D:\\b.txt" }),
+    ).toBe("destructive")
+    expect(
+      classifyDeviceToolRisk("device-move", { from: "D:\\a.txt", to: "D:\\b.txt" }),
+    ).toBe("destructive")
+    expect(
+      classifyDeviceToolRisk("device-apply-patch", { path: "D:\\projeto\\code.ts", patches: [] }),
+    ).toBe("destructive")
+
+    // device-delete continua sempre destrutivo, independente do caminho
+    expect(
+      classifyDeviceToolRisk("device-delete", { path: `${home}\\arquivo.txt` }),
+    ).toBe("destructive")
+    expect(
+      classifyDeviceToolRisk("device-delete", { path: "D:\\arquivo.txt" }),
+    ).toBe("destructive")
   })
 })
 

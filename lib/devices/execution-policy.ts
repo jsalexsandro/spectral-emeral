@@ -9,6 +9,9 @@
  *   configurado como "Poder Total"; caso contrário pedem uma aprovação no chat.
  */
 
+import { homedir } from "node:os"
+import { isAbsolute, resolve, sep } from "node:path"
+
 export const CHAT_EXECUTION_MODES = ["plan", "build"] as const
 
 export type ChatExecutionMode = (typeof CHAT_EXECUTION_MODES)[number]
@@ -101,6 +104,46 @@ export const DEVICE_CONFIRMATION_DESCRIPTIONS = {
   full: "Ações destrutivas e de sistema rodam sem confirmação. O Modo Leitura continua bloqueando qualquer alteração.",
 } as const
 
+/** Diretório de referência do usuário: escrita fora dele é tratada como destrutiva. */
+export const HOME_WORKSPACE = homedir()
+
+/** True quando o caminho absoluto está fora do diretório de referência do usuário. */
+export function isOutsideWorkspace(path: string): boolean {
+  const absolute = isAbsolute(path) ? resolve(path) : resolve(HOME_WORKSPACE, path)
+  const homeLower = HOME_WORKSPACE.toLowerCase()
+  const targetLower = absolute.toLowerCase()
+
+  return targetLower !== homeLower && !targetLower.startsWith(homeLower + sep)
+}
+
+/**
+ * Extrai os caminhos de arquivo de uma tool de escrita, quando houver.
+ * Retorna vazia quando não há caminho ou não se aplica.
+ */
+export function collectFilePaths(toolName: string, input: unknown): string[] {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return []
+  }
+
+  const record = input as Record<string, unknown>
+  const paths: string[] = []
+
+  const push = (value: unknown) => {
+    if (typeof value === "string" && value.trim().length > 0) {
+      paths.push(value.trim())
+    }
+  }
+
+  if (toolName === "device-copy" || toolName === "device-move") {
+    push(record.from)
+    push(record.to)
+  } else {
+    push(record.path)
+  }
+
+  return paths
+}
+
 const READ_TOOLS = new Set<string>([
   "device-list",
   "device-online-list",
@@ -151,6 +194,16 @@ const WRITE_TOOLS = new Set<string>([
   "device-apply-patch",
   "device-register-app",
   "device-remove-app",
+])
+
+/** Tools que gravam arquivos no disco: escrita fora do home vira destrutiva. */
+const FILE_WRITE_TOOLS = new Set<string>([
+  "device-write-file",
+  "device-edit-file",
+  "device-mkdir",
+  "device-copy",
+  "device-move",
+  "device-apply-patch",
 ])
 
 const EXEC_TOOLS = new Set<string>([
@@ -313,6 +366,18 @@ export function classifyDeviceToolRisk(
 
   if (INPUT_TOOLS.has(toolName)) {
     return "input"
+  }
+
+  if (FILE_WRITE_TOOLS.has(toolName)) {
+    // Escrita fora do diretorio de referencia do usuario eh tratada como
+    // destrutiva: pede aprovacao (salvo Poder Total).
+    const paths = collectFilePaths(toolName, input)
+
+    if (paths.length > 0 && paths.some((p) => isOutsideWorkspace(p))) {
+      return "destructive"
+    }
+
+    return "write"
   }
 
   if (WRITE_TOOLS.has(toolName)) {

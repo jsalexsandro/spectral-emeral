@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 34
+export const SYSTEM_PROMPT_VERSION = 35
 
 export type SystemPromptChange = {
   version: number
@@ -204,5 +204,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-13",
     summary:
       "Adiciona jobs de execução em segundo plano: device-job-start inicia um script e retorna jobId imediatamente; device-job-status, device-job-output (leitura incremental por cursor), device-job-cancel e device-job-list gerenciam o ciclo de vida. Até 3 jobs simultâneos por dispositivo, maxRuntimeMs padrão de 30 min (máximo 60 min) e cancelamento mata a árvore de processos. Jobs acima de 60s devem ser usados em vez de device-shell; o modelo faz polling com device-job-output sem reler a saída inteira.",
+  },
+  {
+    version: 35,
+    date: "2026-11-14",
+    summary:
+      "O driver opera na maquina inteira: nao ha mais restricao de cwd ou caminho fora do home para shell, arquivos e jobs. Escrita em disco fora do diretorio de referencia do usuario eh classificada como destrutiva e pede aprovacao no Modo Construtor (liberado em Poder Total). Caminhos protegidos (instalacao do Spectral, System32, WinSxS, Boot) nunca podem ser apagados nem usados como cwd. Negacao de credenciais (.ssh, .env, cookies, chaves) continua ativa.",
   },
 ]
