@@ -318,28 +318,32 @@ export async function detectShell(
   return { info, candidate }
 }
 
-function isInsideRoot(root: string, target: string): boolean {
-  const normalizedRoot = resolve(root)
-  const normalizedTarget = resolve(target)
+/** Diretórios que nunca podem ser alvo de escrita/exclusão, mesmo em Poder Total. */
+export const PROTECTED_PATHS = [
+  // Instalação e config interna do Spectral.
+  join(__dirname, ".."),
+  join(__dirname, "..", ".."),
+  // Sistema do Windows.
+  process.env.SystemRoot ?? join(process.env.windir ?? "C:", "Windows"),
+  join(process.env.SystemRoot ?? join(process.env.windir ?? "C:", "Windows"), "System32"),
+  join(process.env.SystemRoot ?? join(process.env.windir ?? "C:", "Windows"), "WinSxS"),
+  join(process.env.SystemRoot ?? join(process.env.windir ?? "C:", "Windows"), "Boot"),
+]
 
-  if (IS_WINDOWS) {
-    const rootLower = normalizedRoot.toLowerCase()
-    const targetLower = normalizedTarget.toLowerCase()
+function isProtectedPath(real: string): boolean {
+  const lower = real.toLowerCase()
 
-    return targetLower === rootLower || targetLower.startsWith(rootLower + sep)
-  }
+  return PROTECTED_PATHS.some((root) => {
+    const rootLower = root.toLowerCase()
 
-  return (
-    normalizedTarget === normalizedRoot ||
-    normalizedTarget.startsWith(normalizedRoot + sep)
-  )
+    return lower === rootLower || lower.startsWith(rootLower + sep)
+  })
 }
 
 export async function resolveWorkingDirectory(
   input: string | undefined,
   defaultFolder: string | undefined,
 ): Promise<string> {
-  const roots = [homedir(), ...(defaultFolder ? [defaultFolder] : [])]
   const requested = input ?? defaultFolder ?? homedir()
   const candidate = isAbsolute(requested)
     ? resolve(requested)
@@ -365,10 +369,10 @@ export async function resolveWorkingDirectory(
     )
   }
 
-  if (!roots.some((root) => isInsideRoot(root, real))) {
+  if (isProtectedPath(real)) {
     throw new DeviceShellError(
-      "cwd_outside_root",
-      "O diretório de trabalho está fora das raízes permitidas.",
+      "cwd_protected",
+      "Este diretório é protegido pelo sistema e não pode ser usado como diretório de trabalho.",
     )
   }
 
@@ -406,12 +410,15 @@ const BASE_ENV_NAMES = [
   "TZ",
   "USER",
   "LOGNAME",
+  "NODE_ENV",
 ]
 
 export function buildShellEnv(
   extra: Record<string, string> | undefined,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {}
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: process.env.NODE_ENV ?? "development",
+  }
 
   for (const name of BASE_ENV_NAMES) {
     const value = process.env[name]

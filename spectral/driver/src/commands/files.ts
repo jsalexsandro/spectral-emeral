@@ -42,6 +42,7 @@ import {
   DEVICE_RUN_ARGS_MAX_LENGTH,
   DEVICE_RUN_OUTPUT_MAX_BYTES,
 } from "../../../shared/device-commands.js"
+import { PROTECTED_PATHS } from "./shell.js"
 
 const MAX_READ_FILE_BYTES = 1024 * 1024
 const MAX_RETURN_BYTES = 64 * 1024
@@ -218,7 +219,7 @@ export type FileSandboxOptions = {
   root?: string
   /** Diretório base para caminhos relativos (pasta padrão do dispositivo). */
   base?: string
-  /** Raízes adicionais permitidas além de root e base. */
+  /** Mantido por compatibilidade; não restringe mais o alcance. */
   roots?: readonly string[]
   denyPatterns?: readonly string[]
 }
@@ -242,6 +243,16 @@ function normalizeRelative(value: string): string {
 function isInsideRoot(root: string, target: string): boolean {
   const rel = relative(root, target)
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+}
+
+function isProtectedPath(target: string): boolean {
+  const lower = target.toLowerCase()
+
+  return PROTECTED_PATHS.some((root: string) => {
+    const rootLower = root.toLowerCase()
+
+    return lower === rootLower || lower.startsWith(rootLower + sep)
+  })
 }
 
 function safeRealpath(value: string): string {
@@ -309,13 +320,9 @@ export class FileSandbox {
   constructor(options: FileSandboxOptions = {}) {
     this.root = safeRealpath(resolve(options.root ?? homedir()))
     this.base = safeRealpath(resolve(options.base ?? this.root))
-    this.allowedRoots = [
-      ...new Set([
-        this.root,
-        this.base,
-        ...(options.roots ?? []).map((root) => safeRealpath(resolve(root))),
-      ]),
-    ]
+    // Não restringe mais por raízes: o driver opera na máquina inteira.
+    // Mantido apenas como referência para mensagens e compatibilidade.
+    this.allowedRoots = [this.root, this.base]
     this.denyPatterns = options.denyPatterns ?? DEFAULT_DENY_PATTERNS
   }
 
@@ -348,27 +355,16 @@ export class FileSandbox {
   }
 
   private assertAllowed(target: string): string {
-    for (const root of this.allowedRoots) {
-      if (!isInsideRoot(root, target)) {
-        continue
-      }
+    const relativePath = normalizeRelative(relative(this.root, target))
 
-      const relativePath = normalizeRelative(relative(root, target))
-
-      if (this.isDenied(relativePath)) {
-        throw new DeviceFileError(
-          "path_denied",
-          "O caminho é bloqueado por segurança.",
-        )
-      }
-
-      return relativePath
+    if (this.isDenied(relativePath)) {
+      throw new DeviceFileError(
+        "path_denied",
+        "O caminho é bloqueado por segurança.",
+      )
     }
 
-    throw new DeviceFileError(
-      "path_outside_root",
-      "O caminho está fora do diretório permitido.",
-    )
+    return relativePath
   }
 
   async resolvePath(
@@ -379,13 +375,6 @@ export class FileSandbox {
     const absolute = isAbsolute(candidate)
       ? resolve(candidate)
       : resolve(this.base, candidate)
-
-    if (!this.allowedRoots.some((root) => isInsideRoot(root, absolute))) {
-      throw new DeviceFileError(
-        "path_outside_root",
-        "O caminho está fora do diretório permitido.",
-      )
-    }
 
     if (absolute !== this.root) {
       try {
@@ -1415,10 +1404,10 @@ export class FileSandbox {
       )
     })
 
-    if (this.isAllowedRoot(target.absolute)) {
+    if (isProtectedPath(target.absolute)) {
       throw new DeviceFileError(
-        "protected_path",
-        "As raízes permitidas (home e pasta padrão) não podem ser apagadas.",
+        "path_protected",
+        "Este caminho é protegido pelo sistema e não pode ser apagado.",
       )
     }
 
