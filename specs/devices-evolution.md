@@ -724,6 +724,7 @@ job-list:   {} → { jobs[] }
 | Ordem | Entrega | Esforço | Valor |
 |---|---|---|---|
 | 1 | Fase 2 — arquivos completos ✅ | M | alto (organizar projetos) |
+| 1.5 | P2 — acesso total a disco ✅ | M | alto (cwd livre em qualquer pasta) |
 | 2 | Fase 3 — processos | M | alto ("o que travou?") |
 | 3 | Fase 4 — jobs/background ✅ | G | altíssimo (dev server, builds) |
 | 4 | Fase 5a/5b — transferência + sistema | G/M | alto (uso diário) |
@@ -733,18 +734,20 @@ job-list:   {} → { jobs[] }
 Estimativa total: **4–6 semanas** de trabalho focado, com validação ao vivo em
 Windows a cada fase.
 
-> **Aviso:** o `shell` atual **não é uma sandbox de SO**. A restrição de `cwd`
-> limita apenas o diretório inicial; o script pode navegar e escrever em qualquer
-> lugar que o usuário alcance. Contenção real exigiria token restrito,
-> AppContainer ou Job Object, o que fica fora deste plano. A segurança prática
-> continua sendo modos + aprovação + auditoria + denylist.
+> **Aviso:** o `shell` atual **não é uma sandbox de SO**. O `cwd` aceita qualquer
+> caminho absoluto; o script pode navegar e escrever em qualquer lugar que o
+> usuário alcance. Contenção real exigiria token restrito, AppContainer ou Job
+> Object, o que fica fora deste plano. A segurança pratica continua sendo modos
+> + aprovacao + auditoria + denylist + caminhos protegidos.
 
 ### Decisões pendentes
 
 Resolvidas na Fase 2:
 
 1. `delete` usa lixeira por padrão. ✅ (`permanent: true` para apagar de vez)
-2. Raízes de arquivo: home + pasta padrão; pastas extras na UI ficam para depois.
+2. Acesso total a disco: cwd e arquivos aceitam qualquer caminho absoluto.
+   Escrita fora do home é destrutiva (aprovacao no Construtor, direto em Poder
+   Total). Caminhos protegidos (Spectral, System32, WinSxS, Boot) bloqueados.
    ✅
 3. Fase 2 inteira (arquivos); `zip`/`unzip` via shell. ✅
 

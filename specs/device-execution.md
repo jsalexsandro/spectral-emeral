@@ -111,7 +111,7 @@ Entrada:
 {
   script: string                 // comando único ou script multilinha
   shell?: "auto" | "pwsh" | "powershell" | "cmd" | "bash" | "sh" | "zsh"
-  cwd?: string                   // dentro do home ou da pasta padrão
+  cwd?: string                   // qualquer caminho absoluto; relativo resolve contra a pasta padrão
   timeoutMs?: number             // 1s..60s, honrado no transporte +5s; acima disso use job
   env?: Record<string, string>   // até 32 variáveis extras, sem segredos
   stdin?: string                 // até 64 KB
@@ -151,9 +151,12 @@ Execução (decisão de projeto):
   Nunca herdar segredos do processo do driver.
 - Saída em UTF-8; no Windows, decodificar conforme o code page quando o comando
   externo não emitir UTF-8.
+- `cwd` aceita qualquer caminho absoluto na maquina. Caminhos protegidos
+  (instalacao do Spectral, System32, WinSxS, Boot) nao podem ser usados como
+  `cwd` (`cwd_protected`).
 
 Erros: `unsupported_platform` (macOS/Linux nesta versão), `policy_denied`,
-`shell_unavailable`, `cwd_outside_root`, `cwd_not_found`, `not_a_directory`,
+`shell_unavailable`, `cwd_protected`, `cwd_not_found`, `not_a_directory`,
 `command_timeout`, `output_too_large`, `command_failed` e `approval_denied`.
 
 ### 4.2 `env` (item 7b) — o modelo para de adivinhar
@@ -197,19 +200,23 @@ Estado real do contrato em `spectral/shared/device-commands.ts`, executado por
 
 Regras implementadas:
 
-- Raízes do `FileSandbox` = home + `defaultWorkingDirectory` + raízes extras.
+- Raízes do `FileSandbox` não existem mais: o driver opera na maquina inteira.
   Caminhos relativos resolvem contra a pasta padrão; `~` contra o home.
+- Escrita/edicao fora do diretorio de referencia do usuario (home) e classificada
+  como destrutiva: pede aprovacao no Modo Construtor, liberada em Poder Total.
 - `delete` usa a lixeira do Windows (`Microsoft.VisualBasic.FileIO.FileSystem`,
   `SendToRecycleBin`, timeout de 20 s). Fora do Windows, sem lixeira, retorna
   `unsupported_platform`; `permanent: true` usa `rm` em qualquer plataforma.
-- As raízes permitidas não podem ser apagadas (`protected_path`). Diretório com
-  conteúdo exige `recursive: true`; symlink é removido como link, nunca seguido.
+- Caminhos protegidos (instalacao do Spectral, System32, WinSxS, Boot) nunca
+  podem ser apagados (`path_protected`).
+- Diretorio com conteúdo exige `recursive: true`; symlink é removido como link,
+  nunca seguido.
 - `copy`/`move` validam origem e destino, recusam destino dentro da origem
   (`invalid_destination`) e só substituem com `overwrite: true`.
 - `apply-patch` aplica todos os patches ou nenhum: cada `oldText` precisa ocorrer
   exatamente uma vez, salvo `replaceAll: true`; detecta EOL dominante e preserva
   BOM.
-- Erros: `path_outside_root`, `path_denied`, `path_not_found`,
+- Erros: `path_denied`, `path_protected`, `path_not_found`,
   `parent_not_found`, `path_exists`, `symlink_not_allowed`, `not_a_file`,
   `directory_not_empty`, `directory_requires_recursive`, `protected_path`,
   `destination_not_found`, `invalid_destination`, `permission_denied`,
@@ -407,6 +414,10 @@ Matriz de decisão (`lib/devices/execution-policy.ts`):
   escolha errada; o contrato permanece estável.
 - Defesa em profundidade: o app bloqueia antes de enviar e o driver repete as
   validações de sandbox/denylist.
+- Escrita fora do diretorio de referencia do usuario (home) e classificada como
+  `destructive`: pede aprovacao no Construtor (salvo Poder Total).
+  `device-delete` e comandos perigosos (`rm -rf`, `format`, `shutdown`, etc.)
+  continuam sempre `destructive`/`system`.
 
 ### 5.2 Aprovação de verdade (item 16)
 
@@ -520,8 +531,11 @@ pedem aprovação. ✅ (builds/servidores longos continuam na Fase 3: jobs.)
 Arquivos — ✅ implementado (Windows):
 - `mkdir`, `stat`, `copy`, `move` (renomear incluso), `delete` para a lixeira e
   `apply-patch` atômico; `zip`/`unzip` ficam no `shell`.
-- Raízes unificadas com o shell (home + pasta padrão), `overwrite` explícito,
-  symlinks nunca seguidos e raízes protegidas contra exclusão.
+- Acesso total a disco: `cwd` e caminhos de arquivo aceitam qualquer caminho
+  absoluto. Escrita fora do home e classificada como destrutiva (precisa de
+  aprovacao, salvo Poder Total). Caminhos protegidos (Spectral, System32,
+  WinSxS, Boot) nunca apagados (`path_protected`).
+- `overwrite` explícito, symlinks nunca seguidos.
 - Tools `device-mkdir`, `device-stat`, `device-copy`, `device-move`,
   `device-delete` (risco `destructive`) e `device-apply-patch` (risco `write`).
 - Prompt atualizado (`SYSTEM_PROMPT_VERSION = 31`).
@@ -537,6 +551,20 @@ no destrutivo, auditoria e verificação posterior. ✅
 
 **Fase completa quando:** encerrar um processo também funcionar com aprovação e
 auditoria.
+
+### P2 — Acesso total a disco (concluído)
+- `cwd` aceita qualquer caminho absoluto na maquina; não há mais
+  `cwd_outside_root`.
+- Arquivos leem/gravam em qualquer caminho; escrita fora do home é
+  `destructive` (aprovação no Construtor, direto em Poder Total).
+- Caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot)
+  bloqueados para `cwd` e exclusão (`cwd_protected`, `path_protected`).
+- Deny de credenciais (`.ssh`, `.env`, cookies, chaves privadas) continua ativo.
+- Prompt `SYSTEM_PROMPT_VERSION = 35`.
+
+**Pronto quando:** `npm run dev` em qualquer pasta funciona, escrever em
+`D:\projeto` pede aprovacao (ou libera em Poder Total) e caminhos protegidos
+rejeitam. ✅
 
 ### Fase 3 — Jobs (G)
 - `job-start/status/output/cancel/list` + buffer + streaming no chat.

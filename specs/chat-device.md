@@ -175,14 +175,15 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
 - `device-shell` grava o script em um arquivo temporário e nunca o interpola numa
   linha de comando. `shell` aceita `auto` (padrão), `pwsh`, `powershell`, `cmd`,
   `bash`, `sh` e `zsh`; no Windows, `auto` usa `pwsh`, depois `powershell` e por
-  fim `cmd`. `cwd` precisa estar dentro do home ou da pasta padrão do
-  dispositivo. `env` aceita até 32 variáveis extras, `stdin` até 64 KB,
-  `maxOutputBytes` de 1 KB a 512 KB (padrão 64 KB por stream) e `timeoutMs` de
-  1 s a 60 s (padrão 30 s). Acima do teto de saída, o resultado mantém cabeça e
-  cauda com um marcador de bytes omitidos. macOS e Linux retornam
-  `unsupported_platform` nesta versão.
+  fim `cmd`. `cwd` aceita qualquer caminho absoluto na maquina; caminhos
+  protegidos (instalacao do Spectral, System32, WinSxS, Boot) nao podem ser
+  usados como `cwd` (`cwd_protected`). `env` aceita até 32 variáveis extras,
+  `stdin` até 64 KB, `maxOutputBytes` de 1 KB a 512 KB (padrão 64 KB por stream)
+  e `timeoutMs` de 1 s a 60 s (padrão 30 s). Acima do teto de saída, o resultado
+  mantém cabeça e cauda com um marcador de bytes omitidos. macOS e Linux
+  retornam `unsupported_platform` nesta versão.
 - Erros do shell: `unsupported_platform`, `shell_unavailable`,
-  `cwd_outside_root`, `command_timeout`, `output_too_large`, `policy_denied` e
+  `cwd_protected`, `command_timeout`, `output_too_large`, `policy_denied` e
   `command_failed`. O driver mata a árvore de processos no timeout.
 - `device-run-command` continua sendo a allowlist curta de consulta; não é o
   caminho para scripts. Fluxos reais usam `device-env` + `device-shell`.
@@ -190,12 +191,13 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   ações destrutivas ou de sistema pedem aprovação no chat; quando `false`, o
   dispositivo está em Poder Total.
 - `device-write-file` escreve ou sobrescreve um arquivo de texto no dispositivo.
-  Cria o arquivo se não existir. Máximo de 1 MB de conteúdo. O caminho deve
-  estar dentro da pasta do usuário e não pode ser um caminho bloqueado.
-- `device-edit-file` substitui uma ocorrência exata de `oldText` por `newText`
+  Cria o arquivo se não existir. Máximo de 1 MB de conteúdo. Escrita fora do
+  diretorio de referencia do usuario (home) e classificada como destrutiva:
+  pede aprovacao no Modo Construtor (liberada em Poder Total).
+- `device-edit-file` substitui uma ocorrencia exata de `oldText` por `newText`
   dentro de um arquivo. O texto antigo deve aparecer exatamente uma vez no
   arquivo; se aparecer mais de uma vez, a edição é rejeitada. Máximo de 1 MB
-  no arquivo resultante.
+  no arquivo resultante. Mesmo regra de aprovacao para escrita fora do home.
 - `device-mkdir` cria um diretório e, com `recursive: true` (padrão), também os
   intermediários. Se já existir como diretório, retorna `created: false` sem
   erro.
@@ -219,9 +221,11 @@ Todas exigem um `deviceId` de um dispositivo **online** retornado por
   `oldText` não existir ou aparecer mais de uma vez (sem `replaceAll: true`),
   nada é gravado. Preserva CRLF/BOM e limita o resultado a 1 MB. Prefira ler o
   arquivo antes e conferir com `device-read-file`/`device-stat` depois.
-- Todas as operações de arquivo compartilham o sandbox: home + pasta padrão do
-  dispositivo, denylist e bloqueio de symlink. Caminhos relativos resolvem contra
-  a pasta padrão; `~` resolve contra o home.
+- Todas as operações de arquivo operam na maquina inteira. Caminhos relativos
+  resolvem contra a pasta padrão; `~` resolve contra o home. Escrita fora do
+  home é destrutiva (aprovacao no Construtor, liberada em Poder Total).
+  Caminhos protegidos (instalacao do Spectral, System32, WinSxS, Boot) nao
+  podem ser apagados.
 - `device-screenshot` captura a tela inteira (todos os monitores), uma janela
   por `windowId`, um monitor pelo índice (`0` = primeiro) ou uma `region`. Use
   apenas um alvo por captura. Com `windowId`, o driver foca a janela e captura
