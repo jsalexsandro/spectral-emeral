@@ -1,7 +1,10 @@
 import { spawn, execFile } from "node:child_process"
 import { lstat, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
-import { basename, isAbsolute, join, resolve, sep } from "node:path"
+import { fileURLToPath } from "node:url"
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 import { randomUUID } from "node:crypto"
 import { promisify } from "node:util"
 import type {
