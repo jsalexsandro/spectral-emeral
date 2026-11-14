@@ -5,7 +5,7 @@ import {
   TRANSPORT_GRACE_MS,
   clampCommandTimeoutMs,
   commandTransportTimeoutMs,
-} from "./command-timeout"
+} from "./command-timeout.js"
 
 describe("command transport timeout", () => {
   it("clampa o orçamento do driver no intervalo suportado", () => {
