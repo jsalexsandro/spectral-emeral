@@ -22,6 +22,9 @@ import {
   DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
   DEVICE_JOB_OUTPUT_MAX_BYTES,
   DEVICE_JOB_OUTPUT_MIN_BYTES,
+  DEVICE_JOB_WAIT_DEFAULT_MS,
+  DEVICE_JOB_WAIT_MAX_MS,
+  DEVICE_JOB_WAIT_MIN_MS,
   DEVICE_KEYS,
   DEVICE_KEY_MODIFIERS,
   DEVICE_TEXT_MAX_LENGTH,
@@ -1237,6 +1240,15 @@ export const deviceJobStartInputSchema = z.object({
 export const deviceJobStatusInputSchema = z.object({
   deviceId: deviceIdSchema,
   jobId: z.string().min(1).max(DEVICE_JOB_ID_MAX_LENGTH).describe("Id do job retornado por device-job-start."),
+  waitMs: z
+    .number()
+    .int()
+    .min(DEVICE_JOB_WAIT_MIN_MS)
+    .max(DEVICE_JOB_WAIT_MAX_MS)
+    .default(DEVICE_JOB_WAIT_DEFAULT_MS)
+    .describe(
+      "Espera ativa: segura a chamada até o job sair de `running` ou até este teto (máximo 10 s). Use 5-10 s para acompanhar sem polling em rajada; 0 responde na hora.",
+    ),
 })
 
 export const deviceJobOutputInputSchema = z.object({
@@ -1247,7 +1259,7 @@ export const deviceJobOutputInputSchema = z.object({
     .int()
     .min(0)
     .default(0)
-    .describe("Cursor de leitura (contagem de caracteres UTF-16). Comece em 0 e use o nextCursor da resposta anterior."),
+    .describe("Cursor de leitura (contagem de caracteres UTF-16). Sempre comece em 0 para um job novo e use o nextCursor da resposta anterior."),
   maxBytes: z
     .number()
     .int()
@@ -1255,6 +1267,15 @@ export const deviceJobOutputInputSchema = z.object({
     .max(DEVICE_JOB_OUTPUT_MAX_BYTES)
     .default(DEVICE_JOB_OUTPUT_DEFAULT_BYTES)
     .describe("Teto de bytes UTF-8 para esta leitura."),
+  waitMs: z
+    .number()
+    .int()
+    .min(DEVICE_JOB_WAIT_MIN_MS)
+    .max(DEVICE_JOB_WAIT_MAX_MS)
+    .default(DEVICE_JOB_WAIT_DEFAULT_MS)
+    .describe(
+      "Espera ativa: segura a chamada até chegar saída nova além do cursor ou o job terminar (máximo 10 s). Use 5-10 s em vez de repetir a leitura em sequência.",
+    ),
 })
 
 export const deviceJobCancelInputSchema = z.object({
@@ -1596,21 +1617,23 @@ const jobStartDescription = [
 ].join("\n")
 
 const jobStatusDescription = [
-  "Consulta o status de um job: `running`, `exited`, `killed` ou `failed`, com `exitCode`, `startedAt`, `durationMs`, `bytesOut` e `cancelled`.",
-  "Use `device-job-status` para saber se um job terminou antes de ler mais saída com `device-job-output`.",
+  "Consulta o status de um job: `running`, `exited`, `killed` ou `failed`, com `exitCode`, `startedAt`, `durationMs`, `stdoutBytes`, `stderrBytes`, `timedOut` e `cancelled`.",
+  "Use `waitMs` (5-10 s) para acompanhar sem polling em rajada: a chamada segura até o job sair de `running` ou o teto estourar.",
+  "Um job que morre logo depois de iniciar aparece como `exited`/`failed` com `exitCode` — nunca afirme que está rodando sem conferir este status.",
 ].join("\n")
 
 const jobOutputDescription = [
   "Lê a saída de um job de forma incremental por `cursor` (contagem de caracteres UTF-16 do fluxo combinado stdout+stderr).",
-  "Comece com `cursor: 0` e, nas próximas leituras, passe o `nextCursor` da resposta anterior para não repetir trechos.",
-  "Informe `maxBytes` para limitar o tamanho desta leitura. O resultado traz `chunks[]` com `cursor`, `stream` (`stdout`/`stderr`) e `text`, além de `nextCursor` e `startCursor`.",
+  "O cursor é por job: sempre comece em 0 para um job novo e, nas próximas leituras, passe o `nextCursor` da resposta anterior.",
+  "Use `waitMs` (5-10 s) para esperar saída nova em vez de repetir a leitura em sequência.",
+  "Informe `maxBytes` para limitar o tamanho desta leitura. O resultado traz `chunks[]` com `cursor`, `stream` (`stdout`/`stderr`) e `text`, além de `nextCursor`, `startCursor`, `status`, `exitCode` e `cancelled` — dá para dispensar o status na mesma rodada.",
   "Se `startCursor` for maior que o `cursor` pedido, o começo do buffer foi descartado (retenção de 1 MB) e você perdeu trechos antigos.",
   "Um job concluído fica retido por ~10 min; depois disso `device-job-status` e `device-job-output` retornam `job_not_found`.",
 ].join("\n")
 
 const jobCancelDescription = [
   "Cancela um job em execução e mata a árvore de processos dele no dispositivo.",
-  "Retorna `cancelled: true` quando o sinal foi enviado e `cancelled: false` quando o job já não está mais em execução.",
+  "Retorna `cancelled: true` quando um job em execução recebeu o sinal; `cancelled: false` significa que ele já havia terminado — nesse caso reporte o `status` real (`exited`, `failed` ou `killed`) e não diga que foi cancelado.",
   "Cancelar um job que você iniciou não exige aprovação adicional.",
 ].join("\n")
 
@@ -2162,11 +2185,11 @@ export function createDeviceTools(
     [DEVICE_JOB_STATUS_TOOL_NAME]: tool({
       description: jobStatusDescription,
       inputSchema: deviceJobStatusInputSchema,
-      execute: async ({ deviceId, jobId }) => {
+      execute: async ({ deviceId, jobId, waitMs = DEVICE_JOB_WAIT_DEFAULT_MS }) => {
         try {
           return await runCommand(deviceId, {
             command: "job-status",
-            input: { jobId },
+            input: { jobId, waitMs },
           })
         } catch (error) {
           return {
@@ -2183,11 +2206,11 @@ export function createDeviceTools(
     [DEVICE_JOB_OUTPUT_TOOL_NAME]: tool({
       description: jobOutputDescription,
       inputSchema: deviceJobOutputInputSchema,
-      execute: async ({ deviceId, jobId, cursor = 0, maxBytes = DEVICE_JOB_OUTPUT_DEFAULT_BYTES }) => {
+      execute: async ({ deviceId, jobId, cursor = 0, maxBytes = DEVICE_JOB_OUTPUT_DEFAULT_BYTES, waitMs = DEVICE_JOB_WAIT_DEFAULT_MS }) => {
         try {
           return await runCommand(deviceId, {
             command: "job-output",
-            input: { jobId, cursor, maxBytes },
+            input: { jobId, cursor, maxBytes, waitMs },
           })
         } catch (error) {
           return {

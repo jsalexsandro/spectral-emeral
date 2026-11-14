@@ -25,7 +25,7 @@ async function waitForStatus(
   const deadline = Date.now() + timeoutMs
 
   while (Date.now() < deadline) {
-    const job = getJob(jobId)
+    const job = await getJob(jobId)
 
     if (statuses.includes(job.status)) {
       return job
@@ -65,7 +65,7 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
     expect(done.exitCode).toBe(0)
     expect(done.durationMs).toBeGreaterThanOrEqual(0)
 
-    const first = readJobOutput(started.id, 0, READ_BYTES)
+    const first = await readJobOutput(started.id, 0, READ_BYTES)
 
     expect(first.chunks.length).toBeGreaterThan(0)
     expect(first.chunks.map((chunk) => chunk.text).join("")).toContain(
@@ -75,7 +75,7 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
     expect(first.nextCursor).toBeGreaterThan(0)
     expect(first.truncated).toBe(false)
 
-    const second = readJobOutput(started.id, first.nextCursor, READ_BYTES)
+    const second = await readJobOutput(started.id, first.nextCursor, READ_BYTES)
 
     expect(second.chunks).toEqual([])
     expect(second.nextCursor).toBe(first.nextCursor)
@@ -90,7 +90,7 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
 
     await waitForStatus(started.id, ["exited", "failed", "killed"])
 
-    const all = readJobOutput(started.id, 0, READ_BYTES)
+    const all = await readJobOutput(started.id, 0, READ_BYTES)
     const streams = new Set(all.chunks.map((chunk) => chunk.stream))
 
     expect(streams.has("stdout")).toBe(true)
@@ -103,7 +103,7 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
     let rebuilt = ""
 
     for (let index = 0; index < 100 && cursor < all.nextCursor; index += 1) {
-      const slice = readJobOutput(started.id, cursor, 5)
+      const slice = await readJobOutput(started.id, cursor, 5)
 
       rebuilt += slice.chunks.map((chunk) => chunk.text).join("")
 
@@ -193,9 +193,45 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
 
     expect(listed.some((job) => job.id === started.id)).toBe(true)
 
-    expect(() => getJob("inexistente")).toThrow(DeviceJobError)
-    expect(() => readJobOutput("inexistente", 0, READ_BYTES)).toThrow(
-      DeviceJobError,
-    )
+    await expect(getJob("inexistente")).rejects.toBeInstanceOf(DeviceJobError)
+    await expect(
+      readJobOutput("inexistente", 0, READ_BYTES),
+    ).rejects.toBeInstanceOf(DeviceJobError)
   })
+
+  it("espera ativa segura a chamada até o job terminar", async () => {
+    const started = await startJob({
+      script: "ping -n 4 127.0.0.1 > nul",
+      shell: "cmd",
+      maxRuntimeMs: 30_000,
+    })
+
+    expect(started.status).toBe("running")
+
+    const began = Date.now()
+    const done = await getJob(started.id, 15_000)
+
+    expect(done.status).not.toBe("running")
+    expect(Date.now() - began).toBeLessThan(15_000)
+  }, 30_000)
+
+  it("espera ativa na saída para quando chega texto novo", async () => {
+    const started = await startJob({
+      script: "ping -n 3 127.0.0.1 > nul & echo tarde",
+      shell: "cmd",
+      maxRuntimeMs: 30_000,
+    })
+
+    const began = Date.now()
+    const first = await readJobOutput(started.id, 0, READ_BYTES, 10_000)
+    const text = first.chunks.map((chunk) => chunk.text).join("")
+
+    expect(text).toContain("tarde")
+    expect(Date.now() - began).toBeGreaterThanOrEqual(1_000)
+
+    const done = await getJob(started.id, 10_000)
+
+    expect(done.status).toBe("exited")
+    expect(done.exitCode).toBe(0)
+  }, 30_000)
 })

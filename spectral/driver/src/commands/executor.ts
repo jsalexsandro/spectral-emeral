@@ -682,14 +682,18 @@ export async function executeDeviceCommand(
         }
       }
       case "job-status":
-        return { ok: true, job: getJob(command.input.jobId) }
+        return {
+          ok: true,
+          job: await getJob(command.input.jobId, command.input.waitMs),
+        }
       case "job-output":
         return {
           ok: true,
-          jobOutput: readJobOutput(
+          jobOutput: await readJobOutput(
             command.input.jobId,
             command.input.cursor,
             command.input.maxBytes,
+            command.input.waitMs,
           ),
         }
       case "job-cancel": {

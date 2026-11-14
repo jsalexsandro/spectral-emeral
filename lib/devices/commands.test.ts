@@ -4,6 +4,7 @@ import {
   DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
   DEVICE_JOB_MAX_RUNTIME_MS,
   DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+  DEVICE_JOB_WAIT_MAX_MS,
   deviceAppIdFromTarget,
   deviceCommandTimeoutMs,
   isAbsoluteAppPath,
@@ -893,7 +894,7 @@ describe("device job contract", () => {
   it("normaliza status, output, cancel e list", () => {
     expect(parseDeviceCommand("job-status", { jobId: " abc " })).toEqual({
       command: "job-status",
-      input: { jobId: "abc" },
+      input: { jobId: "abc", waitMs: 0 },
     })
 
     expect(
@@ -904,6 +905,7 @@ describe("device job contract", () => {
         jobId: "abc",
         cursor: 42,
         maxBytes: DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+        waitMs: 0,
       },
     })
 
@@ -916,6 +918,42 @@ describe("device job contract", () => {
       command: "job-list",
       input: {},
     })
+  })
+
+  it("aceita espera ativa dentro do teto e rejeita acima dele", () => {
+    expect(
+      parseDeviceCommand("job-status", { jobId: "abc", waitMs: 5_000 }),
+    ).toEqual({
+      command: "job-status",
+      input: { jobId: "abc", waitMs: 5_000 },
+    })
+
+    expect(
+      parseDeviceCommand("job-output", {
+        jobId: "abc",
+        cursor: 10,
+        waitMs: DEVICE_JOB_WAIT_MAX_MS,
+      }),
+    ).toEqual({
+      command: "job-output",
+      input: {
+        jobId: "abc",
+        cursor: 10,
+        maxBytes: DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
+        waitMs: DEVICE_JOB_WAIT_MAX_MS,
+      },
+    })
+
+    expect(() =>
+      parseDeviceCommand("job-status", {
+        jobId: "abc",
+        waitMs: DEVICE_JOB_WAIT_MAX_MS + 1,
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("job-status", { jobId: "abc", waitMs: -1 }),
+    ).toThrow(DeviceCommandValidationError)
   })
 
   it("rejeita id vazio, cursor negativo e maxRuntimeMs acima do teto", () => {

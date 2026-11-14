@@ -427,6 +427,10 @@ export const DEVICE_JOB_OUTPUT_MAX_BYTES = 256 * 1024
 export const DEVICE_JOB_OUTPUT_DEFAULT_BYTES = 64 * 1024
 export const DEVICE_JOB_BUFFER_BYTES = 1024 * 1024
 export const DEVICE_JOB_RETENTION_MS = 10 * 60_000
+/** Espera ativa (long-poll) de status/saída: 0 responde na hora. */
+export const DEVICE_JOB_WAIT_MIN_MS = 0
+export const DEVICE_JOB_WAIT_MAX_MS = 10_000
+export const DEVICE_JOB_WAIT_DEFAULT_MS = 0
 export const DEVICE_JOB_STATUSES = [
   "running",
   "exited",
@@ -759,6 +763,10 @@ export type DeviceJobOutput = {
   chunks: DeviceJobChunk[]
   nextCursor: number
   truncated: boolean
+  /** Status do job no momento da leitura: evita um status extra por leitura. */
+  status: DeviceJobStatus
+  exitCode: number | null
+  cancelled: boolean
 }
 
 export type DeviceGrepMatch = {
@@ -907,8 +915,13 @@ export type DeviceCommandInputMap = {
     label?: string
     maxRuntimeMs: number
   }
-  "job-status": { jobId: string }
-  "job-output": { jobId: string; cursor: number; maxBytes: number }
+  "job-status": { jobId: string; waitMs: number }
+  "job-output": {
+    jobId: string
+    cursor: number
+    maxBytes: number
+    waitMs: number
+  }
   "job-cancel": { jobId: string }
   "job-list": Record<string, never>
   screenshot: {
@@ -941,6 +954,10 @@ export function deviceCommandTimeoutMs(
       return command.input.timeoutMs
     case "run-command":
       return command.input.timeoutMs
+    case "job-status":
+    case "job-output":
+      // A espera ativa precisa de folga para o backend não desistir antes.
+      return command.input.waitMs > 0 ? command.input.waitMs + 2_000 : undefined
     default:
       return undefined
   }
@@ -2727,7 +2744,10 @@ function parseJobStart(input: unknown): DeviceCommand {
 }
 
 function parseJobStatus(input: unknown): DeviceCommand {
-  return { command: "job-status", input: { jobId: readJobId(input) } }
+  return {
+    command: "job-status",
+    input: { jobId: readJobId(input), waitMs: readJobWaitMs(input) },
+  }
 }
 
 function parseJobCancel(input: unknown): DeviceCommand {
@@ -2747,8 +2767,20 @@ function parseJobOutput(input: unknown): DeviceCommand {
         DEVICE_JOB_OUTPUT_MIN_BYTES,
         DEVICE_JOB_OUTPUT_MAX_BYTES,
       ),
+      waitMs: readJobWaitMs(input),
     },
   }
+}
+
+/** Espera ativa opcional: 0 responde na hora; acima disso segura a chamada. */
+function readJobWaitMs(input: unknown): number {
+  return readInteger(
+    input,
+    "waitMs",
+    DEVICE_JOB_WAIT_DEFAULT_MS,
+    DEVICE_JOB_WAIT_MIN_MS,
+    DEVICE_JOB_WAIT_MAX_MS,
+  )
 }
 
 function parseJobList(): DeviceCommand {

@@ -26,6 +26,7 @@ import {
 const IS_WINDOWS = process.platform === "win32"
 const CANCEL_WAIT_MS = 2_000
 const ERROR_MAX_LENGTH = 900
+const WAIT_POLL_MS = 150
 
 export class DeviceJobError extends Error {
   readonly code: string
@@ -102,7 +103,10 @@ class JobOutputBuffer {
     return this.startCursor > 0
   }
 
-  read(cursor: number, maxBytes: number): DeviceJobOutput {
+  read(cursor: number, maxBytes: number): Omit<
+    DeviceJobOutput,
+    "jobId" | "status" | "exitCode" | "cancelled"
+  > {
     const startCursor = this.startCursor
     const from = Math.min(Math.max(cursor, startCursor), this.total)
     const chunks: DeviceJobChunk[] = []
@@ -158,7 +162,6 @@ class JobOutputBuffer {
     const nextCursor = last ? last.cursor + last.text.length : from
 
     return {
-      jobId: "",
       startCursor,
       chunks,
       nextCursor,
@@ -341,6 +344,36 @@ function waitForClose(job: Job, timeoutMs: number): Promise<void> {
   })
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+/**
+ * Espera ativa para status/saída. O modelo não tem como dormir entre
+ * chamadas; sem isso ele faz polling em rajada (dezenas de status seguidos).
+ * Para quando o predicado fica verdadeiro ou quando o teto estoura.
+ */
+async function waitForChange(
+  waitMs: number,
+  predicate: () => boolean,
+): Promise<void> {
+  if (waitMs <= 0) {
+    return
+  }
+
+  const deadline = Date.now() + waitMs
+
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return
+    }
+
+    await sleep(Math.min(WAIT_POLL_MS, Math.max(0, deadline - Date.now())))
+  }
+}
+
 export async function startJob(
   input: DeviceCommandInputMap["job-start"],
   defaultFolder?: string,
@@ -457,20 +490,36 @@ export async function startJob(
   }
 }
 
-export function getJob(jobId: string): DeviceJob {
-  purgeExpired()
-  return snapshot(requireJob(jobId))
-}
-
-export function readJobOutput(
-  jobId: string,
-  cursor: number,
-  maxBytes: number,
-): DeviceJobOutput {
+export async function getJob(jobId: string, waitMs = 0): Promise<DeviceJob> {
   purgeExpired()
   const job = requireJob(jobId)
 
-  return { ...job.buffer.read(cursor, maxBytes), jobId }
+  await waitForChange(waitMs, () => job.status !== "running")
+
+  return snapshot(job)
+}
+
+export async function readJobOutput(
+  jobId: string,
+  cursor: number,
+  maxBytes: number,
+  waitMs = 0,
+): Promise<DeviceJobOutput> {
+  purgeExpired()
+  const job = requireJob(jobId)
+
+  await waitForChange(
+    waitMs,
+    () => job.buffer.nextCursor > cursor || job.status !== "running",
+  )
+
+  return {
+    ...job.buffer.read(cursor, maxBytes),
+    jobId,
+    status: job.status,
+    exitCode: job.exitCode,
+    cancelled: job.cancelled,
+  }
 }
 
 export function listJobs(): DeviceJob[] {
