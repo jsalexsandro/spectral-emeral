@@ -255,6 +255,19 @@ function isProtectedPath(target: string): boolean {
   })
 }
 
+/**
+ * Caminhos protegidos são negados no driver para qualquer escrita ou remoção,
+ * independentemente do modo, da política do dispositivo ou de privilégios.
+ */
+function assertWritablePath(target: string) {
+  if (isProtectedPath(target)) {
+    throw new DeviceFileError(
+      "path_protected",
+      "Este caminho é protegido pelo sistema e não pode ser alterado.",
+    )
+  }
+}
+
 function safeRealpath(value: string): string {
   try {
     return realpathSync(value)
@@ -885,6 +898,7 @@ export class FileSandbox {
     input: DeviceCommandInputMap["write-file"],
   ): Promise<DeviceCommandSuccess> {
     const target = await this.resolvePath(input.path, false)
+    assertWritablePath(target.absolute)
     const stats = await lstat(target.absolute).catch(() => null)
 
     if (stats?.isSymbolicLink()) {
@@ -931,6 +945,7 @@ export class FileSandbox {
     input: DeviceCommandInputMap["edit-file"],
   ): Promise<DeviceCommandSuccess> {
     const target = await this.resolvePath(input.path)
+    assertWritablePath(target.absolute)
     const stats = await lstat(target.absolute)
 
     if (stats.isSymbolicLink()) {
@@ -1012,6 +1027,7 @@ export class FileSandbox {
     input: DeviceCommandInputMap["mkdir"],
   ): Promise<DeviceCommandSuccess> {
     const target = await this.resolveEntryPath(input.path)
+    assertWritablePath(target.absolute)
     const existing = await lstat(target.absolute).catch(() => null)
 
     if (existing) {
@@ -1240,6 +1256,7 @@ export class FileSandbox {
   ): Promise<DeviceCommandSuccess> {
     const source = await this.resolveEntryPath(input.from)
     const destination = await this.resolvePath(input.to, false)
+    assertWritablePath(destination.absolute)
 
     if (source.absolute === destination.absolute) {
       throw new DeviceFileError(
@@ -1271,6 +1288,8 @@ export class FileSandbox {
   ): Promise<DeviceCommandSuccess> {
     const source = await this.resolveEntryPath(input.from)
     const destination = await this.resolvePath(input.to, false)
+    assertWritablePath(source.absolute)
+    assertWritablePath(destination.absolute)
 
     if (isInsideRoot(source.absolute, destination.absolute)) {
       throw new DeviceFileError(
@@ -1487,6 +1506,7 @@ export class FileSandbox {
     input: DeviceCommandInputMap["apply-patch"],
   ): Promise<DeviceCommandSuccess> {
     const target = await this.resolvePath(input.path)
+    assertWritablePath(target.absolute)
     const stats = await lstat(target.absolute)
 
     if (stats.isSymbolicLink()) {
