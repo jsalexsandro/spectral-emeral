@@ -1171,7 +1171,7 @@ export const deviceShellInputSchema = z.object({
     .string()
     .max(DEVICE_PATH_MAX_LENGTH)
     .optional()
-    .describe("Diretório de trabalho. Precisa estar dentro do home ou da pasta padrão do dispositivo."),
+    .describe("Diretório de trabalho. Aceita qualquer pasta da máquina; caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) são recusados."),
   timeoutMs: z
     .number()
     .int()
@@ -1214,7 +1214,7 @@ export const deviceJobStartInputSchema = z.object({
     .string()
     .max(DEVICE_PATH_MAX_LENGTH)
     .optional()
-    .describe("Diretório de trabalho. Precisa estar dentro do home ou da pasta padrão do dispositivo."),
+    .describe("Diretório de trabalho. Aceita qualquer pasta da máquina; caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) são recusados."),
   env: z
     .record(
       z.string().max(DEVICE_SHELL_ENV_NAME_MAX_LENGTH),
@@ -1598,7 +1598,7 @@ const shellDescription = [
   "Executa um script de shell na máquina do usuário e retorna exitCode, stdout, stderr e duração.",
   "É a primitiva poderosa do plano de execução: use para rodar build, testes, git, scripts e qualquer fluxo que não tenha tool dedicada.",
   "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`.",
-  "Informe `cwd` dentro do home ou da pasta padrão do dispositivo. Variáveis de ambiente do driver não são herdadas; use `env` se precisar de algo específico.",
+  "Informe `cwd` para rodar em outra pasta; caminhos protegidos são recusados. Variáveis de ambiente do driver não são herdadas; use `env` se precisar de algo específico.",
   "A saída é limitada por `maxOutputBytes` (padrão 64 KB por stream, máximo 512 KB) com cabeça e cauda; `truncated` indica corte.",
   "Timeout padrão 30s (máximo 60s). Ao estourar, a árvore de processos é encerrada e `timedOut` vem true.",
   "A ação passa pela política do dispositivo: comandos longos ou destrutivos podem exigir aprovação no chat. Nunca rode scripts que fecham janelas/apps sem o usuário pedir.",
@@ -1608,7 +1608,7 @@ const shellDescription = [
 const jobStartDescription = [
   "Inicia um script de shell como job em segundo plano no dispositivo e retorna imediatamente o `jobId`.",
   "Use para build, testes, servidores de desenvolvimento, compilações longas ou qualquer processo que exceda os 60s do `device-shell`.",
-  "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`. Informe `cwd` dentro do home ou da pasta padrão do dispositivo.",
+  "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`. Informe `cwd` para rodar em outra pasta; caminhos protegidos são recusados.",
   "O `maxRuntimeMs` padrão é 30 min (máximo 60 min); ao estourar, a árvore de processos é encerrada.",
   "Até 3 jobs rodam simultâneos por dispositivo. Se o limite estiver atingido, cancele um job existente com `device-job-cancel` ou espere terminar.",
   "Leia a saída aos poucos com `device-job-output` passando o `cursor` da resposta anterior; nunca releia tudo do zero.",
@@ -1767,7 +1767,7 @@ const statDescription = [
 
 const copyDescription = [
   "Copia um arquivo ou diretório para outro caminho no dispositivo.",
-  "A origem e o destino precisam estar dentro do home ou da pasta padrão do dispositivo.",
+  "Aceita caminhos absolutos; caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) são recusados.",
   "`overwrite: false` (padrão) falha se o arquivo de destino já existir.",
   "`recursive: true` (padrão) copia diretórios arquivo por arquivo; links simbólicos são ignorados.",
   "Não copie um diretório para dentro dele mesmo. Use `device-stat` para conferir o resultado.",
@@ -1775,7 +1775,7 @@ const copyDescription = [
 
 const moveDescription = [
   "Move (renomeia) um arquivo ou diretório no dispositivo.",
-  "A origem e o destino precisam estar dentro do home ou da pasta padrão do dispositivo.",
+  "Aceita caminhos absolutos; caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) são recusados.",
   "`overwrite: false` (padrão) falha se o destino já existir.",
   "Entre volumes diferentes o driver copia e apaga a origem automaticamente.",
   "Para renomear no mesmo diretório, use `from` e `to` com o mesmo diretório pai.",
@@ -1786,7 +1786,7 @@ const deleteDescription = [
   "Por padrão envia para a lixeira do Windows; `permanent: true` apaga de vez e deve ser usado apenas com confirmação explícita.",
   "Diretórios com conteúdo exigem `recursive: true`.",
   "Links simbólicos são removidos como links, nunca seguidos.",
-  "As raízes permitidas (home e pasta padrão) não podem ser apagadas. Use `device-stat` depois para confirmar.",
+  "Caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) não podem ser apagados (`protected_path`). Use `device-stat` depois para confirmar.",
 ].join("\n")
 
 const applyPatchDescription = [
