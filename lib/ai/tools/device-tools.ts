@@ -1606,11 +1606,12 @@ const shellDescription = [
 ].join("\n")
 
 const jobStartDescription = [
-  "Inicia um script de shell como job em segundo plano no dispositivo e retorna imediatamente o `jobId`.",
+  "Inicia um script de shell como job em segundo plano no dispositivo e devolve o `jobId` em menos de 1 s.",
   "Use para build, testes, servidores de desenvolvimento, compilações longas ou qualquer processo que exceda os 60s do `device-shell`.",
   "O script roda a partir de um arquivo temporário; escolha `shell` (pwsh, powershell, cmd) ou deixe `auto`. Informe `cwd` para rodar em outra pasta; caminhos protegidos são recusados.",
   "O `maxRuntimeMs` padrão é 30 min (máximo 60 min); ao estourar, a árvore de processos é encerrada.",
   "Até 3 jobs rodam simultâneos por dispositivo. Se o limite estiver atingido, cancele um job existente com `device-job-cancel` ou espere terminar.",
+  "O driver espera até 500 ms antes de responder: um processo que falha na largada já volta com `exited`/`failed` e o `exitCode`. Mesmo assim, confirme com `device-job-status` antes de afirmar que está rodando.",
   "Leia a saída aos poucos com `device-job-output` passando o `cursor` da resposta anterior; nunca releia tudo do zero.",
   "Passa pela política do dispositivo: `device-job-start` exige aprovação no Modo Construtor (risco execução) e é negado no Modo Leitura.",
   "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",

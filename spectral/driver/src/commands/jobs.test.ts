@@ -56,7 +56,9 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
     })
 
     expect(started.id).toMatch(/[0-9a-f-]{36}/)
-    expect(started.status).toBe("running")
+    // O settle de 500 ms pode já ter colhido um script rápido: é o
+    // comportamento esperado (não devolver `running` para processo morto).
+    expect(["running", "exited"]).toContain(started.status)
     expect(started.shell).toBe("cmd")
 
     const done = await waitForStatus(started.id, ["exited", "failed", "killed"])
@@ -197,6 +199,18 @@ describe.skipIf(process.platform !== "win32")("jobs", () => {
     await expect(
       readJobOutput("inexistente", 0, READ_BYTES),
     ).rejects.toBeInstanceOf(DeviceJobError)
+  })
+
+  it("não devolve running para processo que falha na largada", async () => {
+    const started = await startJob({
+      script: "exit /b 3",
+      shell: "cmd",
+      maxRuntimeMs: 10_000,
+    })
+
+    expect(started.status).toBe("exited")
+    expect(started.exitCode).toBe(3)
+    expect(started.cancelled).toBe(false)
   })
 
   it("espera ativa segura a chamada até o job terminar", async () => {

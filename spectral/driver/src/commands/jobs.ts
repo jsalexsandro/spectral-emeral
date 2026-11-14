@@ -27,6 +27,7 @@ const IS_WINDOWS = process.platform === "win32"
 const CANCEL_WAIT_MS = 2_000
 const ERROR_MAX_LENGTH = 900
 const WAIT_POLL_MS = 150
+const START_SETTLE_MS = 500
 
 export class DeviceJobError extends Error {
   readonly code: string
@@ -483,6 +484,11 @@ export async function startJob(
     })
 
     jobs.set(id, job)
+
+    // Deixa o processo provar que sobreviveu antes de devolver `running`: um
+    // comando que falha na largada (porta ocupada, binário ausente) volta com
+    // o status final em vez de enganar o modelo.
+    await waitForClose(job, START_SETTLE_MS)
 
     return snapshot(job)
   } finally {
