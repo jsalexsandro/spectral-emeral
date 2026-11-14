@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 35
+export const SYSTEM_PROMPT_VERSION = 36
 
 export type SystemPromptChange = {
   version: number
@@ -210,5 +210,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-14",
     summary:
       "O driver opera na maquina inteira: nao ha mais restricao de cwd ou caminho fora do home para shell, arquivos e jobs. Escrita em disco fora do diretorio de referencia do usuario eh classificada como destrutiva e pede aprovacao no Modo Construtor (liberado em Poder Total). Caminhos protegidos (instalacao do Spectral, System32, WinSxS, Boot) nunca podem ser apagados nem usados como cwd. Negacao de credenciais (.ssh, .env, cookies, chaves) continua ativa.",
+  },
+  {
+    version: 36,
+    date: "2026-11-14",
+    summary:
+      "Jobs ganham espera ativa: device-job-status e device-job-output aceitam waitMs (até 10 s) para o modelo acompanhar sem polling em rajada, e a leitura de saída passa a devolver status, exitCode e cancelled. O prompt passa a exigir o status real antes de afirmar que um job roda ou terminou, cursor por job começando em 0, repasse de cwd/label/maxRuntimeMs e leitura correta de cancelled: false.",
   },
 ]
