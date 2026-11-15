@@ -197,7 +197,10 @@ $items = New-Object System.Collections.Generic.List[object]
 
 function Add-AppItem([string]$name, [string]$target, [string]$source) {
   if (-not $name -or -not $target) { return }
-  if (-not (Test-Path -LiteralPath $target)) { return }
+  # AUMIDs da Store (ex.: SpotifyAB....!Spotify) não são caminhos de arquivo:
+  # pular a validação de existência para não rejeitá-los.
+  $isFilePath = $target -match '^[a-zA-Z]:[\\/]|^[\\/]|^~[\\/]'
+  if ($isFilePath -and -not (Test-Path -LiteralPath $target)) { return }
   $items.Add([pscustomobject]@{ name = $name; target = $target; source = $source })
 }
 
@@ -239,6 +242,20 @@ $storeApps = Get-StartApps -ErrorAction SilentlyContinue | Where-Object { $_.App
   Add-AppItem $_.Name $_.AppID 'store'
 }
 
+# Fallback para Windows sem Get-StartApps: enumera shell:AppsFolder pelo COM
+# do Shell.Application. $_.Path traz o AUMID (ex.: SpotifyAB....!Spotify).
+$shellApps = New-Object -ComObject Shell.Application
+$appsFolder = $shellApps.NameSpace('shell:AppsFolder')
+if ($appsFolder) {
+  $appsFolder.Items() | ForEach-Object {
+    $aumid = $_.Path
+    $name = $_.Name
+    if ($aumid -and $name -and $aumid -like '*!*') {
+      Add-AppItem $name $aumid 'store'
+    }
+  }
+}
+
 ConvertTo-Json -InputObject $items.ToArray() -Compress -Depth 3
 `
 
@@ -262,6 +279,7 @@ function parseDiscoveryOutput(stdout: string): DiscoveredApp[] {
   const usedIds = new Set(
     listApps("win32").map((app) => app.id),
   )
+  const seenTargets = new Set<string>()
 
   for (const entry of entries) {
     if (apps.length >= DISCOVERY_MAX_APPS) {
@@ -277,6 +295,15 @@ function parseDiscoveryOutput(stdout: string): DiscoveredApp[] {
     const target =
       typeof record.target === "string" ? record.target.trim() : ""
     const source = record.source
+
+    // Dedup: a mesma descoberta pode vir de Get-StartApps e de
+    // shell:AppsFolder (ex.: Spotify listado duas vezes com o mesmo AUMID).
+    if (target.length > 0 && seenTargets.has(target)) {
+      continue
+    }
+    if (target.length > 0) {
+      seenTargets.add(target)
+    }
 
     // Nunca expõe shims descobertos dentro de WindowsApps (ex.: spotify_cli.exe
     // do Spotify da Store). Eles não abrem nada visível; apps de Store devem

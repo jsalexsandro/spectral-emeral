@@ -87,6 +87,24 @@ describe("descoberta de apps (Menu Iniciar, App Paths e Windows Store)", () => {
     expect(resolved?.target).toBe("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
   })
 
+  it("dedup por target: mesmo app vindo de Get-StartApps e shell:AppsFolder aparece uma vez", async () => {
+    const alvo = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"
+    const stdout = JSON.stringify([
+      { name: "Spotify", target: alvo, source: "store" },
+      { name: "Spotify", target: alvo, source: "store" },
+      { name: "Bloco de Notas", target: "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App", source: "store" },
+    ])
+    mockDiscovery(stdout)
+
+    const apps = await listAvailableApps({ refresh: true })
+
+    const spotifys = apps.filter((app) => app.target === alvo)
+    expect(spotifys.length).toBe(1)
+    const storeApps = apps.filter((app) => app.source === "store")
+    // Spotify (dedupado) + Bloco de Notas
+    expect(storeApps.length).toBe(2)
+  })
+
   it("isStoreAppTarget detecta AUMID e rejeita caminhos com extensao", () => {
     expect(isStoreAppTarget("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")).toBe(true)
     expect(isStoreAppTarget("C:\\Program Files\\App\\app.exe")).toBe(false)

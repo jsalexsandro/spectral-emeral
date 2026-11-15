@@ -157,6 +157,8 @@ export const commandResultMessageSchema = z.object({
     z.object({
       ok: z.literal(true),
       output: z.string().max(4096).optional(),
+      /** Presente em `open-app`: true quando o driver confirmou o surgimento de uma janela do app. */
+      verified: z.boolean().optional(),
       apps: z
         .array(
           z.object({
