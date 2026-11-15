@@ -3,6 +3,7 @@ import { promisify } from "node:util"
 import {
   DEVICE_PROCESS_COMMAND_MAX_LENGTH,
   DEVICE_PROCESS_LIMIT_DEFAULT,
+  DEVICE_PROCESS_LIMIT_MAX,
   DEVICE_PROCESS_QUERY_MAX_LENGTH,
   type DeviceProcessInfo,
 } from "../../../shared/device-commands.js"
@@ -201,19 +202,38 @@ Get-CimInstance Win32_Process |
 /**
  * Coleta os PIDs da cadeia de ancestrais do próprio driver (incluindo o driver
  * mesmo), subindo pelo `ParentProcessId` até não haver mais pai.
+ *
+ * Além da cadeia de ancestralidade, também protege qualquer processo cuja
+ * linha de comando indique o driver Spectral (ex.: `tsx src/index.ts`),
+ * porque o `process.pid` interno nem sempre corresponde ao PID visível no WMI
+ * quando o driver roda via `npx`/`tsx`.
  */
 export async function collectDriverAncestorPids(): Promise<Set<number>> {
   if (process.platform !== "win32") {
     return new Set([process.pid])
   }
 
-  const all = await listProcesses()
+  const all = await listProcesses(undefined, DEVICE_PROCESS_LIMIT_MAX)
   const byPid = new Map<number, DeviceProcessInfo>()
   for (const p of all) {
     byPid.set(p.pid, p)
   }
 
   const ancestors = new Set<number>()
+
+  // Sempre proteger o próprio processo do driver
+  ancestors.add(process.pid)
+
+  // Proteger qualquer processo cuja linha de comando indica o driver Spectral,
+  // porque o process.pid interno pode não bater com o PID visível no WMI.
+  const driverPattern = /spectral\\driver|index\.ts|tsx/i
+  for (const p of all) {
+    if (p.command && driverPattern.test(p.command)) {
+      ancestors.add(p.pid)
+    }
+  }
+
+  // Subir pela cadeia de ancestrais a partir do próprio driver.
   let current: number | undefined = process.pid
 
   while (current !== undefined && !ancestors.has(current)) {
@@ -232,10 +252,16 @@ export async function collectDriverAncestorPids(): Promise<Set<number>> {
  * Verifica se um PID é protegido: <= 4, driver ou ancestral do driver, ou
  * processo crítico do sistema.
  */
+/**
+ * Verifica se um PID é protegido: <= 4, driver ou ancestral do driver, ou
+ * processo crítico do sistema. Também protege qualquer processo cuja linha de
+ * comando indique o driver Spectral (ex.: `tsx src/index.ts`).
+ */
 export function isProtectedProcess(
   pid: number,
   name: string,
   driverAncestors: Set<number>,
+  command?: string | null,
 ): boolean {
   if (pid <= 4) {
     return true
@@ -245,10 +271,12 @@ export function isProtectedProcess(
     return true
   }
 
-  // O Nome do Win32_Process traz a extensao (ex.: csrss.exe). Compara sem ela.
-  const nomeBase = name.toLowerCase().replace(/\.exe$/, "")
+  // Proteger qualquer processo do driver identificado pela linha de comando.
+  if (command && /spectral\\driver|index\.ts|tsx/i.test(command)) {
+    return true
+  }
 
-  return CRITICAL_PROCESS_NAMES.has(nomeBase)
+  return CRITICAL_PROCESS_NAMES.has(name.toLowerCase().replace(/\.exe$/, ""))
 }
 
 /**
@@ -302,7 +330,7 @@ export async function killProcess(
     )
   }
 
-  if (isProtectedProcess(pid, target.name, driverAncestors)) {
+  if (isProtectedProcess(pid, target.name, driverAncestors, target.command)) {
     throw new DeviceProcessError(
       "protected_process",
       `Processo ${pid} (${target.name}) é protegido e não pode ser encerrado.`,
@@ -319,6 +347,7 @@ export async function killProcess(
           descendant,
           descendantProcess.name,
           driverAncestors,
+          descendantProcess.command,
         )
       ) {
         throw new DeviceProcessError(

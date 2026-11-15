@@ -252,6 +252,20 @@ describe("killProcess", () => {
       .rejects.toMatchObject({ code: "protected_process" })
   })
 
+  it("retorna protected_process para processo do driver identificado por comando", async () => {
+    mockExec(() => ({ stdout: "", stderr: "" }))
+
+    const driverComoProcesso = processo({
+      pid: 99999,
+      name: "node.exe",
+      command: '"node" "C:\\spectral\\driver\\src\\index.ts"',
+    })
+
+    await expect(
+      killProcess(99999, { force: false, tree: false }, [driverComoProcesso], new Set()),
+    ).rejects.toMatchObject({ code: "protected_process" })
+  })
+
   it("retorna protected_process para nome crítico", async () => {
     mockExec(() => ({ stdout: "", stderr: "" }))
 
@@ -303,18 +317,24 @@ describe("killProcess", () => {
 })
 
 describe("collectDriverAncestorPids", () => {
-  it("inclui o proprio driver e sobe pela arvore", async () => {
+  it("inclui o proprio driver", async () => {
+    mockExec(() => ({ stdout: "[]", stderr: "" }))
+
+    const result = await collectDriverAncestorPids()
+
+    expect(result.has(process.pid)).toBe(true)
+  })
+
+  it("inclui processos do driver identificados por comando mesmo sem ancestralidade", async () => {
     mockExec(() => ({
       stdout: JSON.stringify([
-        jsonProcesso(processo({ pid: process.pid, parentPid: 111, name: "node.exe" })),
-        jsonProcesso(processo({ pid: 111, parentPid: 0, name: "tsx.exe" })),
+        jsonProcesso(processo({ pid: 55555, parentPid: 0, name: "node.exe", command: '"node" "C:\\spectral\\driver\\src\\index.ts"' })),
       ]),
       stderr: "",
     }))
 
     const result = await collectDriverAncestorPids()
 
-    expect(result.has(process.pid)).toBe(true)
-    expect(result.has(111)).toBe(true)
+    expect(result.has(55555)).toBe(true)
   })
 })
