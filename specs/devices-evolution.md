@@ -366,8 +366,8 @@ Risco considera exposição de segurança ao liberar o recurso.
 
 - **Status:** Fase 0, Fase 1 e Fase 2 de arquivos implementadas (política,
   auditoria, aprovação nativa, `device-env`, `device-shell` e operações de
-  arquivo no Windows). Processos (restante da Fase 2) e jobs (Fase 3) seguem no
-  roadmap — ver
+  arquivo no Windows). Processos implementados (Fase 3 — ver item 8) e jobs
+  (Fase 4) seguem no roadmap — ver
   [`device-execution.md`](./device-execution.md#8-fases-de-implementação).
 - **O que:** shell por script em arquivo, governado por dois modos no chat
   (`plan` = leitura, `build` = construtor) e uma preferência por dispositivo
@@ -385,13 +385,19 @@ Risco considera exposição de segurança ao liberar o recurso.
 - **Esforço:** G · **Risco:** alto — só depois do Bloco C de governança
   (itens 14–16).
 
-#### 8. Processos
+#### 8. Processos ✅ (implementado)
 
-- **O que:** `device-list-processes`, `device-start-process` e
-  `device-kill-process` (com aprovação).
+- **O que:** `device-list-processes` e `device-kill-process` (com aprovação).
 - **Por quê:** permite "o que está travando?" e "fecha o Chrome".
-- **Onde mexer:** driver, contrato, tools e prompt.
+- **Onde mexer:** `spectral/shared/device-commands.ts` (contrato),
+  `spectral/driver/src/commands/processes.ts` (driver), `executor.ts` (dispatch),
+  `lib/ai/tools/device-tools.ts` (tools), `lib/devices/execution-policy.ts`
+  (risco destructive), prompt.
 - **Esforço:** M · **Risco:** alto (matar processo) — exige aprovação.
+- **Pronto quando:** listagem filtrada por `query`, encerramento por `pid`
+  (nunca por nome), proteções `protected_process` (pid <= 4, driver e ancestrais,
+  nomes críticos do Windows, processo do driver por linha de comando) e validação
+  de morte antes de devolver `killed: true`. ✅
 
 #### 9. Ações de sistema
 
@@ -584,7 +590,7 @@ continuam sendo cérebro e não vão para o driver.
 | Buscar arquivos/texto | `Glob`/`Grep` | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
 | Abrir aplicativos | atalhos do sistema | ✅ `find-app`, `list-apps`, `open-app` (descoberta + catálogo local), `open-path` (arquivo/pasta), `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` (aprovação); macOS/Linux na Fase 6 |
-| Processos | `ps`, `top`, `kill` | ❌ | Fase 3 |
+| Processos | `ps`, `top`, `kill` | ✅ `device-list-processes`, `device-kill-process` (Windows) | Fase 3 |
 | Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
 | Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
 | GUI/UIA, mouse, teclado, janelas | ❌ | ✅ | diferencial do Spectral |
@@ -685,7 +691,10 @@ cadastrar um app fora da descoberta; e o catálogo aparecer em
   - o próprio driver e seus ancestrais (cadeia de `parentPid`);
   - processos críticos do Windows: `system`, `registry`, `smss`, `csrss`,
     `wininit`, `winlogon`, `services`, `lsass`, `lsaiso`, `dwm`, `svchost`,
-    `fontdrvhost`, `memorycompression`.
+    `fontdrvhost`, `memorycompression`;
+  - qualquer processo cuja linha de comando indique o driver Spectral
+    (`spectral\\driver`, `index.ts` ou `tsx`), porque o `process.pid` interno
+    do `tsx` nem sempre corresponde ao PID visível no WMI.
   Com `tree: true`, qualquer descendente protegido também bloqueia o encerramento.
 - Nunca encerra por nome (`taskkill /IM` não é usado).
 - Tools: `device-list-processes`, `device-kill-process`.
@@ -760,7 +769,7 @@ job-list:   {} → { jobs[] }
 |---|---|---|---|
 | 1 | Fase 2 — arquivos completos ✅ | M | alto (organizar projetos) |
 | 1.5 | P2 — acesso total a disco ✅ | M | alto (cwd livre em qualquer pasta) |
-| 2 | Fase 3 — processos | M | alto ("o que travou?") |
+| 2 | Fase 3 — processos ✅ | M | alto ("o que travou?") |
 | 3 | Fase 4 — jobs/background ✅ | G | altíssimo (dev server, builds) |
 | 4 | Fase 5a/5b — transferência + sistema | G/M | alto (uso diário) |
 | 5 | Fase 5d — Playwright | G | alto (web sem UIA) |
