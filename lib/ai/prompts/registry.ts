@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 36
+export const SYSTEM_PROMPT_VERSION = 37
 
 export type SystemPromptChange = {
   version: number
@@ -216,5 +216,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-14",
     summary:
       "Jobs ganham espera ativa: device-job-status e device-job-output aceitam waitMs (até 10 s) para o modelo acompanhar sem polling em rajada, e a leitura de saída passa a devolver status, exitCode e cancelled. O prompt passa a exigir o status real antes de afirmar que um job roda ou terminou, cursor por job começando em 0, repasse de cwd/label/maxRuntimeMs e leitura correta de cancelled: false.",
+  },
+  {
+    version: 37,
+    date: "2026-11-15",
+    summary:
+      "device-open-app agora descobre e abre aplicativos da Windows Store pelo AUMID (shell:AppsFolder) e confirma a abertura com verified (janela nova em ate 3s). A busca exclui shims de spotify_cli dentro de WindowsApps. O prompt exige confirmed janela/processo antes de afirmar que o app esta aberto ou tocando.",
   },
 ]

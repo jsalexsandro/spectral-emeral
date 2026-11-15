@@ -216,6 +216,24 @@ export const DEVICE_APP_ARG_MAX_LENGTH = 512
 export const DEVICE_APP_NAME_MAX_LENGTH = 120
 
 /**
+ * Verificação de abertura de app: o driver considera que o app abriu quando
+ * surge uma janela nova não minimizada dentro desse prazo.
+ */
+export const DEVICE_APP_VERIFY_WAIT_MS = 3_000
+export const DEVICE_APP_VERIFY_POLL_MS = 500
+
+/**
+ * Detecta um AUMID da Windows Store (`PackageFamilyName!AppId`, ex.: `SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify`): contém `!` e não é um caminho de arquivo (não começa com letra de drive, barra ou barra invertida).
+ */
+export function isStoreAppTarget(target: string): boolean {
+  if (!target.includes("!")) {
+    return false
+  }
+
+  return !/^[a-zA-Z]:[\\/]|^[\\/]|^~[\\/]/.test(target)
+}
+
+/**
  * Extensões que o driver aceita abrir por caminho absoluto. A lista evita que
  * um caminho arbitrário vire execução de script sem extensão ou documento
  * inesperado; apps personalizados usam .exe ou .lnk na prática.
@@ -466,6 +484,7 @@ export const DEVICE_APP_SOURCES = [
   "builtin",
   "start-menu",
   "app-path",
+  "store",
   "custom",
 ] as const
 
@@ -999,6 +1018,12 @@ export type DeviceCommandSuccess = {
   windows?: DeviceWindow[]
   window?: DeviceWindow
   screenshot?: DeviceScreenshot
+  /**
+   * Presente em `open-app`: true quando o driver confirmou o surgimento de
+   * uma janela do aplicativo depois de abri-lo. Quando ausente ou false, o
+   * processo foi disparado mas a janela ainda não foi vista.
+   */
+  verified?: boolean
   /**
    * Bytes da imagem em base64. Transiente: o app guarda em disco e remove
    * antes de expor o resultado ao modelo e ao histórico do chat.

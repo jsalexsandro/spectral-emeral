@@ -85,7 +85,7 @@ export const APPS: readonly AppDefinition[] = [
 
 const APP_BY_ID = new Map(APPS.map((app) => [app.id, app]))
 
-type DiscoverySource = Extract<DeviceAppSource, "start-menu" | "app-path">
+type DiscoverySource = Extract<DeviceAppSource, "start-menu" | "app-path" | "store">
 
 export type DiscoveredApp = {
   id: string
@@ -230,8 +230,13 @@ foreach ($root in $registryRoots) {
       $base = $key.GetValue('Path')
       if ($base) { $target = Join-Path $base $_.PSChildName }
     }
+    if ($target -like '*\\WindowsApps\\*') { continue }
     Add-AppItem ([System.IO.Path]::GetFileNameWithoutExtension($_.PSChildName)) $target 'app-path'
   }
+}
+
+$storeApps = Get-StartApps -ErrorAction SilentlyContinue | Where-Object { $_.AppID -and $_.Name } | ForEach-Object {
+  Add-AppItem $_.Name $_.AppID 'store'
 }
 
 ConvertTo-Json -InputObject $items.ToArray() -Compress -Depth 3
@@ -273,11 +278,18 @@ function parseDiscoveryOutput(stdout: string): DiscoveredApp[] {
       typeof record.target === "string" ? record.target.trim() : ""
     const source = record.source
 
+    // Nunca expõe shims descobertos dentro de WindowsApps (ex.: spotify_cli.exe
+    // do Spotify da Store). Eles não abrem nada visível; apps de Store devem
+    // ser usados pelo AUMID (source "store").
+    if (target.toLowerCase().includes("\\windowsapps\\")) {
+      continue
+    }
+
     if (
       name.length === 0 ||
       name.length > 120 ||
-      !isExecutableTarget(target) ||
-      (source !== "start-menu" && source !== "app-path")
+      (source !== "store" && !isExecutableTarget(target)) ||
+      (source !== "start-menu" && source !== "app-path" && source !== "store")
     ) {
       continue
     }

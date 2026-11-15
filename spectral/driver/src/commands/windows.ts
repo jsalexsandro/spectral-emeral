@@ -1005,7 +1005,7 @@ function windowActionLabel(action: DeviceWindowAction): string {
   }
 }
 
-async function listPlatformWindows(): Promise<DeviceWindow[]> {
+export async function listPlatformWindows(): Promise<DeviceWindow[]> {
   switch (process.platform) {
     case "win32":
       return listWindowsWindows()

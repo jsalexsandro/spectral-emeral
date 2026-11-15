@@ -4,9 +4,12 @@ import { homedir } from "node:os"
 import { basename, extname, join } from "node:path"
 import { promisify } from "node:util"
 import {
+  DEVICE_APP_VERIFY_POLL_MS,
+  DEVICE_APP_VERIFY_WAIT_MS,
   DEVICE_SCREENSHOT_MAX_WIDTH_MAX,
   hasAppPathExtension,
   hasBlockedOpenPathExtension,
+  isStoreAppTarget,
   type DeviceCommand,
   type DeviceCommandResult,
   type DeviceKey,
@@ -37,6 +40,7 @@ import {
   DeviceWindowError,
   closeWindow,
   focusWindow,
+  listPlatformWindows,
   listWindows,
   maximizeWindow,
   minimizeWindow,
@@ -380,7 +384,7 @@ async function openApp(input: {
   path?: string
   args?: string[]
   cwd?: string
-}): Promise<string> {
+}): Promise<{ name: string; verified: boolean }> {
   let target: string
   let name: string
   let defaultArgs: string[] | undefined
@@ -441,6 +445,19 @@ async function openApp(input: {
       extension === ".msc" ||
       extension === ".appref-ms"
 
+    // Apps da Windows Store chegam como AUMID (ex.: SpotifyAB.SpotifyMusic_...!Spotify):
+    // não têm extensão e não podem ser lançados diretamente. Abre pelo shell:AppsFolder.
+    if (isStoreAppTarget(target)) {
+      const before = await listPlatformWindows()
+      await launch("explorer.exe", [`shell:AppsFolder\\${target}`], { cwd })
+      const verified = await waitForNewWindow(
+        before,
+        DEVICE_APP_VERIFY_WAIT_MS,
+        DEVICE_APP_VERIFY_POLL_MS,
+      )
+      return { name, verified }
+    }
+
     if (extension === ".cmd" || extension === ".bat") {
       if (args.some((arg) => CMD_UNSAFE_ARG.test(arg))) {
         throw new DeviceCommandExecutionError(
@@ -450,7 +467,7 @@ async function openApp(input: {
       }
 
       await launch("cmd.exe", ["/d", "/s", "/c", target, ...args], { cwd })
-      return name
+      return { name, verified: false }
     }
 
     if (shortcut && args.length > 0) {
@@ -464,11 +481,11 @@ async function openApp(input: {
       await launch("cmd.exe", ["/d", "/s", "/c", "start", "", target], {
         cwd,
       })
-      return name
+      return { name, verified: false }
     }
 
     await launch(target, args, { cwd })
-    return name
+    return { name, verified: false }
   }
 
   if (process.platform === "darwin") {
@@ -477,15 +494,50 @@ async function openApp(input: {
       args.length > 0 ? ["-a", target, "--args", ...args] : ["-a", target],
       { cwd },
     )
-    return name
+    return { name, verified: false }
   }
 
   if (process.platform === "linux") {
     await launch(target, args, { cwd })
-    return name
+    return { name, verified: false }
   }
 
   throw unsupported("Abrir aplicativos não é suportado nesta plataforma.")
+}
+
+/**
+ * Espera surgir uma janela nova, não minimizada e com título, depois de lançar
+ * o aplicativo. Usado para confirmar que um app de Store realmente abriu.
+ */
+async function waitForNewWindow(
+  before: DeviceWindow[],
+  waitMs: number,
+  pollMs: number,
+): Promise<boolean> {
+  const beforeIds = new Set(before.map((w) => w.id))
+  const deadline = Date.now() + waitMs
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+
+    try {
+      const after = await listPlatformWindows()
+      const nov = after.find(
+        (w) =>
+          !beforeIds.has(w.id) &&
+          !w.minimized &&
+          w.title.trim().length > 0,
+      )
+
+      if (nov) {
+        return true
+      }
+    } catch {
+      // segue esperando até esgotar o prazo
+    }
+  }
+
+  return false
 }
 
 /**
@@ -706,8 +758,14 @@ export async function executeDeviceCommand(
         await openUrl(command.input.url)
         return { ok: true }
       case "open-app": {
-        const name = await openApp(command.input)
-        return { ok: true, output: "Aplicativo aberto: " + name }
+        const { name, verified } = await openApp(command.input)
+        return {
+          ok: true,
+          output: verified
+            ? `Aplicativo aberto: ${name}`
+            : `Aplicativo aberto (disparo sem confirmação de janela): ${name}`,
+          verified,
+        }
       }
       case "open-path": {
         const path = await openPath(command.input.path)
