@@ -74,6 +74,10 @@ export function readDeviceToolCommand(
     return record.appId
   }
 
+  if (toolName === "device-kill-process" && typeof record.pid === "number") {
+    return `pid ${record.pid}`
+  }
+
   if (toolName === "device-find-app" && typeof record.query === "string") {
     return record.query
   }

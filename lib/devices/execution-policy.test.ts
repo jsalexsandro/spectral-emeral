@@ -93,6 +93,10 @@ describe("device tool risk classification", () => {
     expect(classifyDeviceToolRisk("device-move", {})).toBe("write")
     expect(classifyDeviceToolRisk("device-apply-patch", {})).toBe("write")
     expect(classifyDeviceToolRisk("device-delete", {})).toBe("destructive")
+    expect(classifyDeviceToolRisk("device-list-processes", {})).toBe("read")
+    expect(classifyDeviceToolRisk("device-kill-process", {})).toBe(
+      "destructive",
+    )
   })
 
   it("promotes dangerous shell scripts", () => {

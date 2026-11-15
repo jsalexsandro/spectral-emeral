@@ -47,6 +47,12 @@ import {
   restoreWindow,
   type DeviceWindow,
 } from "./windows.js"
+import {
+  DeviceProcessError,
+  collectDriverAncestorPids,
+  killProcess,
+  listProcesses,
+} from "./processes.js"
 import { DeviceScreenshotError, takeScreenshot } from "./screen.js"
 import {
   DeviceClipboardError,
@@ -864,6 +870,23 @@ export async function executeDeviceCommand(
         await closeWindow(command.input.windowId)
         return { ok: true }
 
+      case "list-processes": {
+        const processes = await listProcesses(
+          command.input.query,
+          command.input.limit,
+        )
+        return { ok: true, processes }
+      }
+      case "kill-process": {
+        const processes = await listProcesses()
+        const driverAncestors = await collectDriverAncestorPids()
+        await killProcess(command.input.pid, {
+          force: command.input.force,
+          tree: command.input.tree,
+        }, processes, driverAncestors)
+        return { ok: true, killed: true }
+      }
+
       case "list-files":
         return { ...(await files.listFiles(command.input)), ok: true }
       case "read-file":
@@ -968,6 +991,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceFileError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceProcessError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

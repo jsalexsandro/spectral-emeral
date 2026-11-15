@@ -165,6 +165,7 @@ const READ_TOOLS = new Set<string>([
   "device-job-status",
   "device-job-output",
   "device-job-list",
+  "device-list-processes",
 ])
 
 const INPUT_TOOLS = new Set<string>([
@@ -215,6 +216,7 @@ const EXEC_TOOLS = new Set<string>([
 const DESTRUCTIVE_TOOLS = new Set<string>([
   "device-close-window",
   "device-delete",
+  "device-kill-process",
 ])
 
 const SYSTEM_COMMAND_PATTERNS: RegExp[] = [

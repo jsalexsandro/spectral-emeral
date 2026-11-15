@@ -185,4 +185,5 @@ export type {
   DeviceUiElement,
   DeviceUiElementPathItem,
   DeviceUiInspection,
+  DeviceProcessInfo,
 } from "@/spectral/shared/device-commands"

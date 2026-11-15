@@ -302,6 +302,52 @@ describe("device command contract", () => {
     ).toThrow(DeviceCommandValidationError)
   })
 
+  it("normalizes list-processes with defaults and limits", () => {
+    expect(parseDeviceCommand("list-processes", {})).toEqual({
+      command: "list-processes",
+      input: { query: undefined, limit: 40 },
+    })
+
+    expect(
+      parseDeviceCommand("list-processes", { query: "chrome", limit: 10 }),
+    ).toEqual({
+      command: "list-processes",
+      input: { query: "chrome", limit: 10 },
+    })
+
+    expect(() =>
+      parseDeviceCommand("list-processes", { limit: 101 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("list-processes", { limit: 0 }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("requires a valid positive pid for kill-process", () => {
+    expect(parseDeviceCommand("kill-process", { pid: 1234 })).toEqual({
+      command: "kill-process",
+      input: { pid: 1234, force: false, tree: false },
+    })
+
+    expect(parseDeviceCommand("kill-process", { pid: 1, force: true, tree: true })).toEqual({
+      command: "kill-process",
+      input: { pid: 1, force: true, tree: true },
+    })
+
+    expect(() =>
+      parseDeviceCommand("kill-process", { pid: 0 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("kill-process", { pid: -5 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("kill-process", { pid: "1234" }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
   it("requires a valid window id for focus-window", () => {
     expect(
       parseDeviceCommand("focus-window", { windowId: " 123456 " }),
@@ -854,6 +900,14 @@ describe("device file operation contract", () => {
     expect(
       deviceCommandTimeoutMs(parseDeviceCommand("list-apps", {})),
     ).toBeUndefined()
+
+    expect(
+      deviceCommandTimeoutMs(parseDeviceCommand("list-processes", {})),
+    ).toBe(20_000)
+
+    expect(
+      deviceCommandTimeoutMs(parseDeviceCommand("kill-process", { pid: 1 })),
+    ).toBe(20_000)
   })
 })
 

@@ -45,6 +45,8 @@ export const DEVICE_COMMAND_NAMES = [
   "maximize-window",
   "restore-window",
   "close-window",
+  "list-processes",
+  "kill-process",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -172,6 +174,23 @@ export const DEVICE_WINDOW_ACTIONS = [
 ] as const
 
 export type DeviceWindowAction = (typeof DEVICE_WINDOW_ACTIONS)[number]
+
+export const DEVICE_PROCESS_QUERY_MAX_LENGTH = 120
+export const DEVICE_PROCESS_COMMAND_MAX_LENGTH = 512
+export const DEVICE_PROCESS_LIMIT_MIN = 1
+export const DEVICE_PROCESS_LIMIT_MAX = 100
+export const DEVICE_PROCESS_LIMIT_DEFAULT = 40
+
+/** Processo retornado por `list-processes`. */
+export type DeviceProcessInfo = {
+  pid: number
+  parentPid: number
+  name: string
+  command: string | null
+  memoryBytes: number | null
+  startedAt: string | null
+  sessionId: number | null
+}
 
 export const DEVICE_UI_ACTIONS = [
   "invoke",
@@ -868,6 +887,8 @@ export type DeviceCommandInputMap = {
   "maximize-window": { windowId: string }
   "restore-window": { windowId: string }
   "close-window": { windowId: string }
+  "list-processes": { query?: string; limit?: number }
+  "kill-process": { pid: number; force?: boolean; tree?: boolean }
   "inspect-ui": {
     windowId: string
     find?: string
@@ -977,6 +998,9 @@ export function deviceCommandTimeoutMs(
     case "job-output":
       // A espera ativa precisa de folga para o backend não desistir antes.
       return command.input.waitMs > 0 ? command.input.waitMs + 2_000 : undefined
+    case "list-processes":
+    case "kill-process":
+      return 20_000
     default:
       return undefined
   }
@@ -1024,6 +1048,9 @@ export type DeviceCommandSuccess = {
    * processo foi disparado mas a janela ainda não foi vista.
    */
   verified?: boolean
+  processes?: DeviceProcessInfo[]
+  process?: DeviceProcessInfo
+  killed?: boolean
   /**
    * Bytes da imagem em base64. Transiente: o app guarda em disco e remove
    * antes de expor o resultado ao modelo e ao histórico do chat.
@@ -1864,6 +1891,34 @@ function parseWindowAction(
   return { command, input: { windowId } }
 }
 
+function parseListProcesses(input: unknown): DeviceCommand {
+  const query = readOptionalString(input, "query", DEVICE_PROCESS_QUERY_MAX_LENGTH)
+  const limit = readInteger(
+    input,
+    "limit",
+    DEVICE_PROCESS_LIMIT_DEFAULT,
+    DEVICE_PROCESS_LIMIT_MIN,
+    DEVICE_PROCESS_LIMIT_MAX,
+  )
+
+  return { command: "list-processes", input: { query, limit } }
+}
+
+function parseKillProcess(input: unknown): DeviceCommand {
+  const pid = readOptionalInteger(input, "pid", 0, undefined)
+  const force = readBoolean(input, "force", false)
+  const tree = readBoolean(input, "tree", false)
+
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_pid",
+      'Campo "pid" deve ser um número inteiro positivo.',
+    )
+  }
+
+  return { command: "kill-process", input: { pid, force, tree } }
+}
+
 function readOptionalUiString(
   input: unknown,
   field: string,
@@ -2221,7 +2276,7 @@ function readOptionalInteger(
   input: unknown,
   field: string,
   min: number,
-  max: number,
+  max: number | undefined,
 ): number | undefined {
   if (!isRecord(input) || input[field] === undefined || input[field] === null) {
     return undefined
@@ -2238,7 +2293,14 @@ function readOptionalInteger(
 
   const integer = Math.trunc(value)
 
-  if (integer < min || integer > max) {
+  if (integer < min) {
+    throw new DeviceCommandValidationError(
+      "invalid_number",
+      `Campo "${field}" deve ser maior ou igual a ${min}.`,
+    )
+  }
+
+  if (max !== undefined && integer > max) {
     throw new DeviceCommandValidationError(
       "invalid_number",
       `Campo "${field}" deve estar entre ${min} e ${max}.`,
@@ -2267,6 +2329,40 @@ function readBoolean(
   }
 
   return value
+}
+
+function readOptionalString(
+  input: unknown,
+  field: string,
+  maxLength: number,
+): string | undefined {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    return undefined
+  }
+
+  const value = input[field]
+
+  if (typeof value !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_string",
+      `Campo "${field}" deve ser um texto.`,
+    )
+  }
+
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    return undefined
+  }
+
+  if (trimmed.length > maxLength) {
+    throw new DeviceCommandValidationError(
+      "invalid_string",
+      `Campo "${field}" excede ${maxLength} caracteres.`,
+    )
+  }
+
+  return trimmed
 }
 
 function parseListFiles(input: unknown): DeviceCommand {
@@ -3119,5 +3215,9 @@ export function parseDeviceCommand(
     case "restore-window":
     case "close-window":
       return parseWindowAction(command, input)
+    case "list-processes":
+      return parseListProcesses(input)
+    case "kill-process":
+      return parseKillProcess(input)
   }
 }

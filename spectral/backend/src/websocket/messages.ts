@@ -357,6 +357,32 @@ export const commandResultMessageSchema = z.object({
       cancelled: z.boolean().optional(),
       windows: z.array(deviceWindowSchema).max(30).optional(),
       window: deviceWindowSchema.optional(),
+      processes: z
+        .array(
+          z.object({
+            pid: z.number().int().nonnegative(),
+            parentPid: z.number().int().nonnegative(),
+            name: z.string().min(1).max(120),
+            command: z.string().max(512).nullable(),
+            memoryBytes: z.number().int().nonnegative().nullable(),
+            startedAt: z.string().max(64).nullable(),
+            sessionId: z.number().int().nonnegative().nullable(),
+          }),
+        )
+        .max(100)
+        .optional(),
+      process: z
+        .object({
+          pid: z.number().int().nonnegative(),
+          parentPid: z.number().int().nonnegative(),
+          name: z.string().min(1).max(120),
+          command: z.string().max(512).nullable(),
+          memoryBytes: z.number().int().nonnegative().nullable(),
+          startedAt: z.string().max(64).nullable(),
+          sessionId: z.number().int().nonnegative().nullable(),
+        })
+        .optional(),
+      killed: z.boolean().optional(),
       clipboard: z
         .object({
           text: z.string().max(100_000),
