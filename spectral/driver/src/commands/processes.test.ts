@@ -68,12 +68,12 @@ const jsonProcesso = (p: DeviceProcessInfo) => ({
 })
 
 describe("listProcesses", () => {
-  it("retorna vazio em plataforma não-Windows", async () => {
+  it("retorna unsupported_platform em plataforma não-Windows", async () => {
     platformSpy.mockReturnValue("darwin")
 
-    const result = await listProcesses()
-
-    expect(result).toEqual([])
+    await expect(listProcesses()).rejects.toMatchObject({
+      code: "unsupported_platform",
+    })
     expect(mockExecFile).not.toHaveBeenCalled()
   })
 

@@ -47,6 +47,12 @@ export const DEVICE_COMMAND_NAMES = [
   "close-window",
   "list-processes",
   "kill-process",
+  "get-system-status",
+  "set-volume",
+  "set-brightness",
+  "lock-screen",
+  "power",
+  "media-control",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -191,6 +197,48 @@ export type DeviceProcessInfo = {
   startedAt: string | null
   sessionId: number | null
 }
+
+/** Estado do sistema retornado por `get-system-status`. */
+export type DeviceSystemStatus = {
+  volume: number | null
+  muted: boolean | null
+  brightness: number | null
+  battery: {
+    percent: number | null
+    charging: boolean | null
+    acConnected: boolean | null
+  } | null
+}
+
+/** Resultado de `set-volume`. `requested` é o que se pediu; `applied` é o que o driver confirmou. */
+export type DeviceVolumeResult = {
+  volume: number
+  muted: boolean
+}
+
+/** Resultado de `set-brightness`. `null` quando o painel não expõe brilho controlável. */
+export type DeviceBrightnessResult = {
+  brightness: number | null
+}
+
+/** Resultado de `power`. */
+export type DevicePowerResult = {
+  action: "sleep" | "shutdown" | "restart" | "cancel"
+  delaySec: number | null
+  cancelled: boolean | null
+}
+
+/** Resultado de `media-control`. */
+export type DeviceMediaControlResult = {
+  action: "play-pause" | "next" | "previous" | "stop"
+}
+
+type DevicePowerAction = "sleep" | "shutdown" | "restart" | "cancel"
+type DeviceMediaControlAction =
+  | "play-pause"
+  | "next"
+  | "previous"
+  | "stop"
 
 export const DEVICE_UI_ACTIONS = [
   "invoke",
@@ -889,6 +937,12 @@ export type DeviceCommandInputMap = {
   "close-window": { windowId: string }
   "list-processes": { query?: string; limit?: number }
   "kill-process": { pid: number; force?: boolean; tree?: boolean }
+  "get-system-status": Record<string, never>
+  "set-volume": { level?: number; mute?: boolean }
+  "set-brightness": { level: number }
+  "lock-screen": Record<string, never>
+  "power": { action: "sleep" | "shutdown" | "restart" | "cancel"; delaySec?: number }
+  "media-control": { action: "play-pause" | "next" | "previous" | "stop" }
   "inspect-ui": {
     windowId: string
     find?: string
@@ -1000,6 +1054,13 @@ export function deviceCommandTimeoutMs(
       return command.input.waitMs > 0 ? command.input.waitMs + 2_000 : undefined
     case "list-processes":
     case "kill-process":
+    case "get-system-status":
+    case "set-volume":
+    case "set-brightness":
+    case "lock-screen":
+    case "media-control":
+      return 10_000
+    case "power":
       return 20_000
     default:
       return undefined
@@ -1051,6 +1112,12 @@ export type DeviceCommandSuccess = {
   processes?: DeviceProcessInfo[]
   process?: DeviceProcessInfo
   killed?: boolean
+  systemStatus?: DeviceSystemStatus
+  volume?: DeviceVolumeResult
+  brightness?: DeviceBrightnessResult
+  locked?: boolean
+  power?: DevicePowerResult
+  mediaControl?: DeviceMediaControlResult
   /**
    * Bytes da imagem em base64. Transiente: o app guarda em disco e remove
    * antes de expor o resultado ao modelo e ao histórico do chat.
@@ -1917,6 +1984,71 @@ function parseKillProcess(input: unknown): DeviceCommand {
   }
 
   return { command: "kill-process", input: { pid, force, tree } }
+}
+
+function parseSetVolume(input: unknown): DeviceCommand {
+  const level = readOptionalInteger(input, "level", 0, 100)
+  const mute = readBoolean(input, "mute", false)
+
+  return { command: "set-volume", input: { level, mute } }
+}
+
+function parseSetBrightness(input: unknown): DeviceCommand {
+  if (!isRecord(input) || input.level === undefined || input.level === null) {
+    throw new DeviceCommandValidationError(
+      "missing_level",
+      'Campo "level" é obrigatório e deve ser um número entre 0 e 100.',
+    )
+  }
+
+  const level = readInteger(input, "level", 0, 0, 100)
+
+  return { command: "set-brightness", input: { level } }
+}
+
+function parsePower(input: unknown): DeviceCommand {
+  if (!isRecord(input) || typeof input.action !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_power_action",
+      'Campo "action" é obrigatório e deve ser "sleep", "shutdown", "restart" ou "cancel".',
+    )
+  }
+
+  const action = input.action
+
+  if (!["sleep", "shutdown", "restart", "cancel"].includes(action)) {
+    throw new DeviceCommandValidationError(
+      "invalid_power_action",
+      'Campo "action" deve ser "sleep", "shutdown", "restart" ou "cancel".',
+    )
+  }
+
+  const delaySec = readOptionalInteger(input, "delaySec", 0, undefined)
+
+  return { command: "power", input: { action: action as DevicePowerAction, delaySec } }
+}
+
+function parseMediaControl(input: unknown): DeviceCommand {
+  if (!isRecord(input) || typeof input.action !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_media_action",
+      'Campo "action" é obrigatório e deve ser "play-pause", "next", "previous" ou "stop".',
+    )
+  }
+
+  const action = input.action
+
+  if (!["play-pause", "next", "previous", "stop"].includes(action)) {
+    throw new DeviceCommandValidationError(
+      "invalid_media_action",
+      'Campo "action" deve ser "play-pause", "next", "previous" ou "stop".',
+    )
+  }
+
+  return {
+    command: "media-control",
+    input: { action: action as DeviceMediaControlAction },
+  }
 }
 
 function readOptionalUiString(
@@ -3219,5 +3351,17 @@ export function parseDeviceCommand(
       return parseListProcesses(input)
     case "kill-process":
       return parseKillProcess(input)
+    case "get-system-status":
+      return { command, input: {} }
+    case "set-volume":
+      return parseSetVolume(input)
+    case "set-brightness":
+      return parseSetBrightness(input)
+    case "lock-screen":
+      return { command, input: {} }
+    case "power":
+      return parsePower(input)
+    case "media-control":
+      return parseMediaControl(input)
   }
 }

@@ -103,16 +103,37 @@ function detectRuntimes(): Promise<DeviceRuntimeInfo[]> {
   return runtimeCache
 }
 
+// Comandos disponíveis apenas no Windows nesta versão. São comandos cuja
+// implementação depende de APIs do Windows (shell, jobs, UI Automation,
+// processos, ações de sistema) e que não têm equivalente em macOS/Linux.
+const WINDOWS_ONLY_COMMANDS: DeviceCommandName[] = [
+  "shell",
+  "job-start",
+  "job-status",
+  "job-output",
+  "job-cancel",
+  "job-list",
+  "inspect-ui",
+  "ui-action",
+  "list-processes",
+  "kill-process",
+  "get-system-status",
+  "set-volume",
+  "set-brightness",
+  "lock-screen",
+  "power",
+  "media-control",
+] as const
+
 function getCapabilities(): DeviceCommandName[] {
   if (process.platform === "win32") {
     return [...DEVICE_COMMAND_NAMES]
   }
 
-  // UI Automation é exclusivo do Windows nesta fase; os demais comandos
-  // degradam por plataforma dentro do próprio executor.
-  return DEVICE_COMMAND_NAMES.filter(
-    (name) => name !== "inspect-ui" && name !== "ui-action",
-  )
+  // UI Automation e comandos dependentes do Windows são excluídos em
+  // macOS/Linux. Os demais degradam por plataforma dentro do executor.
+  const windowsOnly = new Set<string>(WINDOWS_ONLY_COMMANDS)
+  return DEVICE_COMMAND_NAMES.filter((name) => !windowsOnly.has(name))
 }
 
 export async function getDeviceEnv(

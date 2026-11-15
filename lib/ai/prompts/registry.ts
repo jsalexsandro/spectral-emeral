@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 39
+export const SYSTEM_PROMPT_VERSION = 40
 
 export type SystemPromptChange = {
   version: number
@@ -234,5 +234,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-15",
     summary:
       "Adiciona device-list-processes (listar processos com filtro por nome/comando e limite) e device-kill-process (encerrar processo sempre por pid, com force e tree). kill-process e destrutivo: pede aprovacao no Modo Construtor e nunca encerra o driver, processos pais ou críticos do Windows (protected_process). Prompt v39.",
+  },
+  {
+    version: 40,
+    date: "2026-11-15",
+    summary:
+      "Adiciona acoes de sistema: device-get-system-status (volume, mute, brilho, bateria), device-set-volume, device-set-brightness, device-lock-screen, device-power (sleep/shutdown/restart/cancel) e device-media-control (play-pause/next/previous/stop). Somente Windows; macOS/Linux retornam unsupported_platform. get-system-status e media-control sao interacao; lock-screen e set-volume/set-brightness sao destrutivas; power e de sistema (aprovacao obrigatoria). Prompt v40.",
   },
 ]

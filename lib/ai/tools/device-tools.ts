@@ -191,6 +191,12 @@ export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
 export const DEVICE_LIST_PROCESSES_TOOL_NAME = "device-list-processes"
 export const DEVICE_KILL_PROCESS_TOOL_NAME = "device-kill-process"
+export const DEVICE_GET_SYSTEM_STATUS_TOOL_NAME = "device-get-system-status"
+export const DEVICE_SET_VOLUME_TOOL_NAME = "device-set-volume"
+export const DEVICE_SET_BRIGHTNESS_TOOL_NAME = "device-set-brightness"
+export const DEVICE_LOCK_SCREEN_TOOL_NAME = "device-lock-screen"
+export const DEVICE_POWER_TOOL_NAME = "device-power"
+export const DEVICE_MEDIA_CONTROL_TOOL_NAME = "device-media-control"
 export const DEVICE_INSPECT_UI_TOOL_NAME = "device-inspect-ui"
 export const DEVICE_UI_ACTION_TOOL_NAME = "device-ui-action"
 
@@ -646,6 +652,66 @@ export const deviceKillProcessInputSchema = z.object({
     .describe(
       "Encerra também os processos filhos (taskkill /T). Descendentes protegidos são recusados.",
     ),
+})
+
+export const deviceGetSystemStatusInputSchema = z.object({
+  deviceId: deviceIdSchema,
+})
+
+export const deviceSetVolumeInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  level: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe(
+      "Nível de volume em 0–100. Quando omitido, só altera o mute (ou lê o estado atual se nada for passado).",
+    ),
+  mute: z
+    .boolean()
+    .optional()
+    .describe("Silenciar (true) ou desmutar (false). Quando omitido, não altera o mute."),
+})
+
+export const deviceSetBrightnessInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  level: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe("Nível de brilho da tela em 0–100. Monitores externos podem não responder."),
+})
+
+export const deviceLockScreenInputSchema = z.object({
+  deviceId: deviceIdSchema,
+})
+
+export const devicePowerInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  action: z
+    .enum(["sleep", "shutdown", "restart", "cancel"])
+    .describe(
+      "`sleep`: suspende imediatamente. `shutdown`/`restart`: desliga ou reinicia após `delaySec`. `cancel`: aborta um desligamento agendado.",
+    ),
+  delaySec: z
+    .number()
+    .int()
+    .min(0)
+    .max(600)
+    .default(60)
+    .describe(
+      "Segundos de espera antes de desligar/reiniciar (padrão 60, máximo 600). Só tem efeito em `shutdown` e `restart`.",
+    ),
+})
+
+export const deviceMediaControlInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  action: z
+    .enum(["play-pause", "next", "previous", "stop"])
+    .describe("Controle de mídia: play/pause, próxima, anterior ou parar."),
 })
 
 const deviceUiRoleSchema = z
@@ -1885,6 +1951,49 @@ const killProcessDescription = [
   "Confirme a morte com `device-list-processes` após o encerramento.",
 ].join("\n")
 
+const getSystemStatusDescription = [
+  "Lê o estado do sistema do dispositivo: volume (0–100), mute, brilho (0–100 ou null) e bateria (percentual, carregando, energia AC).",
+  "Risco `read`: permitido no Modo Leitura.",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
+const setVolumeDescription = [
+  "Ajusta o volume de áudio do dispositivo em 0–100 e/ou alterna o mute.",
+  "Quando `level` é omitido, apenas lê ou alterna o mute. Quando `mute` é omitido, apenas lê ou ajusta o nível.",
+  "Devolve o volume e mute realmente aplicados (o driver de áudio pode arredondar o nível).",
+  "Risco `interação`: permitido no Modo Construtor sem aprovação extra (exceto em dispositivos com confirmação obrigatória).",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
+const setBrightnessDescription = [
+  "Ajusta o brilho da tela em 0–100.",
+  "Monitores externos (sem DDC/CI) e desktops sem painel integrado podem não expor controle de brilho: a tool retorna `brightness` como null ou erro `brightness_unsupported`.",
+  "Devolve o brilho realmente aplicado.",
+  "Risco `interação`: permitido no Modo Construtor sem aprovação extra (exceto em dispositivos com confirmação obrigatória).",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
+const lockScreenDescription = [
+  "Bloqueia a sessão do Windows (Win+L): `rundll32 user32.dll,LockWorkStation`.",
+  "Risco `destructiva`: pede aprovação no Modo Construtor (ou roda direto em Poder Total).",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
+const powerDescription = [
+  "Controla a energia do dispositivo: `sleep` (suspende imediatamente), `shutdown` (desliga), `restart` (reinicia) e `cancel` (aborta um desligamento agendado).",
+  "`shutdown` e `restart` aguardam `delaySec` segundos antes de executar (padrão 60, máximo 600).",
+  "Risco `de sistema`: pede aprovação no Modo Construtor (ou roda direto em Poder Total).",
+  "Nunca agende um desligamento sem pedir ao usuário para confirmar o horário.",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
+const mediaControlDescription = [
+  "Envia uma tecla de mídia ao dispositivo: `play-pause`, `next`, `previous` ou `stop`.",
+  "Usa as teclas de mídia do teclado (VK 0xB0–0xB3) e funciona com o app de mídia em foco.",
+  "Risco `interação`: permitido no Modo Construtor sem aprovação extra (exceto em dispositivos com confirmação obrigatória).",
+  "Suportado no Windows. Em macOS e Linux retorna `unsupported_platform`.",
+].join("\n")
+
 const inspectUiDescription = [
   "Inspeciona a árvore de acessibilidade (UI Automation) de uma janela e retorna os controles com nome, papel, limites e centro exato.",
   "Use esta tool antes de clicar em abas, botões, menus, campos e outros controles nativos: ela evita estimar pixels a partir da captura.",
@@ -2979,6 +3088,132 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-kill-process.",
+          }
+        }
+      },
+    }),
+    [DEVICE_GET_SYSTEM_STATUS_TOOL_NAME]: tool({
+      description: getSystemStatusDescription,
+      inputSchema: deviceGetSystemStatusInputSchema,
+      execute: async ({ deviceId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "get-system-status",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-get-system-status.",
+          }
+        }
+      },
+    }),
+    [DEVICE_SET_VOLUME_TOOL_NAME]: tool({
+      description: setVolumeDescription,
+      inputSchema: deviceSetVolumeInputSchema,
+      execute: async ({ deviceId, level, mute }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "set-volume",
+            input: { level, mute },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-set-volume.",
+          }
+        }
+      },
+    }),
+    [DEVICE_SET_BRIGHTNESS_TOOL_NAME]: tool({
+      description: setBrightnessDescription,
+      inputSchema: deviceSetBrightnessInputSchema,
+      execute: async ({ deviceId, level }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "set-brightness",
+            input: { level },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-set-brightness.",
+          }
+        }
+      },
+    }),
+    [DEVICE_LOCK_SCREEN_TOOL_NAME]: tool({
+      description: lockScreenDescription,
+      inputSchema: deviceLockScreenInputSchema,
+      execute: async ({ deviceId }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "lock-screen",
+            input: {},
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-lock-screen.",
+          }
+        }
+      },
+    }),
+    [DEVICE_POWER_TOOL_NAME]: tool({
+      description: powerDescription,
+      inputSchema: devicePowerInputSchema,
+      execute: async ({ deviceId, action, delaySec }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "power",
+            input: { action, delaySec },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-power.",
+          }
+        }
+      },
+    }),
+    [DEVICE_MEDIA_CONTROL_TOOL_NAME]: tool({
+      description: mediaControlDescription,
+      inputSchema: deviceMediaControlInputSchema,
+      execute: async ({ deviceId, action }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "media-control",
+            input: { action },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-media-control.",
           }
         }
       },

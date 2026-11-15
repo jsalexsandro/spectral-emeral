@@ -53,6 +53,15 @@ import {
   killProcess,
   listProcesses,
 } from "./processes.js"
+import {
+  DeviceSystemError,
+  getSystemStatus,
+  lockScreen,
+  mediaControl,
+  power,
+  setBrightness,
+  setVolume,
+} from "./system-actions.js"
 import { DeviceScreenshotError, takeScreenshot } from "./screen.js"
 import {
   DeviceClipboardError,
@@ -886,6 +895,34 @@ export async function executeDeviceCommand(
         }, processes, driverAncestors)
         return { ok: true, killed: true }
       }
+      case "get-system-status": {
+        const status = await getSystemStatus()
+        return { ok: true, systemStatus: status }
+      }
+      case "set-volume": {
+        const { level, mute } = command.input
+        const result = await setVolume({ level, mute })
+        return { ok: true, volume: result }
+      }
+      case "set-brightness": {
+        const result = await setBrightness(command.input.level)
+        return { ok: true, brightness: result }
+      }
+      case "lock-screen": {
+        const result = await lockScreen()
+        return { ok: true, locked: result.locked }
+      }
+      case "power": {
+        const result = await power({
+          action: command.input.action,
+          delaySec: command.input.delaySec,
+        })
+        return { ok: true, power: result }
+      }
+      case "media-control": {
+        const result = await mediaControl({ action: command.input.action })
+        return { ok: true, mediaControl: result }
+      }
 
       case "list-files":
         return { ...(await files.listFiles(command.input)), ok: true }
@@ -968,6 +1005,9 @@ export async function executeDeviceCommand(
           imageBase64,
         }
       }
+
+      default:
+        throw unsupported("Comando não é implementado pelo driver.")
     }
   } catch (error) {
     if (error instanceof DeviceWindowError) {
@@ -995,6 +1035,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceProcessError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceSystemError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

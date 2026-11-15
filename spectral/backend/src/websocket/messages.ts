@@ -383,6 +383,44 @@ export const commandResultMessageSchema = z.object({
         })
         .optional(),
       killed: z.boolean().optional(),
+      systemStatus: z
+        .object({
+          volume: z.number().int().min(0).max(100).nullable(),
+          muted: z.boolean().nullable(),
+          brightness: z.number().int().min(0).max(100).nullable(),
+          battery: z
+            .object({
+              percent: z.number().int().min(0).max(100).nullable(),
+              charging: z.boolean().nullable(),
+              acConnected: z.boolean().nullable(),
+            })
+            .nullable(),
+        })
+        .optional(),
+      volume: z
+        .object({
+          volume: z.number().int().min(0).max(100),
+          muted: z.boolean(),
+        })
+        .optional(),
+      brightness: z
+        .object({
+          brightness: z.number().int().min(0).max(100).nullable(),
+        })
+        .optional(),
+      locked: z.boolean().optional(),
+      power: z
+        .object({
+          action: z.enum(["sleep", "shutdown", "restart", "cancel"]),
+          delaySec: z.number().int().nonnegative().nullable(),
+          cancelled: z.boolean().nullable(),
+        })
+        .optional(),
+      mediaControl: z
+        .object({
+          action: z.enum(["play-pause", "next", "previous", "stop"]),
+        })
+        .optional(),
       clipboard: z
         .object({
           text: z.string().max(100_000),

@@ -127,14 +127,14 @@ function normalizeProcess(raw: RawProcess): DeviceProcessInfo | null {
 
 /**
  * Lista de processos do Windows via `Get-CimInstance Win32_Process`. Retorna
- * vazio em plataformas não-Windows.
+ * `unsupported_platform` em plataformas não-Windows.
  */
 export async function listProcesses(
   query?: string,
   limit: number = DEVICE_PROCESS_LIMIT_DEFAULT,
 ): Promise<DeviceProcessInfo[]> {
   if (process.platform !== "win32") {
-    return []
+    throw unsupported("Listar processos não é suportado nesta plataforma.")
   }
 
   const { stdout } = await execFileAsync(

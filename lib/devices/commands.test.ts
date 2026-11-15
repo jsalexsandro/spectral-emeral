@@ -903,11 +903,11 @@ describe("device file operation contract", () => {
 
     expect(
       deviceCommandTimeoutMs(parseDeviceCommand("list-processes", {})),
-    ).toBe(20_000)
+    ).toBe(10_000)
 
     expect(
       deviceCommandTimeoutMs(parseDeviceCommand("kill-process", { pid: 1 })),
-    ).toBe(20_000)
+    ).toBe(10_000)
   })
 })
 

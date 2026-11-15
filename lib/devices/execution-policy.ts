@@ -176,6 +176,10 @@ const INPUT_TOOLS = new Set<string>([
   "device-scroll",
   "device-drag",
   "device-open-url",
+  "device-get-system-status",
+  "device-set-volume",
+  "device-set-brightness",
+  "device-media-control",
   "device-open-path",
   "device-focus-window",
   "device-minimize-window",
@@ -217,7 +221,10 @@ const DESTRUCTIVE_TOOLS = new Set<string>([
   "device-close-window",
   "device-delete",
   "device-kill-process",
+  "device-lock-screen",
 ])
+
+const SYSTEM_TOOLS = new Set<string>(["device-power"])
 
 const SYSTEM_COMMAND_PATTERNS: RegExp[] = [
   /\bshutdown\b/i,
@@ -388,6 +395,10 @@ export function classifyDeviceToolRisk(
 
   if (DESTRUCTIVE_TOOLS.has(toolName)) {
     return "destructive"
+  }
+
+  if (SYSTEM_TOOLS.has(toolName)) {
+    return "system"
   }
 
   if (toolName === "device-window-action") {
