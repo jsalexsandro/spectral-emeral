@@ -629,10 +629,18 @@ destrutivo, auditoria e verificação posterior. ✅
 | `register-app` | `{ name, path, args?, cwd? }` | write |
 | `remove-app` | `{ appId }` | write |
 
-- Descoberta no Windows por atalhos `.lnk` do Menu Iniciar (usuário e comum) e
-  por `App Paths` em HKLM (64/32-bit) e HKCU, com cache de 5 minutos.
+- Descoberta no Windows por atalhos `.lnk` do Menu Iniciar (usuário e comum),
+  por `App Paths` em HKLM (64/32-bit) e HKCU, e por aplicativos da Microsoft
+  Store (AUMID via `Shell.Application` / `shell:AppsFolder`), com cache de 5
+  minutos.
 - `find-app` é a verificação de existência: retorna `found`, `query` e `apps[]`
-  com `source` (`builtin`, `start-menu`, `app-path`, `custom`) e `target`.
+  com `source` (`builtin`, `start-menu`, `app-path`, `store`, `custom`) e
+  `target`. Shims dentro de `\WindowsApps\` (ex.: `spotify_cli.exe` do Spotify
+  da Store) são filtrados porque não abrem janela visível.
+- `open-app` abre apps da Store via `explorer.exe shell:AppsFolder\<AUMID>` e
+  devolve `verified: true` apenas quando o driver confirma o surgimento de uma
+  janela nova (até 3 s); caso contrário dispara o processo com `verified:
+  false`. Nunca afirma que o app está aberto sem confirmação de janela.
 - `open-app` resolve ids fixos, descobertos e do catálogo local; `path` precisa
   ser absoluto e ter extensão suportada. `args` (até 32, máximo 512 chars cada,
   sem caracteres de controle) e `cwd` (diretório existente) acompanham qualquer

@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 37
+export const SYSTEM_PROMPT_VERSION = 38
 
 export type SystemPromptChange = {
   version: number
@@ -222,5 +222,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-15",
     summary:
       "device-open-app agora descobre e abre aplicativos da Windows Store pelo AUMID (shell:AppsFolder) e confirma a abertura com verified (janela nova em ate 3s). A busca exclui shims de spotify_cli dentro de WindowsApps. O prompt exige confirmed janela/processo antes de afirmar que o app esta aberto ou tocando.",
+  },
+  {
+    version: 38,
+    date: "2026-11-15",
+    summary:
+      "device-shell deixa de listar shells fixos (pwsh/powershell/cmd/...) e passa a dizer ao modelo para escolher o shell dentre get-env.shells (ex.: powershell, cmd), evitando tentativas com shells indisponíveis (shell_unavailable).",
   },
 ]

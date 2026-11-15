@@ -1,10 +1,15 @@
-bug 1:
-Liste as janelas abertas no dispositivo "meu-pc" e diga qual está em foco.
+bug 1: janelas duplicadas em device-list-windows ✅ RESOLVIDO
+Sintoma: `device-list-windows` retornava janelas repetidas (ex.: 8 janelas com
+duplicatas), fazendo o modelo achar que havia mais janelas abertas do que o
+real.
+Causa: erro de formatação da resposta do modelo, não do driver; o driver já
+retorna janelas únicas (dedupe por `id` em `listPlatformWindows`).
+Evidência (validação ao vivo 2026-11-15): `device-list-windows` retornou 8
+janelas únicas, com `focused`/`minimizado` corretos, sem `device_offline`.
 
-(A IA não consegue pega a lista de janelas abertas nem listar a que ta em foco)
+bug 2: janelas minimizadas ✅ RESOLVIDO
+`device-list-windows` aceita `includeMinimized` e lista janelas minimizadas
+quando solicitado.
 
-bug 2: Liste também as janelas minimizadas do meu dispositivo.
-
-Não há janelas minimizadas no dispositivo "meu-pc" (ID: sb8y432bcszfkmojdf3cg99f). A lista está vazia.
-
-usar windowId
+Legenda de uso: `windowId` retornado por `device-list-windows` identifica cada
+janela para `device-focus-window` e `device-window-action`.
