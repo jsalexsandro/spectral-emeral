@@ -323,19 +323,27 @@ auditoria não foram exercitados nesse teste; para isso, use o chat do Spectral.
 ### 4.4 Processos (item 8)
 
 ```ts
-list-processes: { filter?: string; limit?: number } →
-  { processes: [{ pid, name, command, cpuPercent, memoryBytes, startedAt,
-                  sessionId? }] }
+list-processes: { query?: string; limit?: number } →
+  { processes: [{ pid, parentPid, name, command, memoryBytes,
+                  startedAt, sessionId }] }
 
-start-process: { command, args?, cwd?, detached?, env? } →
-  { process: { pid, name } }         // Modo Construtor; Poder Total dispensa aprovação
-
-kill-process: { pid?, name?, force? } →
-  { killed: number }                 // sempre aprovação
+kill-process: { pid: number; force?: boolean; tree?: boolean } →
+  { killed: boolean }   // Modo Construtor; sempre aprovação (destructive)
 ```
 
-- `kill-process` por nome exige confirmação explícita do alvo.
+- `list-processes` consulta `Get-CimInstance Win32_Process` no Windows; macOS/Linux
+  retornam vazio (`unsupported_platform` no driver). Ordenado por memória
+  decrescente; `query` filtra nome e linha de comando; `limit` padrão 40, máximo 100.
+- `kill-process` encerra **sempre por `pid`** (nunca por nome). `force` aplica
+  `taskkill /F`; `tree` aplica `taskkill /T` (mata filhos). Após o `taskkill`, o
+  driver verifica se o processo sumiu (até ~2 s) e só então devolve `killed: true`.
+- Proteções que retornam `protected_process`: `pid <= 4`; o próprio driver e seus
+  ancestrais; processos críticos do Windows (`csrss`, `wininit`, `winlogon`,
+  `services`, `lsass`, `dwm`, `svchost`, etc.). Com `tree: true`, qualquer
+  descendente protegido também bloqueia o encerramento.
 - Nunca matar o próprio driver, o backend ou processos de sistema protegidos.
+- `start-process` fica fora desta v1: `open-app`, `device-shell` e jobs já cobrem
+  abrir/executar; `cpuPercent` fica fora (exigiria amostragem dupla).
 
 ### 4.5 Jobs (item 13) — o que destrava builds e servidores
 

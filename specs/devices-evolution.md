@@ -664,22 +664,49 @@ aprovação; `open-path` abrir um documento sem aprovação; `register-app`
 cadastrar um app fora da descoberta; e o catálogo aparecer em
 `device-list-apps` sem cadastro manual em Configurações. ✅
 
-### Fase 3 — Processos (M)
+### Fase 3 — Processos ✅ (implementado)
 
 | Comando | Entrada | Risco |
 |---|---|---|
-| `list-processes` | `{ filter?, limit? }` | read |
-| `start-process` | `{ command, args?, cwd?, detached?, env? }` | exec |
+| `list-processes` | `{ query?, limit? }` | read |
 | `kill-process` | `{ pid, force?, tree? }` | **destructive** |
 
-- `kill-process` só por **pid**; nome vira resolução ambígua e perigosa.
-- Lista de PIDs protegidos: driver, processos críticos do SO e o próprio app.
-  Tentativa retorna `protected_process`.
-- `start-process` é para apps/GUI e comandos soltos; scripts de fundo usam jobs.
-- Tools: `device-list-processes`, `device-start-process`, `device-kill-process`.
+- `list-processes` consulta `Get-CimInstance Win32_Process` no Windows e retorna
+  `pid`, `parentPid`, `name`, `command`, `memoryBytes`, `startedAt`, `sessionId`.
+  Aceita `query` (filtra nome e linha de comando, contém, sem diferenciar
+  maiúsculas) e `limit` (padrão 40, máximo 100), ordenado por memória decrescente.
+  macOS/Linux retornam `unsupported_platform` (vazio).
+- `kill-process` encerra um processo **sempre por `pid`** (nunca por nome: é
+  ambíguo e perigoso). Aceita `force` (`taskkill /F`) e `tree` (`taskkill /T`,
+  mata filhos também). Depois do encerramento, o driver verifica se o processo
+  sumiu (até ~2 s) e só então devolve `killed: true`.
+- Proteções (retornam `protected_process`):
+  - `pid <= 4`;
+  - o próprio driver e seus ancestrais (cadeia de `parentPid`);
+  - processos críticos do Windows: `system`, `registry`, `smss`, `csrss`,
+    `wininit`, `winlogon`, `services`, `lsass`, `lsaiso`, `dwm`, `svchost`,
+    `fontdrvhost`, `memorycompression`.
+  Com `tree: true`, qualquer descendente protegido também bloqueia o encerramento.
+- Nunca encerra por nome (`taskkill /IM` não é usado).
+- Tools: `device-list-processes`, `device-kill-process`.
+- `start-process` fica fora desta release: `open-app`, `device-shell` e jobs já
+  cobrem abrir/executar; adicionar `exec` com `detached`/`env` aumenta a
+  superfície sem resolver o pedido atual.
 
-**Pronto quando:** "o que está travando?", "abre o Chrome" e "mata esse
-processo" funcionarem com aprovação e auditoria, sem risco a processos críticos.
+**Pronto quando:** "o que está travando?", "mata esse processo" funcionarem com
+aprovação e auditoria, sem risco a processos críticos. ✅
+  - Validação ao vivo (2026-11-15): `list-processes query notepad` encontrou o
+    Bloco de Notas (PID 8328), `kill-process pid 8328` devolveu `killed: true`,
+    e a listagem seguinte confirmou que o processo sumiu.
+  - `kill-process` no PID do driver e ancestrais: `protected_process` (coberto
+    por testes unitários em `processes.test.ts`).
+
+**Arquivos:** `spectral/shared/device-commands.ts` (contrato),
+`spectral/driver/src/commands/processes.ts` (driver),
+`spectral/driver/src/commands/executor.ts` (dispatch),
+`lib/ai/tools/device-tools.ts` (tools),
+`lib/devices/execution-policy.ts` (risco read/destructive),
+`lib/ai/prompts/sections/devices.ts` + `registry.ts` (prompt v39).
 
 ### Fase 4 — Jobs e sessões (G)
 

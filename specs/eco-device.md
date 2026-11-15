@@ -283,6 +283,33 @@ Roadmap de evolução: devices-evolution.md
    `lib/ai/tools/device-tools.ts` e testes em `lib/devices/commands.test.ts` e
    `lib/ai/tools/device-tools.test.ts`.
 
+## 6. Processos (`device-list-processes`, `device-kill-process`)
+Status: implementado.
+
+A IA lista processos em execução e encerra um processo específico pelo `pid`,
+sempre com aprovação (risco destrutivo), nunca por nome.
+
+- `device-list-processes` consulta `Get-CimInstance Win32_Process` no Windows e
+  retorna `pid`, `parentPid`, `name`, `command`, `memoryBytes`, `startedAt`,
+  `sessionId`. Aceita `query` (filtra nome e linha de comando) e `limit`
+  (padrão 40, máximo 100). Risco `read`: permitido no Modo Leitura.
+- `device-kill-process` encerra um processo sempre por `pid`. Aceita `force`
+  (`taskkill /F`) e `tree` (`taskkill /T`, mata filhos). Após o encerramento, o
+  driver verifica se o processo sumiu e só então devolve `killed: true`. Risco
+  `destructive`: pede aprovação no Modo Construtor (ou roda direto em Poder
+  Total).
+- Proteções (`protected_process`): `pid <= 4`; o próprio driver e seus
+  ancestrais; processos críticos do Windows (`csrss`, `wininit`, `winlogon`,
+  `services`, `lsass`, `dwm`, `svchost`, etc.). Com `tree: true`, qualquer
+  descendente protegido também bloqueia o encerramento.
+- Nunca encerra por nome; `taskkill /IM` não é usado.
+
+Referências: contrato em `spectral/shared/device-commands.ts`, driver em
+`spectral/driver/src/commands/processes.ts`, dispatch em
+`spectral/driver/src/commands/executor.ts`, tools em
+`lib/ai/tools/device-tools.ts` e política em
+`lib/devices/execution-policy.ts`.
+
 ## Próximas features
 
 Itens do roadmap ainda não implementados, em ordem recomendada (detalhes em
@@ -292,8 +319,7 @@ Itens do roadmap ainda não implementados, em ordem recomendada (detalhes em
    `mkdir`, `stat`, zip/unzip.
 2. **Transferência app ↔ dispositivo** — upload e download de arquivos.
 3. **`run-command` em camadas + task runner** — allowlist maior com políticas.
-4. **Processos e ações de sistema** — listar/encerrar processos, energia,
-   volume, brilho.
+4. **Ações de sistema** — energia, volume, brilho.
 5. **Produto instalável** — instalador, serviço/tray, autostart e auto-update.
 6. **Negociação de capacidades e jobs** — driver informa o que suporta e
    comandos longos viram jobs.
