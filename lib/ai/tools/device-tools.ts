@@ -189,6 +189,8 @@ export const DEVICE_JOB_LIST_TOOL_NAME = "device-job-list"
 export const DEVICE_LIST_WINDOWS_TOOL_NAME = "device-list-windows"
 export const DEVICE_FOCUS_WINDOW_TOOL_NAME = "device-focus-window"
 export const DEVICE_WINDOW_ACTION_TOOL_NAME = "device-window-action"
+export const DEVICE_LIST_PROCESSES_TOOL_NAME = "device-list-processes"
+export const DEVICE_KILL_PROCESS_TOOL_NAME = "device-kill-process"
 export const DEVICE_INSPECT_UI_TOOL_NAME = "device-inspect-ui"
 export const DEVICE_UI_ACTION_TOOL_NAME = "device-ui-action"
 
@@ -604,6 +606,46 @@ export const deviceWindowActionInputSchema = z.object({
   action: deviceWindowActionSchema.describe(
     "Ação a aplicar na janela: minimize, maximize, restore ou close.",
   ),
+})
+
+export const deviceListProcessesInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  query: z
+    .string()
+    .min(1)
+    .max(120)
+    .optional()
+    .describe(
+      "Filtra processos pelo nome ou linha de comando (contém, sem diferenciar maiúsculas).",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(40)
+    .describe("Número máximo de processos retornados (1–100, padrão 40)."),
+})
+
+export const deviceKillProcessInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  pid: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      "PID do processo a encerrar. Só aceita PID: encerrar por nome é ambíguo e perigoso.",
+    ),
+  force: z
+    .boolean()
+    .default(false)
+    .describe("Força o encerramento (taskkill /F) quando o processo não fecha sozinho."),
+  tree: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Encerra também os processos filhos (taskkill /T). Descendentes protegidos são recusados.",
+    ),
 })
 
 const deviceUiRoleSchema = z
@@ -1827,6 +1869,22 @@ const windowActionDescription = [
   "Use apenas em janelas que o usuário pediu para controlar; nunca feche janelas do sistema ou aplicativos sem relação com o pedido.",
 ].join("\n")
 
+const listProcessesDescription = [
+  "Lista os processos em execução em um dispositivo online.",
+  "Aceita `query` para filtrar pelo nome do processo ou linha de comando e `limit` para controlar a quantidade (padrão 40, máximo 100).",
+  "Cada processo traz `pid`, `name`, `command`, `memoryBytes`, `startedAt`, `sessionId` e `parentPid`.",
+  "Risco `read`: permitido no Modo Leitura. Para encerrar um processo, use `device-kill-process`.",
+].join("\n")
+
+const killProcessDescription = [
+  "Encerra um processo específico de um dispositivo online, sempre por `pid`.",
+  "Encerrar por nome é propositalmente não suportado: é ambíguo e perigoso (pode matar a instância errada).",
+  "`force` aplica `taskkill /F` quando o processo não fecha sozinho; `tree` encerra também os processos filhos.",
+  "Risco `destructive`: pede aprovação no Modo Construtor (ou roda direto em Poder Total).",
+  "Nunca encerra o próprio driver, processos pais do driver ou processos críticos do Windows (ex.: csrss, wininit, winlogon, services, lsass, dwm, svchost). Tentativa retorna `protected_process`.",
+  "Confirme a morte com `device-list-processes` após o encerramento.",
+].join("\n")
+
 const inspectUiDescription = [
   "Inspeciona a árvore de acessibilidade (UI Automation) de uma janela e retorna os controles com nome, papel, limites e centro exato.",
   "Use esta tool antes de clicar em abas, botões, menus, campos e outros controles nativos: ela evita estimar pixels a partir da captura.",
@@ -2879,6 +2937,48 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-window-action.",
+          }
+        }
+      },
+    }),
+    [DEVICE_LIST_PROCESSES_TOOL_NAME]: tool({
+      description: listProcessesDescription,
+      inputSchema: deviceListProcessesInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "list-processes",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-list-processes.",
+          }
+        }
+      },
+    }),
+    [DEVICE_KILL_PROCESS_TOOL_NAME]: tool({
+      description: killProcessDescription,
+      inputSchema: deviceKillProcessInputSchema,
+      execute: async ({ deviceId, pid, force, tree }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "kill-process",
+            input: { pid, force, tree },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-kill-process.",
           }
         }
       },

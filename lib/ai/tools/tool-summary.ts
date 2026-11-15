@@ -8,6 +8,8 @@ const DEVICE_INSPECT_UI = "device-inspect-ui"
 const DEVICE_LIST_WINDOWS = "device-list-windows"
 const DEVICE_FOCUS_WINDOW = "device-focus-window"
 const DEVICE_WINDOW_ACTION = "device-window-action"
+const DEVICE_LIST_PROCESSES = "device-list-processes"
+const DEVICE_KILL_PROCESS = "device-kill-process"
 const DEVICE_CLICK = "device-click"
 const DEVICE_MOVE_MOUSE = "device-move-mouse"
 const DEVICE_SCROLL = "device-scroll"
@@ -199,6 +201,21 @@ export function summarizeToolInput(
         readString(record, "action"),
         readString(record, "windowId") &&
           `janela ${readString(record, "windowId")}`,
+      ])
+      break
+
+    case DEVICE_LIST_PROCESSES:
+      summary = joinParts([
+        readString(record, "query") && `"${readString(record, "query")}"`,
+        `limite ${readNumber(record, "limit") ?? 40}`,
+      ])
+      break
+
+    case DEVICE_KILL_PROCESS:
+      summary = joinParts([
+        `pid ${readNumber(record, "pid")}`,
+        record.tree === true ? "árvore" : undefined,
+        record.force === true ? "forçado" : undefined,
       ])
       break
 

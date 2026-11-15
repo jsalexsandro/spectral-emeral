@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 38
+export const SYSTEM_PROMPT_VERSION = 39
 
 export type SystemPromptChange = {
   version: number
@@ -228,5 +228,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-15",
     summary:
       "device-shell deixa de listar shells fixos (pwsh/powershell/cmd/...) e passa a dizer ao modelo para escolher o shell dentre get-env.shells (ex.: powershell, cmd), evitando tentativas com shells indisponíveis (shell_unavailable).",
+  },
+  {
+    version: 39,
+    date: "2026-11-15",
+    summary:
+      "Adiciona device-list-processes (listar processos com filtro por nome/comando e limite) e device-kill-process (encerrar processo sempre por pid, com force e tree). kill-process e destrutivo: pede aprovacao no Modo Construtor e nunca encerra o driver, processos pais ou críticos do Windows (protected_process). Prompt v39.",
   },
 ]

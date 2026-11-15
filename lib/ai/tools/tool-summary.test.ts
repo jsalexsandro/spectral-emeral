@@ -102,6 +102,19 @@ describe("summarizeToolInput", () => {
     ).toBe("Enter · Ctrl+Shift")
   })
 
+  it("resume listagem e encerramento de processos", () => {
+    expect(
+      summarizeToolInput("device-list-processes", {
+        query: "chrome",
+        limit: 20,
+      }),
+    ).toBe('"chrome" · limite 20')
+
+    expect(
+      summarizeToolInput("device-kill-process", { pid: 1234, tree: true, force: true }),
+    ).toBe("pid 1234 · árvore · forçado")
+  })
+
   it("trunca textos longos", () => {
     const text = "a".repeat(200)
     const summary = summarizeToolInput(DEVICE_TYPE_TEXT_TOOL_NAME, { text })
