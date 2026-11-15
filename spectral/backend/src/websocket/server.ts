@@ -94,7 +94,12 @@ function clearHeartbeat(state: ConnectionState) {
   }
 }
 
-function cleanupSocket(ws: WebSocket, state: ConnectionState | undefined) {
+function cleanupSocket(
+  ws: WebSocket,
+  state: ConnectionState | undefined,
+  closeCode?: number,
+  reason?: string,
+) {
   if (!state) {
     return
   }
@@ -105,6 +110,11 @@ function cleanupSocket(ws: WebSocket, state: ConnectionState | undefined) {
   if (state.deviceId && activeConnections.get(state.deviceId) === ws) {
     activeConnections.delete(state.deviceId)
     unregisterConnection(state.deviceId, ws)
+    console.log(
+      `[spectral-backend] dispositivo desconectou deviceId=${state.deviceId} code=${
+        closeCode ?? "-"
+      } reason="${(reason ?? "").slice(0, 160)}"`,
+    )
   }
 }
 
@@ -116,6 +126,9 @@ function startHeartbeatTimeout(ws: WebSocket, state: ConnectionState) {
       return
     }
 
+    console.log(
+      `[spectral-backend] heartbeat expirou deviceId=${state.deviceId ?? "-"}`,
+    )
     reject(
       ws,
       "heartbeat_timeout",
@@ -250,14 +263,32 @@ async function handleHeartbeat(ws: WebSocket, state: ConnectionState) {
     return
   }
 
-  const seen = await touchDevice(state.deviceId)
+  // Re-armado antes do banco: uma escrita lenta ou uma falha transitória do
+  // Postgres não pode derrubar a presença de um dispositivo saudável.
+  startHeartbeatTimeout(ws, state)
+
+  let seen: boolean
+
+  try {
+    seen = await touchDevice(state.deviceId)
+  } catch (error) {
+    console.error(
+      `[spectral-backend] falha ao gravar heartbeat deviceId=${state.deviceId}`,
+      error,
+    )
+
+    send(ws, {
+      type: "device:heartbeat:ack",
+      serverTime: new Date().toISOString(),
+    })
+    return
+  }
 
   if (!seen) {
     reject(ws, "revoked_device", closeCodes.revokedDevice)
     return
   }
 
-  startHeartbeatTimeout(ws, state)
   send(ws, {
     type: "device:heartbeat:ack",
     serverTime: new Date().toISOString(),
@@ -343,16 +374,24 @@ function handleConnection(ws: WebSocket, request: IncomingMessage) {
   }
 
   ws.on("message", (raw) => {
-    void handleMessage(ws, state, raw, ip).catch(() => {
+    void handleMessage(ws, state, raw, ip).catch((error) => {
+      console.error(
+        `[spectral-backend] falha ao processar mensagem deviceId=${state.deviceId ?? "-"}`,
+        error,
+      )
       reject(ws, "internal_error", closeCodes.internalError)
     })
   })
 
-  ws.on("close", () => {
-    cleanupSocket(ws, state)
+  ws.on("close", (code, reason) => {
+    cleanupSocket(ws, state, code, reason.toString())
   })
 
-  ws.on("error", () => {
+  ws.on("error", (error) => {
+    console.error(
+      `[spectral-backend] erro no socket deviceId=${state.deviceId ?? "-"}`,
+      error,
+    )
     cleanupSocket(ws, state)
   })
 }

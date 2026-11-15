@@ -10,7 +10,9 @@ import { pairDevice } from "./pairing.js"
 import { connectDevice, type ConnectionHandle } from "./socket.js"
 
 const MIN_BACKOFF_MS = 1_000
-const MAX_BACKOFF_MS = 30_000
+// O backend tolera alguns segundos de reconexão antes de declarar o
+// dispositivo offline; um backoff longo demais desperdiça essa janela.
+const MAX_BACKOFF_MS = 3_000
 
 function printHelp() {
   console.log("Uso: npm start [--pair]")

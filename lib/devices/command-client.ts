@@ -4,7 +4,11 @@ import {
   type DeviceCommandResult,
 } from "@/spectral/shared/device-commands"
 
-const REQUEST_GRACE_MS = 5_000
+/**
+ * Folga sobre o orçamento do comando. Cobre a espera do backend por uma
+ * reconexão do dispositivo (até 4s) somada à folga de transporte (5s).
+ */
+const REQUEST_GRACE_MS = 10_000
 
 export type SendDeviceCommandInput = {
   deviceId: string

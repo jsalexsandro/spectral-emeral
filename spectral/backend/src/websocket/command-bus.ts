@@ -6,6 +6,7 @@ import type {
 } from "../../../shared/device-commands.js"
 import { config } from "../config.js"
 import { commandTransportTimeoutMs } from "./command-timeout.js"
+import { ConnectionWaiters } from "./connection-waiters.js"
 import type { ServerMessage } from "./messages.js"
 
 type PendingCommand = {
@@ -27,9 +28,18 @@ export class DeviceCommandError extends Error {
   }
 }
 
+/**
+ * Quanto o backend espera por uma reconexão antes de declarar o dispositivo
+ * offline. O driver reconecta em poucos segundos depois de uma queda; sem essa
+ * janela, um comando disparado durante o reconnect falhava com `device_offline`
+ * mesmo com a máquina ligada e saudável.
+ */
+export const RECONNECT_GRACE_MS = 4_000
+
 const connections = new Map<string, WebSocket>()
 const pendingCommands = new Map<string, PendingCommand>()
 const inFlightByDevice = new Map<string, string>()
+const connectionWaiters = new ConnectionWaiters()
 
 function removePending(id: string, entry: PendingCommand) {
   clearTimeout(entry.timer)
@@ -63,6 +73,13 @@ export function registerConnection(deviceId: string, socket: WebSocket) {
   }
 
   connections.set(deviceId, socket)
+  connectionWaiters.notify(deviceId, socket)
+}
+
+function openSocket(deviceId: string): WebSocket | null {
+  const socket = connections.get(deviceId)
+
+  return socket && socket.readyState === WebSocket.OPEN ? socket : null
 }
 
 export function unregisterConnection(deviceId: string, socket: WebSocket) {
@@ -98,14 +115,33 @@ export function resolveCommandResult(
   return true
 }
 
-export function sendDeviceCommand(
+export async function sendDeviceCommand(
   deviceId: string,
   command: DeviceCommand,
   timeoutMs?: number,
+  reconnectGraceMs = RECONNECT_GRACE_MS,
 ): Promise<DeviceCommandResult> {
-  const socket = connections.get(deviceId)
+  let socket = openSocket(deviceId)
 
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
+  if (!socket && reconnectGraceMs > 0) {
+    const began = Date.now()
+    socket = await connectionWaiters.wait(deviceId, reconnectGraceMs)
+    const waitedMs = Date.now() - began
+
+    if (socket) {
+      // Revalida contra o mapa: a conexão entregue pode ter sido substituída
+      // ou fechada entre a notificação e este ponto.
+      socket = openSocket(deviceId)
+    }
+
+    console.log(
+      socket
+        ? `[backend] dispositivo reconectou durante a espera deviceId=${deviceId} waitedMs=${waitedMs}`
+        : `[backend] dispositivo nao reconectou deviceId=${deviceId} waitedMs=${waitedMs}`,
+    )
+  }
+
+  if (!socket) {
     return Promise.reject(
       new DeviceCommandError(
         "device_offline",
