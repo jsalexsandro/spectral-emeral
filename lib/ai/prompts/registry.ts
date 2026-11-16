@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 41
+export const SYSTEM_PROMPT_VERSION = 42
 
 export type SystemPromptChange = {
   version: number
@@ -246,5 +246,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-16",
     summary:
       "Programacao assistida: adiciona device-read-files e device-write-files (lotes de ate 20 arquivos, so um comando em voo por PC), device-project-info (stack, gerenciador, scripts, versoes pinadas e git) e device-git-status/device-git-diff somente leitura, todos liberados no Modo Leitura. O prompt ganha playbook de programacao: raio-x antes de editar, lote para ler e criar, patch atomico para mudancas pontuais, job-start para build/test/lint longos, get-env antes de assumir runtime, git sem checkout/clean/reset e verificacao real antes de declarar sucesso. Prompt v41.",
+  },
+  {
+    version: 42,
+    date: "2026-11-16",
+    summary:
+      "Toolchain via winget: adiciona device-setup-toolchain (instala runtimes do catalogo fechado - node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java - via winget, so com aprovacao e por job), get-env com refresh: true (limpa cache de runtimes e shells para enxergar instalacoes recentes) e warning de runtime ausente no device-project-info. Risco novo install exige aprovacao sempre, inclusive em Poder Total; o Modo Leitura nega. O modelo nunca escolhe versao, packageId nem flags do winget. Prompt v42.",
   },
 ]
