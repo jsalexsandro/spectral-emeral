@@ -940,6 +940,9 @@ Resolvidas na Fase 7b:
    elevado: falham cedo com `elevation_required` em vez de tentar em background. ✅
 6. Catálogo inicial com 11 runtimes; versão exata pinada e `winget upgrade` ficam para
    7b.2. ✅
+7. Nova permissão por dispositivo `confirmInstall` (padrão desligado): quando ligada,
+   instalações em Poder Total rodam sem aprovação caso a caso; em Modo Leitura seguem
+   negadas. Desligada por padrão para proteger usuários não técnicos. ✅ planejada
 
 Ainda abertas:
 
@@ -947,6 +950,36 @@ Ainda abertas:
 8. macOS/Linux entram agora ou depois de jobs? (recomendado: depois)
 9. Playwright e elevação UAC entram no escopo? (recomendado: sim, nas fases
    5d/5e)
+
+### Permissão de instalação sem confirmação (`confirmInstall`)
+
+**Padrão:** desligado (`false`). Quando desligado, toda instalação de runtime
+via `device-setup-toolchain` ou instalação de software global pelo
+`device-shell` exige aprovação caso a caso no chat, mesmo em Poder Total.
+
+**Quando ligado (`true`):** o dispositivo autoriza instalações em Poder Total
+sem pedi
+r aprovação caso a caso. A IA ainda informa ao usuário o que vai instalar, mas
+o comando roda direto. Em Modo Leitura a instalação continua negada
+independentemente dessa permissão.
+
+**Por que existe:** usuários experientes que confiam na IA não querem interromper
+o fluxo de programação a cada `npm install -g`, `winget install` ou
+`device-setup-toolchain`. A toggle dá esse controle sem mudar o padrão seguro
+para quem não o ativou explicitamente.
+
+**Onde mexer:**
+- `lib/devices/execution-policy.ts`: `DeviceExecutionPolicy` ganha
+  `confirmInstall: boolean` (default `false`); `evaluateDeviceToolCall` trata
+  `install` como `allow` quando `confirmInstall === true` e modo é `build`
+  com Poder Total; caso contrário segue `approval` (ou `deny` em `plan`).
+- `db/schema/device.ts`: coluna `executionPolicy` já é JSON; o novo campo é
+  lido/gravado por `parseDeviceExecutionPolicy`, sem migração.
+- UI de Configurações → Dispositivos: toggle "Permitir instalações sem
+  confirmação" com aviso de risco visível quando ligado.
+- Auditoria: continua gravando `risk = install`; a decisão passa de
+  `approval` para `executed` quando a permissão estiver ativa e o comando for
+  liberado direto.
 
 ---
 
