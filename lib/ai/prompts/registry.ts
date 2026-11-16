@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 40
+export const SYSTEM_PROMPT_VERSION = 41
 
 export type SystemPromptChange = {
   version: number
@@ -240,5 +240,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-15",
     summary:
       "Adiciona acoes de sistema: device-get-system-status (volume, mute, brilho, bateria), device-set-volume, device-set-brightness, device-lock-screen, device-power (sleep/shutdown/restart/cancel) e device-media-control (play-pause/next/previous/stop). Somente Windows; macOS/Linux retornam unsupported_platform. get-system-status e media-control sao interacao; lock-screen e set-volume/set-brightness sao destrutivas; power e de sistema (aprovacao obrigatoria). Prompt v40.",
+  },
+  {
+    version: 41,
+    date: "2026-11-16",
+    summary:
+      "Programacao assistida: adiciona device-read-files e device-write-files (lotes de ate 20 arquivos, so um comando em voo por PC), device-project-info (stack, gerenciador, scripts, versoes pinadas e git) e device-git-status/device-git-diff somente leitura, todos liberados no Modo Leitura. O prompt ganha playbook de programacao: raio-x antes de editar, lote para ler e criar, patch atomico para mudancas pontuais, job-start para build/test/lint longos, get-env antes de assumir runtime, git sem checkout/clean/reset e verificacao real antes de declarar sucesso. Prompt v41.",
   },
 ]

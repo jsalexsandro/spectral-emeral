@@ -27,10 +27,16 @@ O que já existe e funciona:
   `device-inspect-ui`, `device-ui-action`, `device-read-clipboard`,
   `device-write-clipboard`, `device-move-mouse`, `device-click`,
   `device-scroll`, `device-drag`, `device-list-files`, `device-read-file`,
-  `device-glob`, `device-grep`, `device-check-admin`, `device-write-file`,
-  `device-edit-file`, `device-mkdir`, `device-stat`, `device-copy`,
-  `device-move`, `device-delete`, `device-apply-patch`, `device-run-command` e
-  `device-shell`.
+  `device-read-files`, `device-glob`, `device-grep`, `device-project-info`,
+  `device-git-status`, `device-git-diff`, `device-check-admin`,
+  `device-write-file`, `device-write-files`, `device-edit-file`,
+  `device-mkdir`, `device-stat`, `device-copy`, `device-move`, `device-delete`,
+  `device-apply-patch`, `device-run-command`, `device-shell`,
+  `device-list-processes`, `device-kill-process`, `device-job-start`,
+  `device-job-status`, `device-job-output`, `device-job-cancel`,
+  `device-job-list`, `device-get-system-status`, `device-set-volume`,
+  `device-set-brightness`, `device-lock-screen`, `device-power` e
+  `device-media-control`.
 - Widget de abrir apps (`openDeviceApp`) com gesto do usuário.
 - Descoberta de aplicativos instalados no Windows (Menu Iniciar + App Paths),
   verificação por `device-find-app` e apps personalizados por dispositivo.
@@ -399,12 +405,20 @@ Risco considera exposição de segurança ao liberar o recurso.
   nomes críticos do Windows, processo do driver por linha de comando) e validação
   de morte antes de devolver `killed: true`. ✅
 
-#### 9. Ações de sistema
+#### 9. Ações de sistema ✅
 
 - **O que:** volume, brilho, mídia (play/pause/next), bloquear, dormir,
   desligar/reiniciar (aprovação) e notificação nativa no PC.
 - **Por quê:** utilidade diária e ótimo para demonstração.
 - **Onde mexer:** driver por plataforma, contrato, tools e prompt.
+- **Status:** implementado no Windows (Fase 5b). Tools:
+  `device-get-system-status` (volume, mute, brilho e bateria, risco `read`),
+  `device-set-volume`, `device-set-brightness`, `device-lock-screen`,
+  `device-power` (`sleep`/`shutdown`/`restart`/`cancel`, risco `system`) e
+  `device-media-control` (`play-pause`/`next`/`previous`/`stop`). Notificação
+  nativa e macOS/Linux continuam pendentes (`unsupported_platform`). Prompt v40.
+- **Pronto quando:** "aumenta o volume", "bloqueia o PC" e "desliga em 5 min"
+  funcionarem com aprovação e auditoria. ✅
 - **Esforço:** M · **Risco:** alto (energia) — exige aprovação.
 
 ### Bloco C — Confiabilidade e produto
@@ -555,7 +569,7 @@ Itens 10, 11 → instalador/tray/autostart e auto-update. Sem isso o resto não
 chega no usuário comum.
 
 **Fase 4 — expansão**
-Itens 4c, 6, 9, 17–22.
+Itens 4c, 6, 9 ✅, 17–22.
 
 Se fosse escolher **só três** para começar: **screenshot**, **listar/focar
 janelas** e **política de aprovação por dispositivo**. As duas primeiras
@@ -585,7 +599,10 @@ continuam sendo cérebro e não vão para o driver.
 | Shell persistente (cwd/env entre comandos) | sessão viva | ❌ | Fase 4 (opcional) |
 | Background + streaming + cancelar | `run_in_background`, `BashOutput`, `KillShell` | ❌ | Fase 4 |
 | Ler arquivo com offset/limit | `Read` | ✅ `read-file` | — |
+| Ler vários arquivos por chamada | leitura em paralelo | ✅ `read-files` (até 20, 256 KB) | — |
 | Escrever arquivo | `Write` | ✅ `write-file` | — |
+| Escrever vários arquivos por chamada | `Write` múltiplo | ✅ `write-files` (até 20, 2 MB) | — |
+| Raio-x do projeto + git status/diff | `git` via Bash | ✅ `project-info`, `git-status`, `git-diff` (somente leitura) | — |
 | Editar vários trechos | `Edit`/`MultiEdit` | ✅ `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`/`Grep` | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
@@ -594,7 +611,7 @@ continuam sendo cérebro e não vão para o driver.
 | Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
 | Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
 | GUI/UIA, mouse, teclado, janelas | ❌ | ✅ | diferencial do Spectral |
-| Sistema (volume, brilho, energia) | via shell | ❌ | Fase 5b |
+| Sistema (volume, brilho, energia) | via shell | ✅ `device-get-system-status`, `device-set-volume`, `device-set-brightness`, `device-lock-screen`, `device-power`, `device-media-control` (Windows) | Fase 5b ✅ |
 | Navegador | via MCP/Playwright | ❌ | Fase 5d |
 | Elevação/UAC | manual | ❌ | Fase 5e (opt-in) |
 
@@ -754,6 +771,48 @@ job-list:   {} → { jobs[] }
 - **5e. Elevação (M, opt-in):** `run-as-admin` com UAC explícito e aprovação;
   nunca no fluxo automático.
 
+### Fase 7a — Programação assistida (M) — ✅ implementada
+
+Fluxo para a IA programar bem no PC do usuário sem depender de shell para
+tarefas de leitura ou de escrita em massa. Nenhuma tool nova executa código:
+`shell` e `job-start` continuam sendo o único caminho de execução.
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `read-files` | `{ paths: string[1..20], offset?, limit? }` | read |
+| `write-files` | `{ files: [{ path, content }][1..20] }` | write (destructive fora do workspace) |
+| `project-info` | `{ path? }` | read |
+| `git-status` | `{ path?, includeUntracked? }` | read |
+| `git-diff` | `{ path?, staged?, file?, context?, maxBytes? }` | read |
+
+- `read-files` preserva a ordem, devolve sucesso ou erro por arquivo e corta em
+  256 KB no total e 2000 linhas por arquivo; o lote não derruba por causa de um
+  caminho inválido.
+- `write-files` valida o lote inteiro antes de gravar (caminhos protegidos,
+  symlink, diretório, 1 MB por arquivo, 2 MB no total) e devolve `created` por
+  arquivo. Falha de I/O no meio retorna o que já foi escrito + `failed`/`ok:
+  false`.
+- `project-info` detecta stack, gerenciador de pacotes, scripts, versões pinadas
+  e estado do git por manifestos e lockfiles (Node/TypeScript, Python, Rust, Go,
+  .NET, Java/Kotlin, Ruby, PHP), subindo até 5 níveis para achar a raiz. Não
+  entra em `node_modules`/`vendor` nem segue symlink.
+- `git-status` e `git-diff` são somente leitura e funcionam no Modo Leitura sem
+  liberar shell. Usam `-c core.fsmonitor=false`, `--no-ext-diff`,
+  `--no-textconv` e `--no-color`; nunca `checkout`, `clean` ou `reset`. Fora de
+  um repositório devolvem `gitStatus: null`/`gitDiff: null`, sem erro.
+- `list-files` passa a respeitar `.gitignore` por padrão (`respectGitignore:
+  true`), com matcher próprio para negação, âncora, diretório, aninhado e `**`.
+- Tools: `device-read-files`, `device-write-files`, `device-project-info`,
+  `device-git-status`, `device-git-diff`. O prompt v41 ganha o playbook de
+  programação (raio-x → lote → patch atômico → job → verificação).
+
+**Pronto quando:** um scaffold de 8 arquivos sai em 1 chamada, a leitura de 5
+arquivos sai em 1 chamada, um repositório desconhecido entrega stack, scripts,
+versões e git em 1 chamada, e o Modo Leitura enxerga arquivos e git sem shell. ✅
+
+**Fora desta release:** instalação de runtimes (7b, winget com aprovação) e
+`run-snippet` (7c).
+
 ### Fase 6 — Multiplataforma e robustez (G)
 
 - macOS/Linux para shell, arquivos, processos e jobs; UIA/GUI segue Windows.
@@ -771,7 +830,8 @@ job-list:   {} → { jobs[] }
 | 1.5 | P2 — acesso total a disco ✅ | M | alto (cwd livre em qualquer pasta) |
 | 2 | Fase 3 — processos ✅ | M | alto ("o que travou?") |
 | 3 | Fase 4 — jobs/background ✅ | G | altíssimo (dev server, builds) |
-| 4 | Fase 5a/5b — transferência + sistema | G/M | alto (uso diário) |
+| 3.5 | Fase 7a — programação assistida ✅ | M | altíssimo (programar no PC) |
+| 4 | Fase 5a — transferência binária (5b ✅) | G | alto (uso diário) |
 | 5 | Fase 5d — Playwright | G | alto (web sem UIA) |
 | 6 | Fase 6 — macOS/Linux | G | expansão |
 
