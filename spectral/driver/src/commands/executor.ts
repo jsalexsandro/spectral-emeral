@@ -37,6 +37,10 @@ import {
   getFileSandbox,
 } from "./files.js"
 import {
+  DeviceToolchainError,
+  setupToolchain,
+} from "./toolchain.js"
+import {
   getGitDiff,
   getGitStatus,
   getProjectInfo,
@@ -978,6 +982,16 @@ export async function executeDeviceCommand(
       case "apply-patch":
         return { ...(await files.applyPatch(command.input)), ok: true }
 
+      case "setup-toolchain": {
+        const { toolchain, jobId } = await setupToolchain(command.input)
+
+        return {
+          ok: true,
+          toolchain,
+          ...(jobId ? { jobId } : {}),
+        }
+      }
+
       case "run-command":
         return {
           ...(await files.runCommand(command.input, options?.defaultFolder)),
@@ -1063,6 +1077,10 @@ export async function executeDeviceCommand(
     }
 
     if (error instanceof DeviceJobError) {
+      return { ok: false, code: error.code, error: errorMessage(error) }
+    }
+
+    if (error instanceof DeviceToolchainError) {
       return { ok: false, code: error.code, error: errorMessage(error) }
     }
 

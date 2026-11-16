@@ -58,9 +58,20 @@ export const DEVICE_COMMAND_NAMES = [
   "lock-screen",
   "power",
   "media-control",
+  "setup-toolchain",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
+
+export const DEVICE_TOOLCHAIN_IDS = [
+  "node", "pnpm", "yarn", "bun", "python", "uv",
+  "git", "go", "rust", "dotnet", "java",
+] as const
+
+export type DeviceToolchainId = (typeof DEVICE_TOOLCHAIN_IDS)[number]
+
+export const DEVICE_TOOLCHAIN_JOB_MAX_RUNTIME_MS = 15 * 60_000
+export const DEVICE_TOOLCHAIN_OUTPUT_HINT_BYTES = 8 * 1024
 
 const DEVICE_COMMAND_NAME_SET = new Set<string>(DEVICE_COMMAND_NAMES)
 
@@ -1010,7 +1021,8 @@ export type DeviceCommandInputMap = {
   "list-apps": { query?: string; refresh?: boolean; limit?: number }
   "find-app": { query: string; refresh?: boolean; limit?: number }
   "get-os": Record<string, never>
-  "get-env": Record<string, never>
+  "get-env": { refresh?: boolean }
+  "setup-toolchain": { toolchain: DeviceToolchainId }
   shell: {
     script: string
     shell: DeviceShellKind
@@ -1200,6 +1212,8 @@ export function deviceCommandTimeoutMs(
       return 20_000
     case "power":
       return 20_000
+    case "setup-toolchain":
+      return 20_000
     default:
       return undefined
   }
@@ -1244,6 +1258,7 @@ export type DeviceCommandSuccess = {
   job?: DeviceJob
   jobs?: DeviceJob[]
   jobOutput?: DeviceJobOutput
+  toolchain?: DeviceToolchainResult
   /** Presente em `job-cancel`: true quando um job em execução recebeu o sinal. */
   cancelled?: boolean
   windows?: DeviceWindow[]
@@ -1278,6 +1293,15 @@ export type DeviceCommandFailure = {
   ok: false
   error: string
   code?: string
+}
+
+export type DeviceToolchainResult = {
+  id: DeviceToolchainId
+  name: string
+  packageId: string
+  action: "install" | "already_installed"
+  version: string | null
+  jobId: string | null
 }
 
 export type DeviceCommandResult = DeviceCommandSuccess | DeviceCommandFailure
@@ -1467,6 +1491,33 @@ function readOptionalBoolean(
   }
 
   return input[field]
+}
+
+function readToolchainId(input: unknown): DeviceToolchainId {
+  if (!isRecord(input) || typeof input.toolchain !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_toolchain",
+      'Campo "toolchain" é obrigatório e deve ser um dos ids do catálogo.',
+    )
+  }
+
+  const value = input.toolchain.trim()
+
+  if (value.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_toolchain",
+      'Campo "toolchain" não pode ficar vazio.',
+    )
+  }
+
+  if (!DEVICE_TOOLCHAIN_IDS.includes(value as DeviceToolchainId)) {
+    throw new DeviceCommandValidationError(
+      "invalid_toolchain",
+      `Runtime "${value}" não está no catálogo fechado. Use um id de device-setup-toolchain.`,
+    )
+  }
+
+  return value as DeviceToolchainId
 }
 
 function parseListApps(input: unknown): DeviceCommand {
@@ -3636,8 +3687,17 @@ export function parseDeviceCommand(
       return parseFindApp(input)
     case "get-os":
       return { command, input: {} }
-    case "get-env":
-      return { command, input: {} }
+    case "get-env": {
+      const refresh = readOptionalBoolean(input, "refresh", "invalid_get_env")
+      return {
+        command,
+        input: refresh !== undefined ? { refresh } : {},
+      }
+    }
+    case "setup-toolchain": {
+      const toolchain = readToolchainId(input)
+      return { command, input: { toolchain } }
+    }
     case "shell":
       return parseShell(input)
     case "open-url":
