@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
   DeviceCommandValidationError,
+  DEVICE_FILES_BATCH_MAX,
+  DEVICE_FILE_READ_OFFSET_DEFAULT,
+  DEVICE_FILE_WRITE_MAX_BYTES,
   DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
   DEVICE_JOB_MAX_RUNTIME_MS,
   DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
   DEVICE_JOB_WAIT_MAX_MS,
+  DEVICE_PATH_MAX_LENGTH,
+  DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
   deviceAppIdFromTarget,
   deviceCommandTimeoutMs,
   isAbsoluteAppPath,
@@ -1033,5 +1038,107 @@ describe("device job contract", () => {
     expect(() =>
       parseDeviceCommand("job-start", { script: "   " }),
     ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("normaliza read-files com limites padrão e sem duplicatas", () => {
+    expect(
+      parseDeviceCommand("read-files", {
+        paths: [" a.txt ", "b.txt", "a.txt"],
+        limit: 50,
+      }),
+    ).toEqual({
+      command: "read-files",
+      input: {
+        paths: ["a.txt", "b.txt"],
+        offset: DEVICE_FILE_READ_OFFSET_DEFAULT,
+        limit: 50,
+      },
+    })
+
+    expect(() => parseDeviceCommand("read-files", { paths: [] })).toThrow(
+      DeviceCommandValidationError,
+    )
+
+    expect(() =>
+      parseDeviceCommand("read-files", {
+        paths: Array.from(
+          { length: DEVICE_FILES_BATCH_MAX + 1 },
+          (_, index) => `arquivo-${index}.txt`,
+        ),
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("read-files", {
+        paths: ["a".repeat(DEVICE_PATH_MAX_LENGTH + 1)],
+      }),
+    ).toThrow(DeviceCommandValidationError)
+  })
+
+  it("valida write-files por arquivo e no total do lote", () => {
+    expect(
+      parseDeviceCommand("write-files", {
+        files: [{ path: "a.txt", content: "conteudo" }],
+      }),
+    ).toEqual({
+      command: "write-files",
+      input: { files: [{ path: "a.txt", content: "conteudo" }] },
+    })
+
+    expect(() => parseDeviceCommand("write-files", { files: [] })).toThrow(
+      DeviceCommandValidationError,
+    )
+
+    expect(() =>
+      parseDeviceCommand("write-files", {
+        files: [
+          { path: "a.txt", content: "1" },
+          { path: "a.txt", content: "2" },
+        ],
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("write-files", {
+        files: [
+          {
+            path: "grande.txt",
+            content: "x".repeat(DEVICE_FILE_WRITE_MAX_BYTES + 1),
+          },
+        ],
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    // Dois arquivos válidos isoladamente, mas acima do teto do lote.
+    const chunk = "x".repeat(DEVICE_FILE_WRITE_MAX_BYTES)
+
+    expect(() =>
+      parseDeviceCommand("write-files", {
+        files: [
+          { path: "a.txt", content: chunk },
+          { path: "b.txt", content: chunk },
+          { path: "c.txt", content: chunk },
+        ],
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(DEVICE_WRITE_FILES_TOTAL_BYTES_MAX).toBeGreaterThan(
+      DEVICE_FILE_WRITE_MAX_BYTES,
+    )
+  })
+
+  it("dá mais tempo para os lotes de arquivos", () => {
+    expect(
+      deviceCommandTimeoutMs(
+        parseDeviceCommand("read-files", { paths: ["a.txt"] }),
+      ),
+    ).toBe(20_000)
+    expect(
+      deviceCommandTimeoutMs(
+        parseDeviceCommand("write-files", {
+          files: [{ path: "a.txt", content: "x" }],
+        }),
+      ),
+    ).toBe(20_000)
   })
 })

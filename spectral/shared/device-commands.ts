@@ -21,10 +21,12 @@ export const DEVICE_COMMAND_NAMES = [
   "ui-action",
   "list-files",
   "read-file",
+  "read-files",
   "glob",
   "grep",
   "check-admin",
   "write-file",
+  "write-files",
   "edit-file",
   "mkdir",
   "stat",
@@ -452,6 +454,9 @@ export const DEVICE_FILE_READ_LINES_MIN = 1
 export const DEVICE_FILE_READ_LINES_MAX = 2000
 export const DEVICE_FILE_READ_LINES_DEFAULT = 2000
 export const DEVICE_FILE_WRITE_MAX_BYTES = 1024 * 1024
+export const DEVICE_FILES_BATCH_MAX = 20
+export const DEVICE_READ_FILES_TOTAL_BYTES_MAX = 256 * 1024
+export const DEVICE_WRITE_FILES_TOTAL_BYTES_MAX = 2 * 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_OLD_TEXT = 10 * 1024
 export const DEVICE_FILE_EDIT_MAX_NEW_TEXT = 10 * 1024
@@ -696,6 +701,18 @@ export type DeviceFileWriteResult = {
   path: string
   size: number
   created: boolean
+}
+
+/** Item de `read-files`: sucesso traz o conteúdo, falha traz código e motivo. */
+export type DeviceFileReadItem =
+  | { path: string; file: DeviceFileContent }
+  | { path: string; code: string; error: string }
+
+/** Falha por arquivo em `write-files`, sem abortar o restante do lote. */
+export type DeviceFileBatchFailure = {
+  path: string
+  code: string
+  error: string
 }
 
 export type DeviceFileEditResult = {
@@ -966,6 +983,7 @@ export type DeviceCommandInputMap = {
     maxEntries: number
   }
   "read-file": { path: string; offset: number; limit: number }
+  "read-files": { paths: string[]; offset: number; limit: number }
   glob: {
     pattern: string
     path?: string
@@ -983,6 +1001,9 @@ export type DeviceCommandInputMap = {
   "write-file": {
     path: string
     content: string
+  }
+  "write-files": {
+    files: Array<{ path: string; content: string }>
   }
   "edit-file": {
     path: string
@@ -1060,6 +1081,9 @@ export function deviceCommandTimeoutMs(
     case "lock-screen":
     case "media-control":
       return 10_000
+    case "read-files":
+    case "write-files":
+      return 20_000
     case "power":
       return 20_000
     default:
@@ -1080,13 +1104,18 @@ export type DeviceCommandSuccess = {
   shell?: DeviceShellResult
   entries?: DeviceFileEntry[]
   file?: DeviceFileContent
+  files?: DeviceFileReadItem[]
   paths?: string[]
   matches?: DeviceGrepMatch[]
   truncated?: boolean
   total?: number
+  totalBytes?: number
   filesScanned?: number
   admin?: boolean
   write?: DeviceFileWriteResult
+  writes?: DeviceFileWriteResult[]
+  written?: number
+  failed?: DeviceFileBatchFailure[]
   edit?: DeviceFileEditResult
   stat?: DeviceFileStat
   mkdir?: DeviceFileMkdirResult
@@ -2276,21 +2305,166 @@ function readOptionalPath(
     return undefined
   }
 
-  if (value.length > DEVICE_PATH_MAX_LENGTH) {
+  return readPathValue(value, field)
+}
+
+function readPathValue(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      `Campo "${label}" deve ser um texto.`,
+    )
+  }
+
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_path",
+      `Campo "${label}" é obrigatório.`,
+    )
+  }
+
+  if (trimmed.length > DEVICE_PATH_MAX_LENGTH) {
     throw new DeviceCommandValidationError(
       "invalid_path",
       `O caminho deve ter no máximo ${DEVICE_PATH_MAX_LENGTH} caracteres.`,
     )
   }
 
-  if (/[\u0000-\u001f\u007f]/.test(value)) {
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
     throw new DeviceCommandValidationError(
       "invalid_path",
       "O caminho contém caracteres de controle não suportados.",
     )
   }
 
-  return value
+  return trimmed
+}
+
+/** Lista de caminhos de `read-files`: 1..20, sem duplicatas, ordem preservada. */
+function readPathList(input: unknown, field: string): string[] {
+  if (!isRecord(input) || input[field] === undefined || input[field] === null) {
+    throw new DeviceCommandValidationError(
+      "invalid_paths",
+      `Campo "${field}" é obrigatório.`,
+    )
+  }
+
+  const value = input[field]
+
+  if (!Array.isArray(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_paths",
+      `Campo "${field}" deve ser uma lista de caminhos.`,
+    )
+  }
+
+  if (value.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_paths",
+      "A lista precisa de pelo menos 1 caminho.",
+    )
+  }
+
+  if (value.length > DEVICE_FILES_BATCH_MAX) {
+    throw new DeviceCommandValidationError(
+      "invalid_paths",
+      `A lista aceita no máximo ${DEVICE_FILES_BATCH_MAX} caminhos.`,
+    )
+  }
+
+  const paths = value.map((item) => readPathValue(item, field))
+
+  return [...new Set(paths)]
+}
+
+/** Lote de `write-files`: caminhos únicos, 1 MB por arquivo, 2 MB no total. */
+function readWriteFiles(
+  input: unknown,
+): Array<{ path: string; content: string }> {
+  if (!isRecord(input) || input.files === undefined || input.files === null) {
+    throw new DeviceCommandValidationError(
+      "invalid_files",
+      'Campo "files" é obrigatório.',
+    )
+  }
+
+  const value = input.files
+
+  if (!Array.isArray(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_files",
+      'Campo "files" deve ser uma lista de arquivos.',
+    )
+  }
+
+  if (value.length === 0) {
+    throw new DeviceCommandValidationError(
+      "invalid_files",
+      "A lista precisa de pelo menos 1 arquivo.",
+    )
+  }
+
+  if (value.length > DEVICE_FILES_BATCH_MAX) {
+    throw new DeviceCommandValidationError(
+      "invalid_files",
+      `A lista aceita no máximo ${DEVICE_FILES_BATCH_MAX} arquivos.`,
+    )
+  }
+
+  const seen = new Set<string>()
+  const files: Array<{ path: string; content: string }> = []
+  let totalBytes = 0
+
+  value.forEach((item, index) => {
+    if (!isRecord(item)) {
+      throw new DeviceCommandValidationError(
+        "invalid_files",
+        `O item ${index + 1} deve ser um objeto com "path" e "content".`,
+      )
+    }
+
+    const path = readPathValue(item.path, `files[${index}].path`)
+
+    if (seen.has(path)) {
+      throw new DeviceCommandValidationError(
+        "duplicate_path",
+        `O caminho "${path}" aparece mais de uma vez no lote.`,
+      )
+    }
+
+    seen.add(path)
+
+    if (typeof item.content !== "string") {
+      throw new DeviceCommandValidationError(
+        "invalid_content",
+        `O conteúdo de "${path}" deve ser um texto.`,
+      )
+    }
+
+    const bytes = Buffer.byteLength(item.content, "utf8")
+
+    if (bytes > DEVICE_FILE_WRITE_MAX_BYTES) {
+      throw new DeviceCommandValidationError(
+        "invalid_content",
+        `O conteúdo de "${path}" excede o limite de ${DEVICE_FILE_WRITE_MAX_BYTES} bytes.`,
+      )
+    }
+
+    totalBytes += bytes
+
+    files.push({ path, content: item.content })
+  })
+
+  if (totalBytes > DEVICE_WRITE_FILES_TOTAL_BYTES_MAX) {
+    throw new DeviceCommandValidationError(
+      "invalid_content",
+      `O lote excede o limite de ${DEVICE_WRITE_FILES_TOTAL_BYTES_MAX} bytes.`,
+    )
+  }
+
+  return files
 }
 
 function readRequiredPath(input: unknown): string {
@@ -2546,6 +2720,26 @@ function parseReadFile(input: unknown): DeviceCommand {
   return { command: "read-file", input: { path, offset, limit } }
 }
 
+function parseReadFiles(input: unknown): DeviceCommand {
+  const paths = readPathList(input, "paths")
+  const offset = readInteger(
+    input,
+    "offset",
+    DEVICE_FILE_READ_OFFSET_DEFAULT,
+    DEVICE_FILE_READ_OFFSET_MIN,
+    DEVICE_FILE_READ_OFFSET_MAX,
+  )
+  const limit = readInteger(
+    input,
+    "limit",
+    DEVICE_FILE_READ_LINES_DEFAULT,
+    DEVICE_FILE_READ_LINES_MIN,
+    DEVICE_FILE_READ_LINES_MAX,
+  )
+
+  return { command: "read-files", input: { paths, offset, limit } }
+}
+
 function parseGlob(input: unknown): DeviceCommand {
   const pattern = readPattern(input, "pattern", true) as string
   const path = readOptionalPath(input)
@@ -2613,6 +2807,10 @@ function parseWriteFile(input: unknown): DeviceCommand {
   }
 
   return { command: "write-file", input: { path, content } }
+}
+
+function parseWriteFiles(input: unknown): DeviceCommand {
+  return { command: "write-files", input: { files: readWriteFiles(input) } }
 }
 
 function parseEditFile(input: unknown): DeviceCommand {
@@ -3302,6 +3500,8 @@ export function parseDeviceCommand(
       return parseListFiles(input)
     case "read-file":
       return parseReadFile(input)
+    case "read-files":
+      return parseReadFiles(input)
     case "glob":
       return parseGlob(input)
     case "grep":
@@ -3310,6 +3510,8 @@ export function parseDeviceCommand(
       return { command, input: {} }
     case "write-file":
       return parseWriteFile(input)
+    case "write-files":
+      return parseWriteFiles(input)
     case "edit-file":
       return parseEditFile(input)
     case "mkdir":

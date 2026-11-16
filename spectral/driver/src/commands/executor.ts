@@ -928,6 +928,8 @@ export async function executeDeviceCommand(
         return { ...(await files.listFiles(command.input)), ok: true }
       case "read-file":
         return { ...(await files.readFile(command.input)), ok: true }
+      case "read-files":
+        return { ...(await files.readFiles(command.input)), ok: true }
       case "glob":
         return { ...(await files.glob(command.input)), ok: true }
       case "grep":
@@ -940,6 +942,9 @@ export async function executeDeviceCommand(
 
       case "write-file":
         return { ...(await files.writeFile(command.input)), ok: true }
+
+      case "write-files":
+        return { ...(await files.writeFiles(command.input)), ok: true }
 
       case "edit-file":
         return { ...(await files.editFile(command.input)), ok: true }

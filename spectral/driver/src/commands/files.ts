@@ -29,18 +29,22 @@ import type {
   DeviceCommandInputMap,
   DeviceCommandSuccess,
   DeviceCommandRunResult,
+  DeviceFileBatchFailure,
   DeviceFileContent,
   DeviceFileEntry,
   DeviceFileEntryType,
   DeviceFileEditResult,
+  DeviceFileReadItem,
   DeviceFileWriteResult,
   DeviceGrepMatch,
 } from "../../../shared/device-commands.js"
 import {
+  DEVICE_READ_FILES_TOTAL_BYTES_MAX,
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
   DEVICE_RUN_OUTPUT_MAX_BYTES,
+  DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
 } from "../../../shared/device-commands.js"
 import { PROTECTED_PATHS } from "./shell.js"
 
@@ -229,6 +233,13 @@ type ResolvedPath = {
   relative: string
 }
 
+type PreparedWrite = {
+  requestedPath: string
+  target: ResolvedPath
+  created: boolean
+  content: Buffer
+}
+
 type WalkOptions = {
   base: string
   maxDepth: number
@@ -306,6 +317,18 @@ function truncateUtf8(value: string, maxBytes: number): string {
   }
 
   return buffer.subarray(0, maxBytes).toString("utf8")
+}
+
+function toFileFailure(path: string, error: unknown): DeviceFileBatchFailure {
+  if (error instanceof DeviceFileError) {
+    return { path, code: error.code, error: error.message }
+  }
+
+  return {
+    path,
+    code: "file_error",
+    error: "Não foi possível acessar o arquivo.",
+  }
 }
 
 function safeRegex(pattern: string): boolean {
@@ -651,7 +674,21 @@ export class FileSandbox {
   async readFile(
     input: DeviceCommandInputMap["read-file"],
   ): Promise<DeviceCommandSuccess> {
-    const target = await this.resolvePath(input.path)
+    const file = await this.readOne(input.path, input.offset, input.limit)
+
+    return { ok: true, file }
+  }
+
+  /**
+   * Lê um arquivo por vez, reutilizado pelo lote. Mantém a resolução do
+   * sandbox e todas as checagens do `read-file`.
+   */
+  private async readOne(
+    path: string,
+    offset: number,
+    limit: number,
+  ): Promise<DeviceFileContent> {
+    const target = await this.resolvePath(path)
     const stats = await lstat(target.absolute)
 
     if (stats.isSymbolicLink()) {
@@ -687,8 +724,8 @@ export class FileSandbox {
     const text = buffer.toString("utf8")
     const lines = text.split(/\r?\n/)
     const totalLines = lines.length
-    const startIndex = Math.min(input.offset - 1, totalLines)
-    const endIndex = Math.min(totalLines, startIndex + input.limit)
+    const startIndex = Math.min(offset - 1, totalLines)
+    const endIndex = Math.min(totalLines, startIndex + limit)
     const selectedLines = lines.slice(startIndex, endIndex)
     let content = selectedLines.join("\n")
     let truncated = endIndex < totalLines
@@ -698,19 +735,69 @@ export class FileSandbox {
       truncated = true
     }
 
-    const returnedLines = content.length === 0 ? 0 : content.split("\n").length
-    const file: DeviceFileContent = {
+    return {
       path: target.absolute,
       content,
-      startLine: input.offset,
-      endLine:
-        returnedLines === 0 ? input.offset - 1 : input.offset + returnedLines - 1,
+      startLine: offset,
+      endLine: content.length === 0 ? offset - 1 : offset + content.split("\n").length - 1,
       totalLines,
       truncated,
       size: stats.size,
     }
+  }
 
-    return { ok: true, file }
+  /**
+   * Lote de leitura: erro em um arquivo não derruba os demais. O total
+   * devolvido respeita `DEVICE_READ_FILES_TOTAL_BYTES_MAX`; quando o teto é
+   * atingido, o restante volta como falha `batch_limit_reached`.
+   */
+  async readFiles(
+    input: DeviceCommandInputMap["read-files"],
+  ): Promise<DeviceCommandSuccess> {
+    const items: DeviceFileReadItem[] = []
+    let totalBytes = 0
+    let truncated = false
+
+    for (const path of input.paths) {
+      if (totalBytes >= DEVICE_READ_FILES_TOTAL_BYTES_MAX) {
+        truncated = true
+        items.push({
+          path,
+          code: "batch_limit_reached",
+          error: `O lote atingiu o limite de ${DEVICE_READ_FILES_TOTAL_BYTES_MAX} bytes.`,
+        })
+        continue
+      }
+
+      try {
+        const file = await this.readOne(path, input.offset, input.limit)
+        const remaining = DEVICE_READ_FILES_TOTAL_BYTES_MAX - totalBytes
+        const bytes = Buffer.byteLength(file.content, "utf8")
+
+        if (bytes > remaining) {
+          file.content = truncateUtf8(file.content, remaining)
+          file.truncated = true
+          truncated = true
+        }
+
+        file.endLine =
+          file.content.length === 0
+            ? file.startLine - 1
+            : file.startLine + file.content.split("\n").length - 1
+
+        totalBytes += Buffer.byteLength(file.content, "utf8")
+        items.push({ path: file.path, file })
+      } catch (error) {
+        items.push(toFileFailure(path, error))
+      }
+    }
+
+    return {
+      ok: true,
+      files: items,
+      totalBytes,
+      ...(truncated ? { truncated: true } : {}),
+    }
   }
 
   async glob(
@@ -897,7 +984,20 @@ export class FileSandbox {
   async writeFile(
     input: DeviceCommandInputMap["write-file"],
   ): Promise<DeviceCommandSuccess> {
-    const target = await this.resolvePath(input.path, false)
+    const write = await this.writeOne(input.path, input.content)
+
+    return { ok: true, write }
+  }
+
+  /**
+   * Prepara a escrita (resolução, caminho protegido, symlink, diretório e
+   * tamanho) sem tocar no disco. O lote valida tudo antes de gravar.
+   */
+  private async prepareWrite(
+    path: string,
+    content: string,
+  ): Promise<PreparedWrite> {
+    const target = await this.resolvePath(path, false)
     assertWritablePath(target.absolute)
     const stats = await lstat(target.absolute).catch(() => null)
 
@@ -915,30 +1015,78 @@ export class FileSandbox {
       )
     }
 
-    const contentBuffer = Buffer.from(input.content, "utf8")
+    const buffer = Buffer.from(content, "utf8")
 
-    if (contentBuffer.length > MAX_WRITE_FILE_BYTES) {
+    if (buffer.length > MAX_WRITE_FILE_BYTES) {
       throw new DeviceFileError(
         "file_too_large",
         `O conteúdo excede o limite de ${MAX_WRITE_FILE_BYTES} bytes.`,
       )
     }
 
+    return {
+      requestedPath: path,
+      target,
+      created: !stats,
+      content: buffer,
+    }
+  }
+
+  private async commitWrite(prepared: PreparedWrite): Promise<DeviceFileWriteResult> {
     // Garante que o diretório pai existe
-    await mkdir(dirname(target.absolute), { recursive: true })
-
-    const created = !stats
-
-    await writeFile(target.absolute, contentBuffer)
+    await mkdir(dirname(prepared.target.absolute), { recursive: true })
+    await writeFile(prepared.target.absolute, prepared.content)
 
     return {
-      ok: true,
-      write: {
-        path: target.absolute,
-        size: contentBuffer.length,
-        created,
-      },
+      path: prepared.target.absolute,
+      size: prepared.content.length,
+      created: prepared.created,
     }
+  }
+
+  private async writeOne(
+    path: string,
+    content: string,
+  ): Promise<DeviceFileWriteResult> {
+    return this.commitWrite(await this.prepareWrite(path, content))
+  }
+
+  /**
+   * Lote de escrita: valida todos os caminhos e tamanhos antes de gravar.
+   * Falha de validação aborta o lote inteiro; falha de I/O no meio devolve o
+   * que já foi escrito e o restante em `failed`.
+   */
+  async writeFiles(
+    input: DeviceCommandInputMap["write-files"],
+  ): Promise<DeviceCommandSuccess> {
+    const prepared: PreparedWrite[] = []
+    let totalBytes = 0
+
+    for (const item of input.files) {
+      const entry = await this.prepareWrite(item.path, item.content)
+      totalBytes += entry.content.length
+      prepared.push(entry)
+    }
+
+    if (totalBytes > DEVICE_WRITE_FILES_TOTAL_BYTES_MAX) {
+      throw new DeviceFileError(
+        "batch_too_large",
+        `O lote excede o limite de ${DEVICE_WRITE_FILES_TOTAL_BYTES_MAX} bytes.`,
+      )
+    }
+
+    const writes: DeviceFileWriteResult[] = []
+    const failed: DeviceFileBatchFailure[] = []
+
+    for (const entry of prepared) {
+      try {
+        writes.push(await this.commitWrite(entry))
+      } catch (error) {
+        failed.push(toFileFailure(entry.requestedPath, error))
+      }
+    }
+
+    return { ok: true, writes, failed, written: writes.length }
   }
 
   async editFile(
