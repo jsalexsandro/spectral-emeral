@@ -47,6 +47,11 @@ import {
   DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
 } from "../../../shared/device-commands.js"
 import { PROTECTED_PATHS } from "./shell.js"
+import {
+  isGitignored,
+  readGitignoreRules,
+  type GitignoreRule,
+} from "./gitignore.js"
 
 const MAX_READ_FILE_BYTES = 1024 * 1024
 const MAX_RETURN_BYTES = 64 * 1024
@@ -574,9 +579,11 @@ export class FileSandbox {
     }
 
     const entries: DeviceFileEntry[] = []
-    const stack: Array<{ directory: string; depth: number }> = [
-      { directory: target.absolute, depth: 0 },
-    ]
+    const stack: Array<{
+      directory: string
+      depth: number
+      rules: GitignoreRule[]
+    }> = [{ directory: target.absolute, depth: 0, rules: [] }]
     let truncated = false
 
     while (stack.length > 0 && !truncated) {
@@ -584,6 +591,19 @@ export class FileSandbox {
 
       if (!current) {
         continue
+      }
+
+      let rules = current.rules
+
+      if (input.respectGitignore) {
+        const base = normalizeRelative(
+          relative(target.absolute, current.directory),
+        )
+        const local = await readGitignoreRules(current.directory, base)
+
+        if (local.length > 0) {
+          rules = [...rules, ...local]
+        }
       }
 
       let directoryEntries
@@ -615,8 +635,18 @@ export class FileSandbox {
 
         const absolute = join(current.directory, entry.name)
         const relativeToRoot = normalizeRelative(relative(this.root, absolute))
+        const relativeToWalkRoot = normalizeRelative(
+          relative(target.absolute, absolute),
+        )
 
         if (this.isDenied(relativeToRoot)) {
+          continue
+        }
+
+        if (
+          input.respectGitignore &&
+          isGitignored(relativeToWalkRoot, entry.isDirectory(), rules)
+        ) {
           continue
         }
 
@@ -658,7 +688,11 @@ export class FileSandbox {
           !IGNORED_DIRECTORIES.has(entry.name) &&
           current.depth < input.depth
         ) {
-          stack.push({ directory: absolute, depth: current.depth + 1 })
+          stack.push({
+            directory: absolute,
+            depth: current.depth + 1,
+            rules,
+          })
         }
       }
     }

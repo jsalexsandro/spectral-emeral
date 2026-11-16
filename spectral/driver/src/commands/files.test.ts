@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -204,5 +204,38 @@ describe("files batch", () => {
 
     expect(result).toMatchObject({ ok: false, code: "path_protected" })
     await expect(access(good)).rejects.toThrow()
+  })
+
+  it("respeita o .gitignore na listagem e permite desligar", async () => {
+    const root = await ensureWorkspace()
+    const listing = join(root, "ignore")
+
+    await mkdir(join(listing, "gerado"), { recursive: true })
+    await mkdir(join(listing, "src"), { recursive: true })
+    await writeFile(join(listing, ".gitignore"), "gerado/\n*.tmp\n", "utf8")
+    await writeFile(join(listing, "gerado", "bundle.js"), "x", "utf8")
+    await writeFile(join(listing, "app.tmp"), "x", "utf8")
+    await writeFile(join(listing, "src", "a.ts"), "x", "utf8")
+    await writeFile(join(listing, "src", "notes.tmp"), "x", "utf8")
+
+    const filtered = await runOk("list-files", { path: listing, depth: 2 })
+    const names = filtered.entries?.map((entry) => entry.name) ?? []
+
+    expect(names).toContain("src")
+    expect(names).toContain("a.ts")
+    expect(names).not.toContain("gerado")
+    expect(names).not.toContain("app.tmp")
+    expect(names).not.toContain("notes.tmp")
+
+    const unfiltered = await runOk("list-files", {
+      path: listing,
+      depth: 2,
+      respectGitignore: false,
+    })
+    const all = unfiltered.entries?.map((entry) => entry.name) ?? []
+
+    expect(all).toContain("gerado")
+    expect(all).toContain("app.tmp")
+    expect(all).toContain("notes.tmp")
   })
 })

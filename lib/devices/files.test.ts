@@ -32,6 +32,7 @@ describe("sandbox de arquivos", () => {
       depth: 1,
       showHidden: false,
       maxEntries: 200,
+      respectGitignore: true,
     })
 
     expect(result.ok).toBe(true)
@@ -49,6 +50,7 @@ describe("sandbox de arquivos", () => {
       depth: 2,
       showHidden: false,
       maxEntries: 200,
+      respectGitignore: true,
     })
 
     const paths = result.entries!.map((e) => e.path)
@@ -61,6 +63,7 @@ describe("sandbox de arquivos", () => {
       depth: 1,
       showHidden: true,
       maxEntries: 200,
+      respectGitignore: true,
     })
 
     const names = result.entries!.map((e) => e.name)

@@ -37,6 +37,11 @@ import {
   getFileSandbox,
 } from "./files.js"
 import {
+  getGitDiff,
+  getGitStatus,
+  getProjectInfo,
+} from "./project.js"
+import {
   DeviceWindowError,
   closeWindow,
   focusWindow,
@@ -930,6 +935,12 @@ export async function executeDeviceCommand(
         return { ...(await files.readFile(command.input)), ok: true }
       case "read-files":
         return { ...(await files.readFiles(command.input)), ok: true }
+      case "project-info":
+        return { ...(await getProjectInfo(command.input, files)), ok: true }
+      case "git-status":
+        return { ...(await getGitStatus(command.input, files)), ok: true }
+      case "git-diff":
+        return { ...(await getGitDiff(command.input, files)), ok: true }
       case "glob":
         return { ...(await files.glob(command.input)), ok: true }
       case "grep":

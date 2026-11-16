@@ -1106,6 +1106,12 @@ export const deviceListFilesInputSchema = z.object({
     .max(DEVICE_FILE_DEPTH_MAX)
     .default(DEVICE_FILE_DEPTH_DEFAULT),
   showHidden: z.boolean().default(false),
+  respectGitignore: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Respeita os padrões de .gitignore ao listar (padrão true). Use false para ver build, dist e arquivos ignorados.",
+    ),
   maxEntries: z
     .number()
     .int()

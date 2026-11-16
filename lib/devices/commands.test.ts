@@ -4,6 +4,9 @@ import {
   DEVICE_FILES_BATCH_MAX,
   DEVICE_FILE_READ_OFFSET_DEFAULT,
   DEVICE_FILE_WRITE_MAX_BYTES,
+  DEVICE_GIT_CONTEXT_DEFAULT,
+  DEVICE_GIT_CONTEXT_MAX,
+  DEVICE_GIT_DIFF_MAX_BYTES,
   DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
   DEVICE_JOB_MAX_RUNTIME_MS,
   DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
@@ -207,7 +210,12 @@ describe("device command contract", () => {
   it("normalizes list-files with defaults", () => {
     expect(parseDeviceCommand("list-files", {})).toEqual({
       command: "list-files",
-      input: { depth: 1, showHidden: false, maxEntries: 200 },
+      input: {
+        depth: 1,
+        showHidden: false,
+        maxEntries: 200,
+        respectGitignore: true,
+      },
     })
 
     expect(
@@ -216,10 +224,17 @@ describe("device command contract", () => {
         depth: 3,
         showHidden: true,
         maxEntries: 50,
+        respectGitignore: false,
       }),
     ).toEqual({
       command: "list-files",
-      input: { path: "Documentos", depth: 3, showHidden: true, maxEntries: 50 },
+      input: {
+        path: "Documentos",
+        depth: 3,
+        showHidden: true,
+        maxEntries: 50,
+        respectGitignore: false,
+      },
     })
   })
 
@@ -1140,5 +1155,84 @@ describe("device job contract", () => {
         }),
       ),
     ).toBe(20_000)
+  })
+
+  it("normaliza projeto e git somente leitura", () => {
+    expect(parseDeviceCommand("project-info", {})).toEqual({
+      command: "project-info",
+      input: {},
+    })
+
+    expect(
+      parseDeviceCommand("project-info", { path: " ~/app " }),
+    ).toEqual({
+      command: "project-info",
+      input: { path: "~/app" },
+    })
+
+    expect(parseDeviceCommand("git-status", {})).toEqual({
+      command: "git-status",
+      input: { includeUntracked: true },
+    })
+
+    expect(
+      parseDeviceCommand("git-status", {
+        path: "repo",
+        includeUntracked: false,
+      }),
+    ).toEqual({
+      command: "git-status",
+      input: { path: "repo", includeUntracked: false },
+    })
+
+    expect(parseDeviceCommand("git-diff", {})).toEqual({
+      command: "git-diff",
+      input: {
+        staged: false,
+        context: DEVICE_GIT_CONTEXT_DEFAULT,
+        maxBytes: DEVICE_GIT_DIFF_MAX_BYTES,
+      },
+    })
+
+    expect(
+      parseDeviceCommand("git-diff", {
+        path: "repo",
+        staged: true,
+        file: "src/a.ts",
+        context: 1,
+        maxBytes: 1024,
+      }),
+    ).toEqual({
+      command: "git-diff",
+      input: {
+        path: "repo",
+        staged: true,
+        file: "src/a.ts",
+        context: 1,
+        maxBytes: 1024,
+      },
+    })
+  })
+
+  it("rejeita contexto e maxBytes fora do intervalo", () => {
+    expect(() =>
+      parseDeviceCommand("git-diff", {
+        context: DEVICE_GIT_CONTEXT_MAX + 1,
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("git-diff", { maxBytes: 0 }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("git-diff", {
+        maxBytes: DEVICE_GIT_DIFF_MAX_BYTES + 1,
+      }),
+    ).toThrow(DeviceCommandValidationError)
+
+    expect(() =>
+      parseDeviceCommand("git-diff", { context: -1 }),
+    ).toThrow(DeviceCommandValidationError)
   })
 })

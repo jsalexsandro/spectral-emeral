@@ -22,6 +22,9 @@ export const DEVICE_COMMAND_NAMES = [
   "list-files",
   "read-file",
   "read-files",
+  "project-info",
+  "git-status",
+  "git-diff",
   "glob",
   "grep",
   "check-admin",
@@ -457,6 +460,13 @@ export const DEVICE_FILE_WRITE_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILES_BATCH_MAX = 20
 export const DEVICE_READ_FILES_TOTAL_BYTES_MAX = 256 * 1024
 export const DEVICE_WRITE_FILES_TOTAL_BYTES_MAX = 2 * 1024 * 1024
+export const DEVICE_GIT_FILES_MAX = 200
+export const DEVICE_GIT_DIFF_MAX_BYTES = 200 * 1024
+export const DEVICE_GIT_CONTEXT_MIN = 0
+export const DEVICE_GIT_CONTEXT_MAX = 10
+export const DEVICE_GIT_CONTEXT_DEFAULT = 3
+export const DEVICE_PROJECT_ENTRIES_MAX = 100
+export const DEVICE_PROJECT_WALK_UP_MAX = 5
 export const DEVICE_FILE_EDIT_MAX_BYTES = 1024 * 1024
 export const DEVICE_FILE_EDIT_MAX_OLD_TEXT = 10 * 1024
 export const DEVICE_FILE_EDIT_MAX_NEW_TEXT = 10 * 1024
@@ -713,6 +723,97 @@ export type DeviceFileBatchFailure = {
   path: string
   code: string
   error: string
+}
+
+export type DeviceGitFileStatus = {
+  path: string
+  /** Par XY do porcelain v2 (`M.`, `.M`, `??`, `UU`...). */
+  status: string
+  staged: boolean
+}
+
+export type DeviceGitStatus = {
+  root: string
+  branch: string
+  upstream: string | null
+  ahead: number
+  behind: number
+  clean: boolean
+  counts: {
+    staged: number
+    unstaged: number
+    untracked: number
+    conflicted: number
+  }
+  files: DeviceGitFileStatus[]
+  /** True quando o número de arquivos passou de `DEVICE_GIT_FILES_MAX`. */
+  truncated: boolean
+}
+
+export type DeviceGitDiff = {
+  root: string
+  filesChanged: number
+  additions: number
+  deletions: number
+  diff: string
+  truncated: boolean
+}
+
+export type DeviceProjectStack = {
+  language: string | null
+  framework: string | null
+  packageManager: string | null
+}
+
+export type DeviceProjectManifest = {
+  path: string
+  kind: string
+}
+
+export type DeviceProjectScript = {
+  name: string
+  command: string
+}
+
+export type DeviceProjectPin = {
+  tool: string
+  version: string
+  source: string
+}
+
+export type DeviceProjectDependencies = {
+  installed: boolean | null
+  manager: string | null
+}
+
+export type DeviceProjectCommit = {
+  hash: string
+  subject: string
+  date: string
+}
+
+export type DeviceProjectGitState = {
+  branch: string
+  upstream: string | null
+  ahead: number
+  behind: number
+  dirty: boolean
+  changedFiles: number
+  lastCommit: DeviceProjectCommit | null
+}
+
+export type DeviceProjectInfo = {
+  root: string
+  name: string | null
+  stack: DeviceProjectStack
+  manifests: DeviceProjectManifest[]
+  scripts: DeviceProjectScript[]
+  engines: Record<string, string> | null
+  pinned: DeviceProjectPin[]
+  dependencies: DeviceProjectDependencies
+  git: DeviceProjectGitState | null
+  entries: DeviceFileEntry[]
+  warnings: string[]
 }
 
 export type DeviceFileEditResult = {
@@ -981,9 +1082,19 @@ export type DeviceCommandInputMap = {
     depth: number
     showHidden: boolean
     maxEntries: number
+    respectGitignore: boolean
   }
   "read-file": { path: string; offset: number; limit: number }
   "read-files": { paths: string[]; offset: number; limit: number }
+  "project-info": { path?: string }
+  "git-status": { path?: string; includeUntracked: boolean }
+  "git-diff": {
+    path?: string
+    staged: boolean
+    file?: string
+    context: number
+    maxBytes: number
+  }
   glob: {
     pattern: string
     path?: string
@@ -1083,6 +1194,9 @@ export function deviceCommandTimeoutMs(
       return 10_000
     case "read-files":
     case "write-files":
+    case "project-info":
+    case "git-status":
+    case "git-diff":
       return 20_000
     case "power":
       return 20_000
@@ -1105,6 +1219,9 @@ export type DeviceCommandSuccess = {
   entries?: DeviceFileEntry[]
   file?: DeviceFileContent
   files?: DeviceFileReadItem[]
+  project?: DeviceProjectInfo
+  gitStatus?: DeviceGitStatus | null
+  gitDiff?: DeviceGitDiff | null
   paths?: string[]
   matches?: DeviceGrepMatch[]
   truncated?: boolean
@@ -2681,6 +2798,7 @@ function parseListFiles(input: unknown): DeviceCommand {
     DEVICE_FILE_DEPTH_MAX,
   )
   const showHidden = readBoolean(input, "showHidden", false)
+  const respectGitignore = readBoolean(input, "respectGitignore", true)
   const maxEntries = readInteger(
     input,
     "maxEntries",
@@ -2696,6 +2814,7 @@ function parseListFiles(input: unknown): DeviceCommand {
       depth,
       showHidden,
       maxEntries,
+      respectGitignore,
     },
   }
 }
@@ -2738,6 +2857,61 @@ function parseReadFiles(input: unknown): DeviceCommand {
   )
 
   return { command: "read-files", input: { paths, offset, limit } }
+}
+
+function parseProjectInfo(input: unknown): DeviceCommand {
+  const path = readOptionalPath(input)
+
+  return {
+    command: "project-info",
+    input: {
+      ...(path ? { path } : {}),
+    },
+  }
+}
+
+function parseGitStatus(input: unknown): DeviceCommand {
+  const path = readOptionalPath(input)
+  const includeUntracked = readBoolean(input, "includeUntracked", true)
+
+  return {
+    command: "git-status",
+    input: {
+      ...(path ? { path } : {}),
+      includeUntracked,
+    },
+  }
+}
+
+function parseGitDiff(input: unknown): DeviceCommand {
+  const path = readOptionalPath(input)
+  const staged = readBoolean(input, "staged", false)
+  const file = readOptionalPath(input, "file")
+  const context = readInteger(
+    input,
+    "context",
+    DEVICE_GIT_CONTEXT_DEFAULT,
+    DEVICE_GIT_CONTEXT_MIN,
+    DEVICE_GIT_CONTEXT_MAX,
+  )
+  const maxBytes = readInteger(
+    input,
+    "maxBytes",
+    DEVICE_GIT_DIFF_MAX_BYTES,
+    1,
+    DEVICE_GIT_DIFF_MAX_BYTES,
+  )
+
+  return {
+    command: "git-diff",
+    input: {
+      ...(path ? { path } : {}),
+      staged,
+      ...(file ? { file } : {}),
+      context,
+      maxBytes,
+    },
+  }
 }
 
 function parseGlob(input: unknown): DeviceCommand {
@@ -3502,6 +3676,12 @@ export function parseDeviceCommand(
       return parseReadFile(input)
     case "read-files":
       return parseReadFiles(input)
+    case "project-info":
+      return parseProjectInfo(input)
+    case "git-status":
+      return parseGitStatus(input)
+    case "git-diff":
+      return parseGitDiff(input)
     case "glob":
       return parseGlob(input)
     case "grep":
