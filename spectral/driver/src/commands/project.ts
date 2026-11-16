@@ -17,9 +17,11 @@ import {
   type DeviceProjectPin,
   type DeviceProjectScript,
   type DeviceProjectCommit,
+  type DeviceToolchainId,
 } from "../../../shared/device-commands.js"
 import type { FileSandbox } from "./files.js"
 import { locateCommand, readVersion } from "./shell.js"
+import { getInstalledRuntimes } from "./system.js"
 
 const execFileAsync = promisify(execFile)
 const GIT_TIMEOUT_MS = 10_000
@@ -714,6 +716,86 @@ async function detectGitState(
   }
 }
 
+type RuntimeRequirement = {
+  id: string
+  toolchain: DeviceToolchainId | null
+  label: string
+}
+
+function projectRuntimeRequirements(
+  language: string | null,
+  packageManager: string | null,
+): RuntimeRequirement[] {
+  const reqs: RuntimeRequirement[] = []
+
+  if (language === "javascript" || language === "typescript") {
+    reqs.push({ id: "node", toolchain: "node", label: "Node.js" })
+    if (packageManager === "pnpm") {
+      reqs.push({ id: "pnpm", toolchain: "pnpm", label: "pnpm" })
+    } else if (packageManager === "yarn") {
+      reqs.push({ id: "yarn", toolchain: "yarn", label: "Yarn" })
+    } else if (packageManager === "bun") {
+      reqs.push({ id: "bun", toolchain: "bun", label: "Bun" })
+    }
+  } else if (language === "python") {
+    reqs.push({ id: "python", toolchain: "python", label: "Python" })
+    if (packageManager === "uv") {
+      reqs.push({ id: "uv", toolchain: "uv", label: "uv" })
+    }
+  } else if (language === "rust") {
+    reqs.push({ id: "cargo", toolchain: "rust", label: "Rust (cargo)" })
+  } else if (language === "go") {
+    reqs.push({ id: "go", toolchain: "go", label: "Go" })
+  } else if (language === "csharp") {
+    reqs.push({ id: "dotnet", toolchain: "dotnet", label: ".NET SDK" })
+  } else if (language === "java" || language === "kotlin") {
+    reqs.push({ id: "java", toolchain: "java", label: "Java" })
+  } else if (language === "ruby") {
+    reqs.push({ id: "ruby", toolchain: null, label: "Ruby" })
+  } else if (language === "php") {
+    reqs.push({ id: "php", toolchain: null, label: "PHP" })
+  }
+
+  return reqs
+}
+
+function missingRuntimeWarnings(
+  language: string | null,
+  packageManager: string | null,
+  installedIds: Set<string>,
+  runtimesDetected: boolean,
+): string[] {
+  if (!runtimesDetected) {
+    return []
+  }
+
+  const warnings: string[] = []
+  const seen = new Set<string>()
+
+  for (const req of projectRuntimeRequirements(language, packageManager)) {
+    if (seen.has(req.id)) {
+      continue
+    }
+    seen.add(req.id)
+
+    if (installedIds.has(req.id)) {
+      continue
+    }
+
+    if (req.toolchain) {
+      warnings.push(
+        `Este projeto usa ${req.label}, mas o \`${req.id}\` não foi encontrado neste PC. Posso instalar com \`device-setup-toolchain\` (\`toolchain: ${req.toolchain}\`).`,
+      )
+    } else {
+      warnings.push(
+        `Este projeto usa ${req.label}, mas o \`${req.id}\` não foi encontrado neste PC.`,
+      )
+    }
+  }
+
+  return warnings
+}
+
 export async function getProjectInfo(
   input: DeviceCommandInputMap["project-info"],
   sandbox: FileSandbox,
@@ -815,6 +897,18 @@ export async function getProjectInfo(
 
   const pinned = await readPinnedVersions(root, names, engines)
   const dependenciesState = await detectDependenciesInstalled(root, language)
+
+  const runtimes = await getInstalledRuntimes()
+  const installedIds = new Set(runtimes.map((item) => item.id))
+
+  for (const warning of missingRuntimeWarnings(
+    language,
+    packageManager,
+    installedIds,
+    runtimes.length > 0,
+  )) {
+    warnings.push(warning)
+  }
 
   if (dependenciesState.installed === false) {
     warnings.push(

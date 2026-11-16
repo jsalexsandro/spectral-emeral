@@ -3,10 +3,15 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { getFileSandbox } from "./files.js"
 import { locateCommand } from "./shell.js"
+import { getInstalledRuntimes } from "./system.js"
 import { getGitDiff, getGitStatus, getProjectInfo, parseGitStatusOutput } from "./project.js"
+
+vi.mock("./system.js", () => ({
+  getInstalledRuntimes: vi.fn().mockResolvedValue([]),
+}))
 
 const execFileAsync = promisify(execFile)
 const sandbox = getFileSandbox()
@@ -281,5 +286,62 @@ describe.skipIf(!gitAvailable)("git somente leitura", () => {
 
     expect(status.gitStatus).toBeNull()
     expect(diff.gitDiff).toBeNull()
+  })
+})
+
+describe("warnings de runtime ausente", () => {
+  const mockRuntimes = vi.mocked(getInstalledRuntimes)
+
+  it("avisa quando falta o runtime do projeto e aponta device-setup-toolchain", async () => {
+    mockRuntimes.mockResolvedValue([
+      { id: "node", version: "26.13.1", path: "C:\\node\\node.exe" },
+    ])
+
+    const root = await workspace("py-sem-python")
+    await writeFile(join(root, "requirements.txt"), "requests\n")
+
+    const result = await getProjectInfo({ path: root }, sandbox)
+    const warnings = result.project?.warnings ?? []
+
+    expect(
+      warnings.some(
+        (w) =>
+          w.includes("Python") &&
+          w.includes("não foi encontrado") &&
+          w.includes("device-setup-toolchain") &&
+          w.includes("toolchain: python"),
+      ),
+    ).toBe(true)
+  })
+
+  it("não avisa quando o runtime exigido está instalado", async () => {
+    mockRuntimes.mockResolvedValue([
+      { id: "node", version: "26.13.1", path: "C:\\node\\node.exe" },
+      { id: "python", version: "3.14.0", path: "C:\\python\\python.exe" },
+    ])
+
+    const root = await workspace("node-com-runtime")
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "meu-app" }))
+
+    const result = await getProjectInfo({ path: root }, sandbox)
+    const warnings = result.project?.warnings ?? []
+
+    expect(
+      warnings.some((w) => w.includes("device-setup-toolchain")),
+    ).toBe(false)
+  })
+
+  it("não avisa runtimes ausentes quando a detecção veio vazia", async () => {
+    mockRuntimes.mockResolvedValue([])
+
+    const root = await workspace("sem-runtimes")
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "x" }))
+
+    const result = await getProjectInfo({ path: root }, sandbox)
+    const warnings = result.project?.warnings ?? []
+
+    expect(
+      warnings.some((w) => w.includes("não foi encontrado")),
+    ).toBe(false)
   })
 })
