@@ -34,11 +34,13 @@ export const devices = pgTable(
     customApps: jsonb("customApps").$type<{ name: string; path: string }[]>(),
     /**
      * Preferência de confirmação do dispositivo. Estrutura:
-     * `{ confirmDestructive: boolean, updatedAt?: string }`.
-     * A ausência do campo equivale a pedir confirmação.
+     * `{ confirmDestructive: boolean, confirmInstall?: boolean, updatedAt?: string }`.
+     * A ausência de `confirmInstall` equivale a exigir confirmação para
+     * instalações (padrão seguro).
      */
     executionPolicy: jsonb("executionPolicy").$type<{
       confirmDestructive: boolean
+      confirmInstall?: boolean
       updatedAt?: string
     }>(),
     /** Coluna aposentada: mantida para não divergir da migration 0009. */

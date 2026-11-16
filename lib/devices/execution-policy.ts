@@ -23,11 +23,19 @@ export const DEFAULT_CHAT_EXECUTION_MODE: ChatExecutionMode = "plan"
 export type DeviceExecutionPolicy = {
   /** `true` = ações destrutivas/de sistema pedem aprovação no chat. */
   confirmDestructive: boolean
+  /**
+   * `true` = instalações de software (risco `install`) podem rodar sem
+   * aprovação caso a caso quando o dispositivo estiver em Poder Total.
+   * Padrão `false`: toda instalação exige aprovação, mesmo em Poder Total.
+   * O Modo Leitura continua negando instalação independente desse valor.
+   */
+  confirmInstall: boolean
   updatedAt?: string
 }
 
 export const DEFAULT_DEVICE_EXECUTION_POLICY: DeviceExecutionPolicy = {
   confirmDestructive: true,
+  confirmInstall: false,
 }
 
 export const DEVICE_TOOL_RISKS = [
@@ -60,7 +68,10 @@ export function parseDeviceExecutionPolicy(
 
   // Formato legado: string com o antigo nível de execução.
   if (typeof value === "string") {
-    return { confirmDestructive: value !== "full" }
+    return {
+      ...DEFAULT_DEVICE_EXECUTION_POLICY,
+      confirmDestructive: value !== "full",
+    }
   }
 
   if (typeof value !== "object" || Array.isArray(value)) {
@@ -75,8 +86,14 @@ export function parseDeviceExecutionPolicy(
         ? false
         : true
 
+  const confirmInstall =
+    typeof record.confirmInstall === "boolean"
+      ? record.confirmInstall
+      : false
+
   return {
     confirmDestructive,
+    confirmInstall,
     ...(typeof record.updatedAt === "string"
       ? { updatedAt: record.updatedAt }
       : {}),
@@ -534,6 +551,10 @@ export function evaluateDeviceToolCall({
   }
 
   if (risk === "install") {
+    if (policy.confirmInstall) {
+      return { action: "allow" }
+    }
+
     return {
       action: "approval",
       reason:

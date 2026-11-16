@@ -119,6 +119,7 @@ export function DevicesSection() {
   >(null)
   const [folderValue, setFolderValue] = useState("")
   const [confirmDestructive, setConfirmDestructive] = useState(true)
+  const [confirmInstall, setConfirmInstall] = useState(false)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const requestId = useRef(0)
@@ -305,6 +306,7 @@ export function DevicesSection() {
     setDeviceSettingsDevice(device)
     setFolderValue(device.defaultWorkingDirectory ?? "")
     setConfirmDestructive(device.executionPolicy.confirmDestructive)
+    setConfirmInstall(device.executionPolicy.confirmInstall ?? false)
     setDeviceSettingsOpen(true)
   }
 
@@ -326,6 +328,7 @@ export function DevicesSection() {
           body: JSON.stringify({
             defaultWorkingDirectory: folderValue.trim() || null,
             confirmDestructive,
+            confirmInstall,
           }),
         },
       )
@@ -347,6 +350,7 @@ export function DevicesSection() {
       setDeviceSettingsDevice(data.device)
       setFolderValue(data.device.defaultWorkingDirectory ?? "")
       setConfirmDestructive(data.device.executionPolicy.confirmDestructive)
+      setConfirmInstall(data.device.executionPolicy.confirmInstall ?? false)
     } catch {
       toast.error("Não foi possível salvar as configurações.")
     } finally {
@@ -673,6 +677,7 @@ export function DevicesSection() {
             setDeviceSettingsDevice(null)
             setFolderValue("")
             setConfirmDestructive(true)
+            setConfirmInstall(false)
           }
         }}
       >
@@ -786,6 +791,45 @@ export function DevicesSection() {
                   <p className="text-xs text-muted-foreground">
                     Vale para todos os chats com este dispositivo. O Modo Leitura
                     no chat continua bloqueando qualquer alteração.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Instalação de software sem confirmação</Label>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {([true, false] as const).map((value) => {
+                      const isSelected = confirmInstall === value
+
+                      return (
+                        <button
+                          key={String(value)}
+                          type="button"
+                          onClick={() => setConfirmInstall(value)}
+                          aria-pressed={isSelected}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-left transition-colors",
+                            isSelected
+                              ? value === true
+                                ? "border-destructive bg-destructive/10"
+                                : "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50",
+                          )}
+                        >
+                          <span className="text-sm font-medium">
+                            {value === true ? "Permitir" : "Pedir confirmação"}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {value === true
+                              ? "Instalações em Poder Total rodam sem pedir aprovação caso a caso."
+                              : "Cada instalação exige aprovação no chat, mesmo em Poder Total."}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Desligado por padrão. O Modo Leitura continua bloqueando
+                    qualquer instalação.
                   </p>
                 </div>
               </>

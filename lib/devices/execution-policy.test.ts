@@ -10,11 +10,12 @@ import {
 
 function decide(
   confirmDestructive: boolean,
+  confirmInstall: boolean,
   mode: ChatExecutionMode,
   risk: DeviceToolRisk,
 ) {
   return evaluateDeviceToolCall({
-    policy: { confirmDestructive },
+    policy: { confirmDestructive, confirmInstall },
     mode,
     risk,
   }).action
@@ -27,7 +28,7 @@ describe("execution policy", () => {
   it("always allows read tools, regardless of mode or device setting", () => {
     for (const confirmDestructive of [true, false]) {
       for (const mode of ["plan", "build"] as const) {
-        expect(decide(confirmDestructive, mode, "read")).toBe("allow")
+        expect(decide(confirmDestructive, false, mode, "read")).toBe("allow")
       }
     }
   })
@@ -35,7 +36,7 @@ describe("execution policy", () => {
   it("denies every mutation in plan mode", () => {
     for (const confirmDestructive of [true, false]) {
       for (const risk of [...MUTATIONS, ...IRREVERSIBLE]) {
-        expect(decide(confirmDestructive, "plan", risk)).toBe("deny")
+        expect(decide(confirmDestructive, false, "plan", risk)).toBe("deny")
       }
     }
   })
@@ -43,27 +44,27 @@ describe("execution policy", () => {
   it("runs mutations directly in build mode", () => {
     for (const confirmDestructive of [true, false]) {
       for (const risk of MUTATIONS) {
-        expect(decide(confirmDestructive, "build", risk)).toBe("allow")
+        expect(decide(confirmDestructive, false, "build", risk)).toBe("allow")
       }
     }
   })
 
   it("asks approval for destructive and system actions when confirming", () => {
     for (const risk of IRREVERSIBLE) {
-      expect(decide(true, "build", risk)).toBe("approval")
+      expect(decide(true, false, "build", risk)).toBe("approval")
     }
   })
 
   it("asks approval for launch when confirming, allows under full power", () => {
-    expect(decide(true, "build", "launch")).toBe("approval")
-    expect(decide(false, "build", "launch")).toBe("allow")
-    expect(decide(true, "plan", "launch")).toBe("deny")
-    expect(decide(false, "plan", "launch")).toBe("deny")
+    expect(decide(true, false, "build", "launch")).toBe("approval")
+    expect(decide(false, false, "build", "launch")).toBe("allow")
+    expect(decide(true, false, "plan", "launch")).toBe("deny")
+    expect(decide(false, false, "plan", "launch")).toBe("deny")
   })
 
   it("releases destructive and system actions under full power", () => {
     for (const risk of IRREVERSIBLE) {
-      expect(decide(false, "build", risk)).toBe("allow")
+      expect(decide(false, false, "build", risk)).toBe("allow")
     }
   })
 })
@@ -195,9 +196,21 @@ describe("device tool risk classification", () => {
 
   it("install pede aprovação sempre, inclusive em Poder Total", () => {
     for (const confirmDestructive of [true, false]) {
-      expect(decide(confirmDestructive, "build", "install")).toBe("approval")
-      expect(decide(confirmDestructive, "plan", "install")).toBe("deny")
+      expect(decide(confirmDestructive, false, "build", "install")).toBe("approval")
+      expect(decide(confirmDestructive, false, "plan", "install")).toBe("deny")
     }
+  })
+
+  it("install é liberada direto em Poder Total quando confirmInstall está ligado", () => {
+    expect(decide(false, true, "build", "install")).toBe("allow")
+  })
+
+  it("install continua pedindo aprovação quando confirmInstall está desligado", () => {
+    expect(decide(false, false, "build", "install")).toBe("approval")
+  })
+
+  it("install continua negada no Modo Leitura mesmo com confirmInstall ligado", () => {
+    expect(decide(false, true, "plan", "install")).toBe("deny")
   })
 
   it("classifica device-setup-toolchain como install", () => {
@@ -364,6 +377,7 @@ describe("parseDeviceExecutionPolicy", () => {
   it("accepts the current boolean shape", () => {
     expect(parseDeviceExecutionPolicy({ confirmDestructive: false })).toEqual({
       confirmDestructive: false,
+      confirmInstall: false,
     })
     expect(
       parseDeviceExecutionPolicy({
@@ -372,6 +386,7 @@ describe("parseDeviceExecutionPolicy", () => {
       }),
     ).toEqual({
       confirmDestructive: true,
+      confirmInstall: false,
       updatedAt: "2026-11-11T00:00:00.000Z",
     })
   })
@@ -380,6 +395,7 @@ describe("parseDeviceExecutionPolicy", () => {
     expect(parseDeviceExecutionPolicy("full").confirmDestructive).toBe(false)
     expect(parseDeviceExecutionPolicy({ level: "full" })).toEqual({
       confirmDestructive: false,
+      confirmInstall: false,
     })
     expect(parseDeviceExecutionPolicy("trusted").confirmDestructive).toBe(true)
     expect(parseDeviceExecutionPolicy("read-only").confirmDestructive).toBe(true)

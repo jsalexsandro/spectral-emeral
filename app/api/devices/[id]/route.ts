@@ -66,6 +66,39 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   }
 
   try {
+    const [current] = await db
+      .select({ executionPolicy: devices.executionPolicy })
+      .from(devices)
+      .where(
+        and(
+          eq(devices.id, id),
+          eq(devices.userId, session.user.id),
+          isNull(devices.revokedAt),
+        ),
+      )
+      .limit(1)
+
+    if (!current) {
+      return Response.json({ error: "device_not_found" }, { status: 404 })
+    }
+
+    const previousPolicy =
+      (current.executionPolicy as
+        | { confirmDestructive?: boolean; confirmInstall?: boolean }
+        | null) ?? {}
+
+    const updatedPolicy = {
+      confirmDestructive: previousPolicy.confirmDestructive ?? true,
+      ...previousPolicy,
+      ...(parsed.data.confirmDestructive !== undefined && {
+        confirmDestructive: parsed.data.confirmDestructive,
+      }),
+      ...(parsed.data.confirmInstall !== undefined && {
+        confirmInstall: parsed.data.confirmInstall,
+      }),
+      updatedAt: new Date().toISOString(),
+    }
+
     const [updated] = await db
       .update(devices)
       .set({
@@ -73,12 +106,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         ...(parsed.data.defaultWorkingDirectory !== undefined && {
           defaultWorkingDirectory: parsed.data.defaultWorkingDirectory,
         }),
-        ...(parsed.data.confirmDestructive !== undefined && {
-          executionPolicy: {
-            confirmDestructive: parsed.data.confirmDestructive,
-            updatedAt: new Date().toISOString(),
-          },
-        }),
+        ...(parsed.data.confirmDestructive !== undefined ||
+        parsed.data.confirmInstall !== undefined
+          ? { executionPolicy: updatedPolicy }
+          : {}),
         ...(parsed.data.customApps !== undefined && {
           customApps: parsed.data.customApps,
         }),

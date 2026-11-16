@@ -99,6 +99,12 @@ export const renameDeviceSchema = z.object({
     .boolean()
     .describe("Pedir confirmação para ações destrutivas ou de sistema.")
     .optional(),
+  confirmInstall: z
+    .boolean()
+    .describe(
+      "Permitir instalações de software sem confirmação caso a caso em Poder Total.",
+    )
+    .optional(),
   customApps: z
     .array(customAppSchema)
     .max(DEVICE_CUSTOM_APPS_MAX, "Muitos aplicativos personalizados.")
@@ -124,6 +130,7 @@ export const renameDeviceSchema = z.object({
     data.name !== undefined ||
     data.defaultWorkingDirectory !== undefined ||
     data.confirmDestructive !== undefined ||
+    data.confirmInstall !== undefined ||
     data.customApps !== undefined,
   {
     message: "Informe ao menos um campo para atualizar.",

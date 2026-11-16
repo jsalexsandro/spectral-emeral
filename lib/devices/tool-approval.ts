@@ -5,6 +5,7 @@ import { devices } from "@/db/schema"
 import { recordDeviceAudit, type DeviceAuditPolicy } from "./audit"
 import {
   classifyDeviceToolRisk,
+  DEFAULT_DEVICE_EXECUTION_POLICY,
   evaluateDeviceToolCall,
   parseDeviceExecutionPolicy,
   type ChatExecutionMode,
@@ -272,7 +273,7 @@ export async function assertDeviceCommandAllowed({
   const risk = classifyDeviceToolRisk(toolName, input) ?? "write"
   const policy =
     (await loadDevicePolicy(userId, deviceId)) ??
-    ({ confirmDestructive: true } satisfies DeviceExecutionPolicy)
+    ({ ...DEFAULT_DEVICE_EXECUTION_POLICY, confirmDestructive: true } satisfies DeviceExecutionPolicy)
   const decision = evaluateDeviceToolCall({
     policy,
     mode: executionMode,
