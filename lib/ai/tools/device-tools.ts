@@ -416,12 +416,39 @@ export const deviceEnvInputSchema = z.object({
     ),
 })
 
-export const deviceSetupToolchainInputSchema = z.object({
-  deviceId: deviceIdSchema,
-  toolchain: z.enum(DEVICE_TOOLCHAIN_IDS).describe(
-    "Runtime a instalar (catálogo fechado: node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java). O driver monta o comando winget inteiro; nunca informe versão, packageId ou flags.",
-  ),
-})
+export const deviceSetupToolchainInputSchema = z
+  .object({
+    deviceId: deviceIdSchema,
+    toolchain: z
+      .enum(DEVICE_TOOLCHAIN_IDS)
+      .optional()
+      .describe(
+        "Runtime a instalar (catálogo fechado: node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java). O driver monta o comando winget inteiro.",
+      ),
+    packageId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        "Id de qualquer pacote winget para instalação livre (ex.: 7zip.7zip). O driver monta o comando winget inteiro; nunca informe versão ou flags. Use apenas quando não houver um id do catálogo que sirva.",
+      ),
+    scope: z
+      .enum(["user", "machine"])
+      .optional()
+      .describe(
+        'Escopo da instalação: "user" (só o usuário atual) ou "machine" (todos os usuários, exige elevação). Padrão: "user" para catálogo, "user" para pacotes livres.',
+      ),
+  })
+  .refine(
+    (data) => data.toolchain !== undefined || data.packageId !== undefined,
+    {
+      message:
+        'Informe "toolchain" (catálogo fechado) ou "packageId" (qualquer pacote winget).',
+      path: ["toolchain"],
+    },
+  )
 
 const deviceWindowIdSchema = z
   .string()
@@ -1909,11 +1936,12 @@ const jobListDescription = [
 ].join("\n")
 
 const setupToolchainDescription = [
-  "Instala um runtime no dispositivo via winget, com catálogo fechado e aprovação obrigatória.",
-  "Informe apenas o `toolchain` (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`). Nunca informe versão, `packageId` nem flags do winget: o driver monta o comando inteiro.",
+  "Instala um runtime no dispositivo via winget.",
+  "Informe o `toolchain` do catálogo fechado (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`) ou um `packageId` livre de qualquer pacote winget (ex.: `7zip.7zip`). Nunca informe versão nem flags do winget: o driver monta o comando inteiro.",
   "O resultado devolve um `jobId`: acompanhe com `device-job-status` e `device-job-output`.",
   "Depois do job, confirme a instalação com `device-env` passando `refresh: true`.",
-  "Runtime já instalado retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro. Nunca tente contornar com `device-shell` + winget.",
+  "Runtime já instalado retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro.",
+  "Instalação de software exige aprovação caso a caso, salvo quando o dispositivo está em Poder Total com a opção 'Instalação de software sem confirmação' ligada. O Modo Leitura nega instalação sempre.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -3839,11 +3867,15 @@ export function createDeviceTools(
     [DEVICE_SETUP_TOOLCHAIN_TOOL_NAME]: tool({
       description: setupToolchainDescription,
       inputSchema: deviceSetupToolchainInputSchema,
-      execute: async ({ deviceId, toolchain }) => {
+      execute: async ({ deviceId, toolchain, packageId, scope }) => {
         try {
           return await runCommand(deviceId, {
             command: "setup-toolchain",
-            input: { toolchain },
+            input: {
+              ...(toolchain !== undefined ? { toolchain } : {}),
+              ...(packageId !== undefined ? { packageId } : {}),
+              ...(scope !== undefined ? { scope } : {}),
+            },
           })
         } catch (error) {
           return {

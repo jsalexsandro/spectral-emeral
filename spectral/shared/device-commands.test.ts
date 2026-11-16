@@ -56,7 +56,30 @@ describe("parseDeviceCommand — setup-toolchain", () => {
     expect(erro).toMatchObject({ code: "invalid_toolchain" })
   })
 
-  it("recusa input sem o campo toolchain", () => {
+  it("aceita packageId livre (qualquer pacote winget)", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      packageId: "7zip.7zip",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { packageId: "7zip.7zip" },
+    })
+  })
+
+  it("aceita packageId livre com scope machine", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      packageId: "Docker.DockerDesktop",
+      scope: "machine",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { packageId: "Docker.DockerDesktop", scope: "machine" },
+    })
+  })
+
+  it("recusa input sem toolchain nem packageId", () => {
     let erro: unknown = null
 
     try {
@@ -66,6 +89,18 @@ describe("parseDeviceCommand — setup-toolchain", () => {
     }
 
     expect(erro).toMatchObject({ code: "invalid_toolchain" })
+  })
+
+  it("recusa packageId vazio", () => {
+    let erro: unknown = null
+
+    try {
+      parseDeviceCommand("setup-toolchain", { packageId: "" })
+    } catch (e) {
+      erro = e
+    }
+
+    expect(erro).toMatchObject({ code: "invalid_package_id" })
   })
 })
 

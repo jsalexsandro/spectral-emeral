@@ -511,7 +511,7 @@ export const commandResultMessageSchema = z.object({
       jobOutput: deviceJobOutputSchema.optional(),
       toolchain: z
         .object({
-          id: z.enum(DEVICE_TOOLCHAIN_IDS),
+          id: z.string().min(1).max(120),
           name: z.string().min(1).max(120),
           packageId: z.string().min(1).max(120),
           action: z.enum(["install", "already_installed"]),

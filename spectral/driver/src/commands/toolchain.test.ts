@@ -30,6 +30,7 @@ beforeEach(() => {
     architecture: "x64",
   })
   mockStartJob.mockResolvedValue({ id: "job-1" })
+  mockStartJob.mockClear()
 })
 
 afterEach(() => {
@@ -152,6 +153,66 @@ describe("setupToolchain", () => {
     await setupToolchain({ toolchain: "node" }, "C:\\pasta")
 
     expect(mockStartJob).toHaveBeenCalled()
+  })
+
+  it("packageId livre inicia job sem detecção de já instalado", async () => {
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { packageId: "7zip.7zip" },
+      "C:\\pasta",
+    )
+
+    expect(result.toolchain.action).toBe("install")
+    expect(result.toolchain.packageId).toBe("7zip.7zip")
+    expect(result.toolchain.jobId).toBe("job-1")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringContaining("winget install --exact --id 7zip.7zip"),
+        shell: "powershell",
+        label: "winget: 7zip.7zip",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\pasta",
+    )
+  })
+
+  it("packageId livre com scope machine não exige elevação no driver", async () => {
+    mockGetOs.mockReturnValue({ elevated: false, platform: "win32" })
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { packageId: "Docker.DockerDesktop", scope: "machine" },
+      "C:\\pasta",
+    )
+
+    expect(result.toolchain.action).toBe("install")
+    expect(result.toolchain.packageId).toBe("Docker.DockerDesktop")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringContaining("winget install --exact --id Docker.DockerDesktop"),
+        shell: "powershell",
+        label: "winget: Docker.DockerDesktop",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\pasta",
+    )
+    // scope machine não adiciona --scope (padrão do winget)
+    const callScript = mockStartJob.mock.calls[0]![0].script
+    expect(callScript).not.toContain("--scope user")
+  })
+
+  it("recusa setup-toolchain sem toolchain nem packageId", async () => {
+    const { setupToolchain } = await importFresh()
+
+    await expect(
+      // @ts-ignore - testando entrada inválida
+      setupToolchain({}, "C:\\pasta"),
+    ).rejects.toMatchObject({ code: "invalid_toolchain" })
   })
 })
 

@@ -489,8 +489,13 @@ export function summarizeToolInput(
 
     case DEVICE_SETUP_TOOLCHAIN: {
       const toolchain = readString(record, "toolchain")
+      const packageId = readString(record, "packageId")
 
-      summary = toolchain ? `instalar ${toolchain}` : "instalar runtime"
+      summary = toolchain
+        ? `instalar ${toolchain}`
+        : packageId
+          ? `instalar ${packageId}`
+          : "instalar runtime"
       break
     }
 

@@ -232,6 +232,16 @@ describe("device tools", () => {
     expect(() => setupSchema.parse({ deviceId: "d", toolchain: "não-existe" })).toThrow()
     expect(() => setupSchema.parse({ deviceId: "d" })).toThrow()
 
+    // packageId livre é aceito
+    expect(() =>
+      setupSchema.parse({ deviceId: "d", packageId: "7zip.7zip" }),
+    ).not.toThrow()
+    expect(() =>
+      setupSchema.parse({ deviceId: "d", packageId: "Docker.DockerDesktop", scope: "machine" }),
+    ).not.toThrow()
+    // packageId vazio é recusado
+    expect(() => setupSchema.parse({ deviceId: "d", packageId: "" })).toThrow()
+
     const envSchema = deviceEnvInputSchema
     expect(() => envSchema.parse({ deviceId: "d", refresh: true })).not.toThrow()
     expect(() => envSchema.parse({ deviceId: "d", refresh: false })).not.toThrow()

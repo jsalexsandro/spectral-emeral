@@ -1022,7 +1022,11 @@ export type DeviceCommandInputMap = {
   "find-app": { query: string; refresh?: boolean; limit?: number }
   "get-os": Record<string, never>
   "get-env": { refresh?: boolean }
-  "setup-toolchain": { toolchain: DeviceToolchainId }
+  "setup-toolchain": {
+    toolchain?: DeviceToolchainId
+    packageId?: string
+    scope?: "user" | "machine"
+  }
   shell: {
     script: string
     shell: DeviceShellKind
@@ -1296,7 +1300,7 @@ export type DeviceCommandFailure = {
 }
 
 export type DeviceToolchainResult = {
-  id: DeviceToolchainId
+  id: string
   name: string
   packageId: string
   action: "install" | "already_installed"
@@ -1518,6 +1522,77 @@ function readToolchainId(input: unknown): DeviceToolchainId {
   }
 
   return value as DeviceToolchainId
+}
+
+function readOptionalToolchainId(input: unknown): DeviceToolchainId | undefined {
+  if (!isRecord(input) || input.toolchain === undefined || input.toolchain === null) {
+    return undefined
+  }
+
+  if (typeof input.toolchain !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_toolchain",
+      'Campo "toolchain" deve ser um texto.',
+    )
+  }
+
+  const value = input.toolchain.trim()
+
+  if (value.length === 0) {
+    return undefined
+  }
+
+  if (!DEVICE_TOOLCHAIN_IDS.includes(value as DeviceToolchainId)) {
+    throw new DeviceCommandValidationError(
+      "invalid_toolchain",
+      `Runtime "${value}" não está no catálogo fechado. Use um id de device-setup-toolchain.`,
+    )
+  }
+
+  return value as DeviceToolchainId
+}
+
+function readOptionalPackageId(input: unknown): string | undefined {
+  if (!isRecord(input) || input.packageId === undefined || input.packageId === null) {
+    return undefined
+  }
+
+  if (typeof input.packageId !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_package_id",
+      'Campo "packageId" deve ser um texto.',
+    )
+  }
+
+  const value = input.packageId.trim()
+
+  if (value.length === 0) {
+    return undefined
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_package_id",
+      "O id do pacote não pode conter caracteres de controle.",
+    )
+  }
+
+  return value
+}
+
+function readOptionalScope(input: unknown): "user" | "machine" | undefined {
+  if (!isRecord(input) || input.scope === undefined || input.scope === null) {
+    return undefined
+  }
+
+  if (input.scope !== "user" && input.scope !== "machine") {
+    throw new DeviceCommandValidationError(
+      "invalid_scope",
+      'Campo "scope" deve ser "user" ou "machine".',
+    )
+  }
+
+  return input.scope
 }
 
 function parseListApps(input: unknown): DeviceCommand {
@@ -3695,8 +3770,36 @@ export function parseDeviceCommand(
       }
     }
     case "setup-toolchain": {
-      const toolchain = readToolchainId(input)
-      return { command, input: { toolchain } }
+      const toolchain = readOptionalToolchainId(input)
+      const packageId = readOptionalPackageId(input)
+      const scope = readOptionalScope(input)
+
+      if (toolchain === undefined && packageId === undefined) {
+        throw new DeviceCommandValidationError(
+          "invalid_toolchain",
+          'Informe "toolchain" (catálogo fechado) ou "packageId" (qualquer pacote winget).',
+        )
+      }
+
+      const toolchainInput: {
+        toolchain?: DeviceToolchainId
+        packageId?: string
+        scope?: "user" | "machine"
+      } = {}
+
+      if (toolchain !== undefined) {
+        toolchainInput.toolchain = toolchain
+      }
+
+      if (packageId !== undefined) {
+        toolchainInput.packageId = packageId
+      }
+
+      if (scope !== undefined) {
+        toolchainInput.scope = scope
+      }
+
+      return { command, input: toolchainInput }
     }
     case "shell":
       return parseShell(input)

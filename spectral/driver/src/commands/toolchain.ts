@@ -12,7 +12,7 @@ import { startJob } from "./jobs.js"
 const IS_WINDOWS = process.platform === "win32"
 
 type ToolchainEntry = {
-  id: DeviceToolchainId
+  id: string
   name: string
   packageId: string
   /** `user` instala só para o usuário atual; `machine` exige elevação. */
@@ -161,13 +161,19 @@ function isInstalling(): boolean {
   return installing !== null
 }
 
-async function buildWingetScript(entry: ToolchainEntry): Promise<string> {
+async function buildWingetScript({
+  packageId,
+  scope,
+}: {
+  packageId: string
+  scope: "user" | "machine"
+}): Promise<string> {
   const args = [
     "winget",
     "install",
     "--exact",
     "--id",
-    entry.packageId,
+    packageId,
     "--source",
     "winget",
     "--silent",
@@ -176,7 +182,7 @@ async function buildWingetScript(entry: ToolchainEntry): Promise<string> {
     "--accept-source-agreements",
   ]
 
-  if (entry.scope === "user") {
+  if (scope === "user") {
     args.push("--scope", "user")
   }
 
@@ -186,11 +192,18 @@ async function buildWingetScript(entry: ToolchainEntry): Promise<string> {
 }
 
 /**
- * Instala (ou confirma já instalado) um runtime do catálogo fechado via winget.
- * Nunca aceita script, versão, packageId ou args do modelo: o argv é inteiro de código.
+ * Instala (ou confirma já instalado) um runtime via winget.
+ * Aceita um id do catálogo fechado (`toolchain`) ou um `packageId` livre
+ * (qualquer pacote do winget). O modelo escolhe; o driver monta o argv.
+ * Quando `packageId` livre é usado, não há detecção de "já instalado" nem
+ * nome amigável: o `packageId` serve de nome e a instalação roda direto.
  */
 export async function setupToolchain(
-  input: { toolchain: DeviceToolchainId },
+  input: {
+    toolchain?: DeviceToolchainId
+    packageId?: string
+    scope?: "user" | "machine"
+  },
   defaultFolder?: string,
 ): Promise<{ toolchain: DeviceToolchainResult; jobId: string | null }> {
   if (!IS_WINDOWS) {
@@ -216,31 +229,59 @@ export async function setupToolchain(
     )
   }
 
-  const entry = resolveToolchain(input.toolchain)
-  const version = await detectEntryVersion(entry)
+  let entry: ToolchainEntry
+  let scope: "user" | "machine"
 
-  if (version !== null) {
-    return {
-      toolchain: {
-        id: entry.id,
-        name: entry.name,
-        packageId: entry.packageId,
-        action: "already_installed",
-        version,
-        jobId: null,
-      },
-      jobId: null,
+  if (input.toolchain) {
+    entry = resolveToolchain(input.toolchain)
+    scope = input.scope ?? entry.scope
+  } else if (input.packageId) {
+    // Pacote livre: sem catálogo, sem detecção de "já instalado".
+    scope = input.scope ?? "user"
+    entry = {
+      id: input.packageId,
+      name: input.packageId,
+      packageId: input.packageId,
+      scope,
+      detect: [],
+      versionArgs: ["--version"],
     }
-  }
-
-  if (entry.scope === "machine" && !getOsInfo().elevated) {
+  } else {
     throw new DeviceToolchainError(
-      "elevation_required",
-      `O ${entry.name} instala para todos os usuários e precisa do Spectral como administrador. Feche e abra o Spectral como admin, ou instale manualmente.`,
+      "invalid_toolchain",
+      'Informe "toolchain" (catálogo fechado) ou "packageId" (qualquer pacote winget).',
     )
   }
 
-  const script = await buildWingetScript(entry)
+  // Para pacotes do catálogo fechado, verifica se já está instalado.
+  if (input.toolchain) {
+    const version = await detectEntryVersion(entry)
+
+    if (version !== null) {
+      return {
+        toolchain: {
+          id: entry.id,
+          name: entry.name,
+          packageId: entry.packageId,
+          action: "already_installed",
+          version,
+          jobId: null,
+        },
+        jobId: null,
+      }
+    }
+
+    if (entry.scope === "machine" && !getOsInfo().elevated) {
+      throw new DeviceToolchainError(
+        "elevation_required",
+        `O ${entry.name} instala para todos os usuários e precisa do Spectral como administrador. Feche e abra o Spectral como admin, ou instale manualmente.`,
+      )
+    }
+  }
+
+  // Para pacotes livres (`packageId`), a verificação de elevação fica por conta
+  // do próprio winget; o driver apenas dispara o job.
+  const script = await buildWingetScript({ packageId: entry.packageId, scope })
 
   installing = startJob(
     {

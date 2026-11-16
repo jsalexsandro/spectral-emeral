@@ -248,19 +248,47 @@ describe("commandResultMessageSchema", () => {
     expect(parsed.data.result.job?.id).toBe("job-1")
   })
 
-  it("recusa toolchain fora do catálogo", () => {
+  it("aceita toolchain fora do catálogo (packageId livre)", () => {
     const parsed = parseResult({
       ok: true,
       toolchain: {
-        id: "não-existe",
-        name: "x",
-        packageId: "x",
+        id: "7zip.7zip",
+        name: "7zip.7zip",
+        packageId: "7zip.7zip",
         action: "install",
         version: null,
-        jobId: null,
+        jobId: "job-9",
+      },
+      job: {
+        id: "job-9",
+        label: "winget: 7zip.7zip",
+        status: "running",
+        shell: "powershell",
+        shellPath: "powershell.exe",
+        cwd: "C:\\",
+        startedAt: "2026-11-16T12:00:00.000Z",
+        durationMs: 0,
+        exitCode: null,
+        error: null,
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        outputChars: 0,
+        truncated: false,
+        timedOut: false,
+        cancelled: false,
       },
     })
 
-    expect(parsed.success).toBe(false)
+    expect(parsed.success).toBe(true)
+
+    if (!parsed.success || !parsed.data.result.ok) {
+      throw new Error("Esperava um resultado ok.")
+    }
+
+    expect(parsed.data.result.toolchain?.id).toBe("7zip.7zip")
+    expect(parsed.data.result.toolchain?.packageId).toBe("7zip.7zip")
+    expect(parsed.data.result.toolchain?.action).toBe("install")
+    expect(parsed.data.result.toolchain?.jobId).toBe("job-9")
+    expect(parsed.data.result.job?.id).toBe("job-9")
   })
 })
