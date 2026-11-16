@@ -270,6 +270,13 @@ export function detectShells(): Promise<DeviceShellInfo[]> {
   return shellCache
 }
 
+/** Descarta o cache de shells para forçar nova detecção na próxima chamada. */
+export function refreshShellCache(): Promise<DeviceShellInfo[]> {
+  shellCache = undefined
+
+  return detectShells()
+}
+
 export async function detectShell(
   requested: DeviceShellKind,
 ): Promise<{ info: DeviceShellInfo; candidate: ShellCandidate }> {
