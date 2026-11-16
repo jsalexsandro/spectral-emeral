@@ -867,11 +867,18 @@ Catálogo inicial (IDs verificados com `winget search --exact` em 2026-11-16):
 - Prompt v42 com o playbook de "falta runtime": instalar só id do catálogo, confirmar
   com `get-env refresh`, traduzir `elevation_required`/`winget_missing` e nunca
   contornar com `device-shell` + winget.
+- **Liberdade total (implementado):** `setup-toolchain` aceita também um `packageId`
+  livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`), além do
+  id do catálogo fechado. O modelo escolhe o pacote; o driver monta o argv do winget
+  inteiro (`--exact --id <packageId> --source winget --silent ...`), sem aceitar versão
+  nem flags livres. Pacotes livres não têm detecção de "já instalado" nem verificação
+  de elevação no driver (fica por conta do winget). Escopo padrão: `user`.
 
 **Pronto quando:** um runtime ausente (ex.: `uv`) instalar em 1 chamada, o job puder ser
 acompanhado e cancelado, `get-env refresh: true` mostrar o runtime novo sem reiniciar o
 driver, runtime já instalado devolver `already_installed`, Poder Total ainda pedir
-aprovação e o Modo Leitura negar. 📝
+aprovação e o Modo Leitura negar. Pacote livre (ex.: `7zip.7zip`) instalar em 1 chamada
+com `jobId`. 📝
 
 **Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2);
 `run-snippet` (7c); macOS/Linux via brew/apt.
