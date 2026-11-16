@@ -1522,6 +1522,26 @@ function toCommandToolResult(
     ...(output.result.cancelled !== undefined
       ? { cancelled: output.result.cancelled }
       : {}),
+    ...(output.result.verified !== undefined
+      ? { verified: output.result.verified }
+      : {}),
+    ...(output.result.processes ? { processes: output.result.processes } : {}),
+    ...(output.result.process ? { process: output.result.process } : {}),
+    ...(output.result.killed !== undefined
+      ? { killed: output.result.killed }
+      : {}),
+    ...(output.result.systemStatus
+      ? { systemStatus: output.result.systemStatus }
+      : {}),
+    ...(output.result.volume ? { volume: output.result.volume } : {}),
+    ...(output.result.brightness ? { brightness: output.result.brightness } : {}),
+    ...(output.result.locked !== undefined
+      ? { locked: output.result.locked }
+      : {}),
+    ...(output.result.power ? { power: output.result.power } : {}),
+    ...(output.result.mediaControl
+      ? { mediaControl: output.result.mediaControl }
+      : {}),
     ...(output.result.windows ? { windows: output.result.windows } : {}),
     ...(output.result.window ? { window: output.result.window } : {}),
     ...(output.result.screenshot ? { screenshot: output.result.screenshot } : {}),
