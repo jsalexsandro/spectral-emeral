@@ -127,7 +127,7 @@ describe("setupToolchain", () => {
           "winget install --exact --id astral-sh.uv",
         ),
         shell: "powershell",
-        label: "winget: uv",
+        label: "winget install: uv",
         maxRuntimeMs: 15 * 60_000,
       },
       "C:\\projeto",
@@ -172,7 +172,7 @@ describe("setupToolchain", () => {
       {
         script: expect.stringContaining("winget install --exact --id 7zip.7zip"),
         shell: "powershell",
-        label: "winget: 7zip.7zip",
+        label: "winget install: 7zip.7zip",
         maxRuntimeMs: 15 * 60_000,
       },
       "C:\\pasta",
@@ -196,7 +196,7 @@ describe("setupToolchain", () => {
       {
         script: expect.stringContaining("winget install --exact --id Docker.DockerDesktop"),
         shell: "powershell",
-        label: "winget: Docker.DockerDesktop",
+        label: "winget install: Docker.DockerDesktop",
         maxRuntimeMs: 15 * 60_000,
       },
       "C:\\pasta",
@@ -204,6 +204,62 @@ describe("setupToolchain", () => {
     // scope machine não adiciona --scope (padrão do winget)
     const callScript = mockStartJob.mock.calls[0]![0].script
     expect(callScript).not.toContain("--scope user")
+  })
+
+  it("desinstala pacote livre (uninstall)", async () => {
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { packageId: "7zip.7zip", action: "uninstall" },
+      "C:\\pasta",
+    )
+
+    expect(result.toolchain.action).toBe("uninstalled")
+    expect(result.toolchain.packageId).toBe("7zip.7zip")
+    expect(result.toolchain.jobId).toBe("job-1")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringContaining("winget uninstall --exact --id 7zip.7zip"),
+        shell: "powershell",
+        label: "winget uninstall: 7zip.7zip",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\pasta",
+    )
+  })
+
+  it("desinstala do catálogo fechado (uninstall)", async () => {
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { toolchain: "node", action: "uninstall" },
+      "C:\\projeto",
+    )
+
+    expect(result.toolchain.action).toBe("uninstalled")
+    expect(result.toolchain.packageId).toBe("OpenJS.NodeJS.LTS")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringContaining("winget uninstall --exact --id OpenJS.NodeJS.LTS"),
+        shell: "powershell",
+        label: "winget uninstall: Node.js LTS",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\projeto",
+    )
+  })
+
+  it("recusa action inválido", async () => {
+    const { setupToolchain } = await importFresh()
+
+    // @ts-ignore - testando entrada inválida
+    await expect(
+      setupToolchain({ packageId: "7zip.7zip", action: "remover" }, "C:\\pasta"),
+    ).rejects.toMatchObject({ code: "invalid_action" })
   })
 
   it("recusa setup-toolchain sem toolchain nem packageId", async () => {

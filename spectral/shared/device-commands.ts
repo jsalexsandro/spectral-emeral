@@ -1026,6 +1026,7 @@ export type DeviceCommandInputMap = {
     toolchain?: DeviceToolchainId
     packageId?: string
     scope?: "user" | "machine"
+    action?: "install" | "uninstall"
   }
   shell: {
     script: string
@@ -1303,7 +1304,7 @@ export type DeviceToolchainResult = {
   id: string
   name: string
   packageId: string
-  action: "install" | "already_installed"
+  action: "install" | "already_installed" | "uninstalled"
   version: string | null
   jobId: string | null
 }
@@ -1593,6 +1594,21 @@ function readOptionalScope(input: unknown): "user" | "machine" | undefined {
   }
 
   return input.scope
+}
+
+function readOptionalAction(input: unknown): "install" | "uninstall" | undefined {
+  if (!isRecord(input) || input.action === undefined || input.action === null) {
+    return undefined
+  }
+
+  if (input.action !== "install" && input.action !== "uninstall") {
+    throw new DeviceCommandValidationError(
+      "invalid_action",
+      'Campo "action" deve ser "install" ou "uninstall".',
+    )
+  }
+
+  return input.action
 }
 
 function parseListApps(input: unknown): DeviceCommand {
@@ -3773,6 +3789,7 @@ export function parseDeviceCommand(
       const toolchain = readOptionalToolchainId(input)
       const packageId = readOptionalPackageId(input)
       const scope = readOptionalScope(input)
+      const action = readOptionalAction(input)
 
       if (toolchain === undefined && packageId === undefined) {
         throw new DeviceCommandValidationError(
@@ -3785,6 +3802,7 @@ export function parseDeviceCommand(
         toolchain?: DeviceToolchainId
         packageId?: string
         scope?: "user" | "machine"
+        action?: "install" | "uninstall"
       } = {}
 
       if (toolchain !== undefined) {
@@ -3797,6 +3815,10 @@ export function parseDeviceCommand(
 
       if (scope !== undefined) {
         toolchainInput.scope = scope
+      }
+
+      if (action !== undefined) {
+        toolchainInput.action = action
       }
 
       return { command, input: toolchainInput }

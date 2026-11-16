@@ -824,7 +824,7 @@ winget é montado em código a partir do catálogo, nunca pelo modelo.
 
 | Comando | Entrada | Risco |
 |---|---|---|
-| `setup-toolchain` | `{ toolchain: DeviceToolchainId }` | **install** (aprovação sempre) |
+| `setup-toolchain` | `{ toolchain?: DeviceToolchainId, packageId?: string, scope?: "user" | "machine", action?: "install" | "uninstall" }` | **install** (aprovação sempre) |
 | `get-env` | `{ refresh?: boolean }` | read |
 
 Catálogo inicial (IDs verificados com `winget search --exact` em 2026-11-16):
@@ -843,18 +843,29 @@ Catálogo inicial (IDs verificados com `winget search --exact` em 2026-11-16):
 | `dotnet` | `Microsoft.DotNet.SDK.10` | machine |
 | `java` | `Microsoft.OpenJDK.25` | machine |
 
+- `setup-toolchain` aceita tanto um `toolchain` do catálogo fechado quanto um `packageId`
+  livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`). O modelo
+  escolhe o pacote; o driver monta o argv do winget inteiro
+  (`--exact --id <id> --source winget --silent --disable-interactivity --accept-*`),
+  sem aceitar versão nem flags livres.
+- Campo `action`: `"install"` (padrão) instala o pacote; `"uninstall"` remove o pacote
+  via `winget uninstall`. Pacote já instalado (install) retorna `already_installed`
+  sem iniciar job.
+- `action: "uninstall"` não faz detecção de "já instalado" nem verificação de elevação
+  no driver (fica por conta do winget).
 - `setup-toolchain` devolve `{ toolchain: { id, name, packageId, action, version,
-  jobId }, job? }`. Runtime já detectado → `already_installed`, sem job.
+  jobId }, job? }`.
 - Risco novo `install`: sempre `approval`, inclusive em Poder Total; Modo Leitura nega.
   A auditoria usa a coluna `risk` (texto), sem migração.
-- Instalação roda por `job-start` interno (`label: "winget: <nome>"`, teto de 15 min),
-  com `--exact --id --source winget --silent --disable-interactivity --accept-*` e
-  `--scope user` quando a entrada permite. Uma instalação por vez (`toolchain_busy`).
+- Instalação/desinstalação roda por `job-start` interno (`label: "winget install: <nome>"`
+  ou `"winget uninstall: <nome>"`, teto de 15 min), com `--scope user` quando a entrada
+  permite. Uma operação por vez (`toolchain_busy`).
 - Entradas `machine` (git/go/.NET/Java) exigem driver elevado; sem elevação falham cedo
   com `elevation_required` e instrução em linguagem simples, em vez de rodar um job que
   já vai falhar.
 - Erros: `unsupported_platform` (fora do Windows), `winget_missing`,
-  `elevation_required`, `toolchain_busy`, `job_limit`.
+  `elevation_required`, `toolchain_busy`, `job_limit`, `invalid_action`,
+  `invalid_toolchain`, `invalid_package_id`, `invalid_scope`.
 - `get-env refresh: true` limpa o cache de runtimes e de shells. A detecção também
   procura caminhos absolutos conhecidos (`Program Files`, `%LOCALAPPDATA%\Programs`,
   `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `~\.cargo\bin`), porque o PATH do processo do
@@ -867,18 +878,20 @@ Catálogo inicial (IDs verificados com `winget search --exact` em 2026-11-16):
 - Prompt v42 com o playbook de "falta runtime": instalar só id do catálogo, confirmar
   com `get-env refresh`, traduzir `elevation_required`/`winget_missing` e nunca
   contornar com `device-shell` + winget.
-- **Liberdade total (implementado):** `setup-toolchain` aceita também um `packageId`
-  livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`), além do
-  id do catálogo fechado. O modelo escolhe o pacote; o driver monta o argv do winget
-  inteiro (`--exact --id <packageId> --source winget --silent ...`), sem aceitar versão
-  nem flags livres. Pacotes livres não têm detecção de "já instalado" nem verificação
-  de elevação no driver (fica por conta do winget). Escopo padrão: `user`.
+- **Liberdade total (implementado):** `setup-toolchain` aceita tanto um `toolchain`
+  do catálogo fechado quanto um `packageId` livre de qualquer pacote winget (ex.:
+  `7zip.7zip`, `Docker.DockerDesktop`). O modelo escolhe o pacote; o driver monta o
+  argv do winget inteiro (`--exact --id <packageId> --source winget --silent ...`),
+  sem aceitar versão nem flags livres. Campo `action: "install"` (padrão) instala;
+  `action: "uninstall"` remove. Pacotes livres não têm detecção de "já instalado"
+  nem verificação de elevação no driver (fica por conta do winget). Escopo padrão:
+  `user`.
 
 **Pronto quando:** um runtime ausente (ex.: `uv`) instalar em 1 chamada, o job puder ser
 acompanhado e cancelado, `get-env refresh: true` mostrar o runtime novo sem reiniciar o
 driver, runtime já instalado devolver `already_installed`, Poder Total ainda pedir
 aprovação e o Modo Leitura negar. Pacote livre (ex.: `7zip.7zip`) instalar em 1 chamada
-com `jobId`. 📝
+com `jobId`. Desinstalação via `action: "uninstall"` funcionar em 1 chamada. 📝
 
 **Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2);
 `run-snippet` (7c); macOS/Linux via brew/apt.

@@ -342,9 +342,11 @@ const LAUNCH_COMMAND_PATTERNS: RegExp[] = [
  * contornaria o catálogo fechado de `device-setup-toolchain`.
  */
 const INSTALL_COMMAND_PATTERNS: RegExp[] = [
-  /\bwinget\b/i,
-  /\bchoco\b/i,
-  /\bscoop\b/i,
+  // winget somente é instalação/desinstalação quando tem verbo de mutação.
+  // winget list, show, search, source etc. continuam como exec (leitura/consulta).
+  /\bwinget\s+(install|uninstall|upgrade|configure)\b/i,
+  /\bchoco\s+(install|upgrade)\b/i,
+  /\bscoop\s+install\b/i,
   /\bmsiexec\b/i,
   /\bnpm\s+(install|i)\b[^\n]*\s-g\b/i,
   /\bpnpm\s+(add|install)\b[^\n]*\s-g\b/i,

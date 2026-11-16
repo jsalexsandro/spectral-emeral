@@ -440,6 +440,12 @@ export const deviceSetupToolchainInputSchema = z
       .describe(
         'Escopo da instalação: "user" (só o usuário atual) ou "machine" (todos os usuários, exige elevação). Padrão: "user" para catálogo, "user" para pacotes livres.',
       ),
+    action: z
+      .enum(["install", "uninstall"])
+      .optional()
+      .describe(
+        'Ação a executar: "install" instala o pacote, "uninstall" remove o pacote. Padrão: "install".',
+      ),
   })
   .refine(
     (data) => data.toolchain !== undefined || data.packageId !== undefined,
@@ -1936,12 +1942,13 @@ const jobListDescription = [
 ].join("\n")
 
 const setupToolchainDescription = [
-  "Instala um runtime no dispositivo via winget.",
-  "Informe o `toolchain` do catálogo fechado (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`) ou um `packageId` livre de qualquer pacote winget (ex.: `7zip.7zip`). Nunca informe versão nem flags do winget: o driver monta o comando inteiro.",
+  "Instala ou desinstala um runtime no dispositivo via winget.",
+  "Informe o `toolchain` do catálogo fechado (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`) ou um `packageId` livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`). Nunca informe versão nem flags do winget: o driver monta o comando inteiro.",
+  "Use `action: \"install\"` (padrão) para instalar ou `action: \"uninstall\"` para remover o pacote.",
   "O resultado devolve um `jobId`: acompanhe com `device-job-status` e `device-job-output`.",
-  "Depois do job, confirme a instalação com `device-env` passando `refresh: true`.",
-  "Runtime já instalado retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro.",
-  "Instalação de software exige aprovação caso a caso, salvo quando o dispositivo está em Poder Total com a opção 'Instalação de software sem confirmação' ligada. O Modo Leitura nega instalação sempre.",
+  "Depois do job, confirme a instalação/desinstalação com `device-env` passando `refresh: true`.",
+  "Pacote já instalado (install) retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro.",
+  "Instalação e desinstalação de software exigem aprovação caso a caso, salvo quando o dispositivo está em Poder Total com a opção 'Instalação de software sem confirmação' ligada. O Modo Leitura nega sempre.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -3867,7 +3874,7 @@ export function createDeviceTools(
     [DEVICE_SETUP_TOOLCHAIN_TOOL_NAME]: tool({
       description: setupToolchainDescription,
       inputSchema: deviceSetupToolchainInputSchema,
-      execute: async ({ deviceId, toolchain, packageId, scope }) => {
+      execute: async ({ deviceId, toolchain, packageId, scope, action }) => {
         try {
           return await runCommand(deviceId, {
             command: "setup-toolchain",
@@ -3875,6 +3882,7 @@ export function createDeviceTools(
               ...(toolchain !== undefined ? { toolchain } : {}),
               ...(packageId !== undefined ? { packageId } : {}),
               ...(scope !== undefined ? { scope } : {}),
+              ...(action !== undefined ? { action } : {}),
             },
           })
         } catch (error) {

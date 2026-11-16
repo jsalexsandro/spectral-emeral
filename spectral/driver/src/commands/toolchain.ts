@@ -15,7 +15,7 @@ type ToolchainEntry = {
   id: string
   name: string
   packageId: string
-  /** `user` instala só para o usuário atual; `machine` exige elevação. */
+  /** `user` instala/desinstala só para o usuário atual; `machine` exige elevação. */
   scope: "user" | "machine"
   /** Comandos usados para detectar se já está instalado. */
   detect: string[]
@@ -151,9 +151,9 @@ async function detectEntryVersion(entry: ToolchainEntry): Promise<string | null>
 }
 
 /**
- * Instalação em andamento no driver. winget usa um lock próprio e duas
- * instalações simultâneas brigam, então serializamos pelo menos durante a
- * largada do job (`startJob`). O modelo acompanha o restante via `job-output`.
+ * Instalação/desinstalação em andamento no driver. winget usa um lock próprio
+ * e duas operações simultâneas brigam, então serializamos pelo menos durante
+ * a largada do job (`startJob`). O modelo acompanha o restante via `job-output`.
  */
 let installing: Promise<DeviceJob> | null = null
 
@@ -164,13 +164,15 @@ function isInstalling(): boolean {
 async function buildWingetScript({
   packageId,
   scope,
+  action,
 }: {
   packageId: string
   scope: "user" | "machine"
+  action: "install" | "uninstall"
 }): Promise<string> {
   const args = [
     "winget",
-    "install",
+    action,
     "--exact",
     "--id",
     packageId,
@@ -192,17 +194,18 @@ async function buildWingetScript({
 }
 
 /**
- * Instala (ou confirma já instalado) um runtime via winget.
+ * Instala ou desinstala um runtime via winget.
  * Aceita um id do catálogo fechado (`toolchain`) ou um `packageId` livre
  * (qualquer pacote do winget). O modelo escolhe; o driver monta o argv.
- * Quando `packageId` livre é usado, não há detecção de "já instalado" nem
- * nome amigável: o `packageId` serve de nome e a instalação roda direto.
+ * Quando `action` é "uninstall", não há detecção de "já instalado" nem
+ * verificação de elevação no driver (fica por conta do winget).
  */
 export async function setupToolchain(
   input: {
     toolchain?: DeviceToolchainId
     packageId?: string
     scope?: "user" | "machine"
+    action?: "install" | "uninstall"
   },
   defaultFolder?: string,
 ): Promise<{ toolchain: DeviceToolchainResult; jobId: string | null }> {
@@ -225,7 +228,16 @@ export async function setupToolchain(
   if (isInstalling()) {
     throw new DeviceToolchainError(
       "toolchain_busy",
-      "Já existe uma instalação de runtime em andamento. Espere o job terminar.",
+      "Já existe uma instalação/desinstalação de runtime em andamento. Espere o job terminar.",
+    )
+  }
+
+  const action = input.action ?? "install"
+
+  if (action !== "install" && action !== "uninstall") {
+    throw new DeviceToolchainError(
+      "invalid_action",
+      'Campo "action" deve ser "install" ou "uninstall".',
     )
   }
 
@@ -253,8 +265,8 @@ export async function setupToolchain(
     )
   }
 
-  // Para pacotes do catálogo fechado, verifica se já está instalado.
-  if (input.toolchain) {
+  // Para pacotes do catálogo fechado em instalação, verifica se já está instalado.
+  if (action === "install" && input.toolchain) {
     const version = await detectEntryVersion(entry)
 
     if (version !== null) {
@@ -279,15 +291,17 @@ export async function setupToolchain(
     }
   }
 
-  // Para pacotes livres (`packageId`), a verificação de elevação fica por conta
-  // do próprio winget; o driver apenas dispara o job.
-  const script = await buildWingetScript({ packageId: entry.packageId, scope })
+  const script = await buildWingetScript({
+    packageId: entry.packageId,
+    scope,
+    action,
+  })
 
   installing = startJob(
     {
       script,
       shell: "powershell",
-      label: `winget: ${entry.name}`,
+      label: `winget ${action}: ${entry.name}`,
       maxRuntimeMs: DEVICE_TOOLCHAIN_JOB_MAX_RUNTIME_MS,
     },
     defaultFolder,
@@ -301,7 +315,7 @@ export async function setupToolchain(
         id: entry.id,
         name: entry.name,
         packageId: entry.packageId,
-        action: "install",
+        action: action === "install" ? "install" : "uninstalled",
         version: null,
         jobId: snapshot.id,
       },
@@ -312,7 +326,7 @@ export async function setupToolchain(
   }
 }
 
-/** Testa se há instalação em andamento (exposto para testes). */
+/** Testa se há instalação/desinstalação em andamento (exposto para testes). */
 export function isToolchainInstalling(): boolean {
   return isInstalling()
 }

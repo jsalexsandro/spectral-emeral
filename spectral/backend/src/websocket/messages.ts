@@ -514,7 +514,7 @@ export const commandResultMessageSchema = z.object({
           id: z.string().min(1).max(120),
           name: z.string().min(1).max(120),
           packageId: z.string().min(1).max(120),
-          action: z.enum(["install", "already_installed"]),
+          action: z.enum(["install", "already_installed", "uninstalled"]),
           version: z.string().max(120).nullable(),
           jobId: z.string().max(128).nullable(),
         })
