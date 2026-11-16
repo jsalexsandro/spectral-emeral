@@ -265,6 +265,160 @@ export const commandResultMessageSchema = z.object({
           size: z.number().int().nonnegative(),
         })
         .optional(),
+      files: z
+        .array(
+          z.union([
+            z.object({
+              path: z.string().min(1).max(1024),
+              file: z.object({
+                path: z.string().min(1).max(1024),
+                content: z.string().max(80_000),
+                startLine: z.number().int().nonnegative(),
+                endLine: z.number().int().nonnegative(),
+                totalLines: z.number().int().nonnegative(),
+                truncated: z.boolean(),
+                size: z.number().int().nonnegative(),
+              }),
+            }),
+            z.object({
+              path: z.string().min(1).max(1024),
+              code: z.string().min(1).max(64),
+              error: z.string().min(1).max(1000),
+            }),
+          ]),
+        )
+        .max(20)
+        .optional(),
+      writes: z
+        .array(
+          z.object({
+            path: z.string().min(1).max(1024),
+            size: z.number().int().nonnegative(),
+            created: z.boolean(),
+          }),
+        )
+        .max(20)
+        .optional(),
+      written: z.number().int().nonnegative().optional(),
+      failed: z
+        .array(
+          z.object({
+            path: z.string().min(1).max(1024),
+            code: z.string().min(1).max(64),
+            error: z.string().min(1).max(1000),
+          }),
+        )
+        .max(20)
+        .optional(),
+      totalBytes: z.number().int().nonnegative().optional(),
+      project: z
+        .object({
+          root: z.string().min(1).max(1024),
+          name: z.string().max(255).nullable(),
+          stack: z.object({
+            language: z.string().max(64).nullable(),
+            framework: z.string().max(64).nullable(),
+            packageManager: z.string().max(64).nullable(),
+          }),
+          manifests: z
+            .array(
+              z.object({
+                path: z.string().min(1).max(1024),
+                kind: z.string().min(1).max(64),
+              }),
+            )
+            .max(100),
+          scripts: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(120),
+                command: z.string().max(1024),
+              }),
+            )
+            .max(200),
+          engines: z.record(z.string().max(64), z.string().max(120)).nullable(),
+          pinned: z
+            .array(
+              z.object({
+                tool: z.string().min(1).max(64),
+                version: z.string().min(1).max(120),
+                source: z.string().min(1).max(120),
+              }),
+            )
+            .max(100),
+          dependencies: z.object({
+            installed: z.boolean().nullable(),
+            manager: z.string().max(120).nullable(),
+          }),
+          git: z
+            .object({
+              branch: z.string().min(1).max(255),
+              upstream: z.string().max(255).nullable(),
+              ahead: z.number().int().nonnegative(),
+              behind: z.number().int().nonnegative(),
+              dirty: z.boolean(),
+              changedFiles: z.number().int().nonnegative(),
+              lastCommit: z
+                .object({
+                  hash: z.string().min(1).max(128),
+                  subject: z.string().max(1000),
+                  date: z.string().max(64),
+                })
+                .nullable(),
+            })
+            .nullable(),
+          entries: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(255),
+                path: z.string().min(1).max(1024),
+                type: z.enum(["file", "directory", "symlink", "other"]),
+                size: z.number().int().nonnegative().nullable(),
+                modifiedAt: z.string().max(64).nullable(),
+              }),
+            )
+            .max(200),
+          warnings: z.array(z.string().max(1000)).max(50),
+        })
+        .optional(),
+      gitStatus: z
+        .object({
+          root: z.string().min(1).max(1024),
+          branch: z.string().min(1).max(255),
+          upstream: z.string().max(255).nullable(),
+          ahead: z.number().int().nonnegative(),
+          behind: z.number().int().nonnegative(),
+          clean: z.boolean(),
+          counts: z.object({
+            staged: z.number().int().nonnegative(),
+            unstaged: z.number().int().nonnegative(),
+            untracked: z.number().int().nonnegative(),
+            conflicted: z.number().int().nonnegative(),
+          }),
+          files: z
+            .array(
+              z.object({
+                path: z.string().min(1).max(1024),
+                status: z.string().min(1).max(8),
+                staged: z.boolean(),
+              }),
+            )
+            .max(200),
+          truncated: z.boolean(),
+        })
+        .nullable()
+        .optional(),
+      gitDiff: z
+        .object({
+          root: z.string().min(1).max(1024),
+          filesChanged: z.number().int().nonnegative(),
+          additions: z.number().int().nonnegative(),
+          deletions: z.number().int().nonnegative(),
+          diff: z.string().max(250_000),
+          truncated: z.boolean(),
+        })
+        .nullable()
+        .optional(),
       paths: z.array(z.string().min(1).max(1024)).max(200).optional(),
       matches: z
         .array(

@@ -134,11 +134,30 @@ export function collectFilePaths(toolName: string, input: unknown): string[] {
     }
   }
 
+  const pushList = (value: unknown) => {
+    if (!Array.isArray(value)) {
+      return
+    }
+
+    for (const item of value) {
+      if (typeof item === "string") {
+        push(item)
+        continue
+      }
+
+      if (typeof item === "object" && item !== null) {
+        push((item as Record<string, unknown>).path)
+      }
+    }
+  }
+
   if (toolName === "device-copy" || toolName === "device-move") {
     push(record.from)
     push(record.to)
   } else {
     push(record.path)
+    pushList(record.files)
+    pushList(record.paths)
   }
 
   return paths
@@ -155,6 +174,10 @@ const READ_TOOLS = new Set<string>([
   "device-read-clipboard",
   "device-list-files",
   "device-read-file",
+  "device-read-files",
+  "device-project-info",
+  "device-git-status",
+  "device-git-diff",
   "device-glob",
   "device-grep",
   "device-stat",
@@ -192,6 +215,7 @@ const INPUT_TOOLS = new Set<string>([
 const WRITE_TOOLS = new Set<string>([
   "device-write-clipboard",
   "device-write-file",
+  "device-write-files",
   "device-edit-file",
   "device-mkdir",
   "device-copy",
@@ -204,6 +228,7 @@ const WRITE_TOOLS = new Set<string>([
 /** Tools que gravam arquivos no disco: escrita fora do home vira destrutiva. */
 const FILE_WRITE_TOOLS = new Set<string>([
   "device-write-file",
+  "device-write-files",
   "device-edit-file",
   "device-mkdir",
   "device-copy",

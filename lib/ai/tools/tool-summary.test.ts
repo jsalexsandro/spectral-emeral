@@ -5,6 +5,8 @@ import {
   DEVICE_COPY_TOOL_NAME,
   DEVICE_DELETE_TOOL_NAME,
   DEVICE_DRAG_TOOL_NAME,
+  DEVICE_GIT_DIFF_TOOL_NAME,
+  DEVICE_GIT_STATUS_TOOL_NAME,
   DEVICE_INSPECT_UI_TOOL_NAME,
   DEVICE_LIST_WINDOWS_TOOL_NAME,
   DEVICE_MKDIR_TOOL_NAME,
@@ -13,12 +15,15 @@ import {
   DEVICE_OPEN_PATH_TOOL_NAME,
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
+  DEVICE_PROJECT_INFO_TOOL_NAME,
+  DEVICE_READ_FILES_TOOL_NAME,
   DEVICE_REGISTER_APP_TOOL_NAME,
   DEVICE_REMOVE_APP_TOOL_NAME,
   DEVICE_STAT_TOOL_NAME,
   DEVICE_TYPE_TEXT_TOOL_NAME,
   DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
+  DEVICE_WRITE_FILES_TOOL_NAME,
 } from "./device-tools"
 import { summarizeToolInput } from "./tool-summary"
 
@@ -243,6 +248,62 @@ describe("summarizeToolInput", () => {
         patches: [{ oldText: "a", newText: "b" }],
       }),
     ).toBe("~/a.ts · 1 patch")
+  })
+
+  it("resume lotes de leitura e escrita", () => {
+    expect(
+      summarizeToolInput(DEVICE_READ_FILES_TOOL_NAME, {
+        paths: ["src/a.ts", "src/b.ts"],
+      }),
+    ).toBe("2 arquivos")
+    expect(
+      summarizeToolInput(DEVICE_READ_FILES_TOOL_NAME, { paths: ["src/a.ts"] }),
+    ).toBe("1 arquivo · src/a.ts")
+    expect(
+      summarizeToolInput(DEVICE_WRITE_FILES_TOOL_NAME, {
+        files: [
+          { path: "src/a.ts", content: "a".repeat(300) },
+          { path: "src/b.ts", content: "b".repeat(724) },
+        ],
+      }),
+    ).toBe("2 arquivos · 1 KB")
+    expect(
+      summarizeToolInput(DEVICE_WRITE_FILES_TOOL_NAME, {
+        files: [{ path: "src/a.ts", content: "abc" }],
+      }),
+    ).toBe("1 arquivo · 3 B")
+  })
+
+  it("resume projeto e git", () => {
+    expect(
+      summarizeToolInput(DEVICE_PROJECT_INFO_TOOL_NAME, {
+        path: "C:\\projetos\\app",
+      }),
+    ).toBe("C:\\projetos\\app")
+    expect(summarizeToolInput(DEVICE_PROJECT_INFO_TOOL_NAME, {})).toBe(
+      "raio-x do projeto",
+    )
+
+    expect(summarizeToolInput(DEVICE_GIT_STATUS_TOOL_NAME, {})).toBe(
+      "repositório",
+    )
+    expect(
+      summarizeToolInput(DEVICE_GIT_STATUS_TOOL_NAME, {
+        path: "~/app",
+        includeUntracked: false,
+      }),
+    ).toBe("~/app · sem não rastreados")
+
+    expect(summarizeToolInput(DEVICE_GIT_DIFF_TOOL_NAME, { context: 3 })).toBe(
+      "local · contexto 3",
+    )
+    expect(
+      summarizeToolInput(DEVICE_GIT_DIFF_TOOL_NAME, {
+        staged: true,
+        file: "src/a.ts",
+        context: 5,
+      }),
+    ).toBe("staged · src/a.ts · contexto 5")
   })
 
   it("retorna vazio quando não há argumentos", () => {

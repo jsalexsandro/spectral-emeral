@@ -67,6 +67,13 @@ import {
   DEVICE_FILE_EDIT_MAX_OLD_TEXT,
   DEVICE_FILE_EDIT_MAX_NEW_TEXT,
   DEVICE_FILE_PATCH_MAX_COUNT,
+  DEVICE_FILES_BATCH_MAX,
+  DEVICE_READ_FILES_TOTAL_BYTES_MAX,
+  DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
+  DEVICE_GIT_CONTEXT_DEFAULT,
+  DEVICE_GIT_CONTEXT_MAX,
+  DEVICE_GIT_CONTEXT_MIN,
+  DEVICE_GIT_DIFF_MAX_BYTES,
   DEVICE_RUN_TIMEOUT_DEFAULT_MS,
   DEVICE_RUN_TIMEOUT_MAX_MS,
   DEVICE_RUN_ARGS_MAX_LENGTH,
@@ -167,10 +174,15 @@ export const DEVICE_SCROLL_TOOL_NAME = "device-scroll"
 export const DEVICE_DRAG_TOOL_NAME = "device-drag"
 export const DEVICE_LIST_FILES_TOOL_NAME = "device-list-files"
 export const DEVICE_READ_FILE_TOOL_NAME = "device-read-file"
+export const DEVICE_READ_FILES_TOOL_NAME = "device-read-files"
+export const DEVICE_PROJECT_INFO_TOOL_NAME = "device-project-info"
+export const DEVICE_GIT_STATUS_TOOL_NAME = "device-git-status"
+export const DEVICE_GIT_DIFF_TOOL_NAME = "device-git-diff"
 export const DEVICE_GLOB_TOOL_NAME = "device-glob"
 export const DEVICE_GREP_TOOL_NAME = "device-grep"
 export const DEVICE_CHECK_ADMIN_TOOL_NAME = "device-check-admin"
 export const DEVICE_WRITE_FILE_TOOL_NAME = "device-write-file"
+export const DEVICE_WRITE_FILES_TOOL_NAME = "device-write-files"
 export const DEVICE_EDIT_FILE_TOOL_NAME = "device-edit-file"
 export const DEVICE_MKDIR_TOOL_NAME = "device-mkdir"
 export const DEVICE_STAT_TOOL_NAME = "device-stat"
@@ -1137,6 +1149,75 @@ export const deviceReadFileInputSchema = z.object({
     .default(DEVICE_FILE_READ_LINES_DEFAULT),
 })
 
+export const deviceReadFilesInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  paths: z
+    .array(z.string().min(1).max(DEVICE_PATH_MAX_LENGTH))
+    .min(1)
+    .max(DEVICE_FILES_BATCH_MAX)
+    .describe(
+      `Arquivos a ler em uma única chamada (máximo ${DEVICE_FILES_BATCH_MAX}, até ${Math.round(DEVICE_READ_FILES_TOTAL_BYTES_MAX / 1024)} KB no total).`,
+    ),
+  offset: z
+    .number()
+    .int()
+    .min(DEVICE_FILE_READ_OFFSET_MIN)
+    .max(DEVICE_FILE_READ_OFFSET_MAX)
+    .default(DEVICE_FILE_READ_OFFSET_DEFAULT),
+  limit: z
+    .number()
+    .int()
+    .min(DEVICE_FILE_READ_LINES_MIN)
+    .max(DEVICE_FILE_READ_LINES_MAX)
+    .default(DEVICE_FILE_READ_LINES_DEFAULT),
+})
+
+export const deviceProjectInfoInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z
+    .string()
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .optional()
+    .describe(
+      "Pasta de onde começar o raio-x. Padrão: pasta de usuário. Sobe até 5 níveis procurando o manifesto do projeto.",
+    ),
+})
+
+export const deviceGitStatusInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().max(DEVICE_PATH_MAX_LENGTH).optional(),
+  includeUntracked: z
+    .boolean()
+    .default(true)
+    .describe("Inclui arquivos não rastreados no resultado."),
+})
+
+export const deviceGitDiffInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  path: z.string().max(DEVICE_PATH_MAX_LENGTH).optional(),
+  staged: z
+    .boolean()
+    .default(false)
+    .describe("Mostra o diff já preparado (staged) em vez das mudanças locais."),
+  file: z
+    .string()
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .optional()
+    .describe("Limita o diff a um arquivo ou pasta (pathspec)."),
+  context: z
+    .number()
+    .int()
+    .min(DEVICE_GIT_CONTEXT_MIN)
+    .max(DEVICE_GIT_CONTEXT_MAX)
+    .default(DEVICE_GIT_CONTEXT_DEFAULT),
+  maxBytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICE_GIT_DIFF_MAX_BYTES)
+    .default(DEVICE_GIT_DIFF_MAX_BYTES),
+})
+
 export const deviceGlobInputSchema = z.object({
   deviceId: deviceIdSchema,
   pattern: z.string().max(DEVICE_PATTERN_MAX_LENGTH),
@@ -1172,6 +1253,22 @@ export const deviceWriteFileInputSchema = z.object({
   deviceId: deviceIdSchema,
   path: z.string().max(DEVICE_PATH_MAX_LENGTH),
   content: z.string().max(DEVICE_FILE_WRITE_MAX_BYTES),
+})
+
+export const deviceWriteFilesInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(DEVICE_PATH_MAX_LENGTH),
+        content: z.string().max(DEVICE_FILE_WRITE_MAX_BYTES),
+      }),
+    )
+    .min(1)
+    .max(DEVICE_FILES_BATCH_MAX)
+    .describe(
+      `Arquivos a gravar em uma chamada (máximo ${DEVICE_FILES_BATCH_MAX}, até ${Math.round(DEVICE_WRITE_FILES_TOTAL_BYTES_MAX / (1024 * 1024))} MB no total). O lote inteiro é validado antes de gravar qualquer arquivo.`,
+    ),
 })
 
 export const deviceEditFileInputSchema = z.object({
@@ -1497,6 +1594,22 @@ function toCommandToolResult(
     ...(output.result.os ? { os: output.result.os } : {}),
     ...(output.result.entries ? { entries: output.result.entries } : {}),
     ...(output.result.file ? { file: output.result.file } : {}),
+    ...(output.result.files ? { files: output.result.files } : {}),
+    ...(output.result.writes ? { writes: output.result.writes } : {}),
+    ...(output.result.written !== undefined
+      ? { written: output.result.written }
+      : {}),
+    ...(output.result.failed ? { failed: output.result.failed } : {}),
+    ...(output.result.totalBytes !== undefined
+      ? { totalBytes: output.result.totalBytes }
+      : {}),
+    ...(output.result.project ? { project: output.result.project } : {}),
+    ...(output.result.gitStatus !== undefined
+      ? { gitStatus: output.result.gitStatus }
+      : {}),
+    ...(output.result.gitDiff !== undefined
+      ? { gitDiff: output.result.gitDiff }
+      : {}),
     ...(output.result.paths ? { paths: output.result.paths } : {}),
     ...(output.result.matches ? { matches: output.result.matches } : {}),
     ...(output.result.truncated !== undefined
@@ -1853,6 +1966,36 @@ const readFileDescription = [
   "Não lê arquivos binários nem arquivos maiores que 1 MB.",
 ].join("\n")
 
+const readFilesDescription = [
+  "Lê vários arquivos de texto em uma única chamada de um dispositivo online.",
+  "Prefira esta tool a repetidas chamadas de device-read-file: só há um comando em voo por PC.",
+  `Aceita até ${DEVICE_FILES_BATCH_MAX} caminhos, ${Math.round(DEVICE_READ_FILES_TOTAL_BYTES_MAX / 1024)} KB no total e 2000 linhas por arquivo.`,
+  "Devolve `files` na ordem pedida: cada item tem o conteúdo lido ou `code`/`error` quando aquele arquivo falhou; o restante do lote continua.",
+  "Use `offset` e `limit` para paginar arquivos grandes; `truncated` indica corte por limite.",
+].join("\n")
+
+const projectInfoDescription = [
+  "Faz um raio-x do projeto em uma pasta: stack, gerenciador de pacotes, scripts, versões pinadas e estado do git.",
+  "Detecta Node/TypeScript, Python, Rust, Go, .NET, Java/Kotlin, Ruby e PHP por manifestos e lockfiles; sobe até 5 níveis para achar a raiz.",
+  "Use antes de rodar comandos para saber o que instalar, como rodar os scripts (`pnpm dev`, `cargo test`) e se as dependências já estão instaladas.",
+  "Devolve `root`, `stack`, `manifests`, `scripts`, `engines`, `pinned`, `dependencies`, `git`, `entries` e `warnings` com o que pode dar errado.",
+  "Só lê arquivos e metadados: não instala nem altera nada.",
+].join("\n")
+
+const gitStatusDescription = [
+  "Lê o estado do repositório git de uma pasta, sem shell e sem alterar nada.",
+  "Devolve `branch`, `upstream`, `ahead`, `behind`, `clean`, contagens (`staged`, `unstaged`, `untracked`, `conflicted`) e a lista de arquivos com o par XY do porcelain.",
+  "Use antes de commitar para ver o que está preparado e o que ficou de fora; use `includeUntracked: false` para ignorar não rastreados.",
+  "Devolve `gitStatus: null` quando a pasta não está em um repositório.",
+].join("\n")
+
+const gitDiffDescription = [
+  "Mostra o diff do git de uma pasta, somente leitura, com contagem por arquivo.",
+  "`staged: true` lê o que já está preparado; o padrão lê as mudanças locais. `file` limita a um caminho e `context` controla as linhas de contexto.",
+  "Devolve `filesChanged`, `additions`, `deletions`, o patch em `diff` (cortado em `maxBytes`) e `truncated`.",
+  "Devolve `gitDiff: null` fora de um repositório.",
+].join("\n")
+
 const globDescription = [
   "Busca arquivos por padrão (glob) em um dispositivo online.",
   "Exemplo de padrão: `*.md`, `src/**/*.ts`, `Documentos/*.txt`.",
@@ -1878,6 +2021,14 @@ const writeFileDescription = [
   "Cria o arquivo se não existir, sobrescreve se já existir.",
   "Use `device-list-files` ou `device-glob` para descobrir caminhos válidos.",
   "O arquivo não pode exceder 1 MB.",
+].join("\n")
+
+const writeFilesDescription = [
+  "Grava vários arquivos de texto em uma única chamada, criando os diretórios intermediários.",
+  "Prefira esta tool a repetidas chamadas de device-write-file: só há um comando em voo por PC.",
+  `Aceita até ${DEVICE_FILES_BATCH_MAX} arquivos, 1 MB por arquivo e ${Math.round(DEVICE_WRITE_FILES_TOTAL_BYTES_MAX / (1024 * 1024))} MB no total. O lote inteiro é validado antes de gravar qualquer arquivo.`,
+  "Sobrescreve sempre, como device-write-file; cada item de `writes` traz `created: true/false` para indicar se o arquivo é novo.",
+  "Caminhos protegidos são recusados e nenhum arquivo do lote é gravado nesse caso.",
 ].join("\n")
 
 const editFileDescription = [
@@ -2761,6 +2912,90 @@ export function createDeviceTools(
         }
       },
     }),
+    [DEVICE_READ_FILES_TOOL_NAME]: tool({
+      description: readFilesDescription,
+      inputSchema: deviceReadFilesInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "read-files",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-read-files.",
+          }
+        }
+      },
+    }),
+    [DEVICE_PROJECT_INFO_TOOL_NAME]: tool({
+      description: projectInfoDescription,
+      inputSchema: deviceProjectInfoInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "project-info",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-project-info.",
+          }
+        }
+      },
+    }),
+    [DEVICE_GIT_STATUS_TOOL_NAME]: tool({
+      description: gitStatusDescription,
+      inputSchema: deviceGitStatusInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "git-status",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-git-status.",
+          }
+        }
+      },
+    }),
+    [DEVICE_GIT_DIFF_TOOL_NAME]: tool({
+      description: gitDiffDescription,
+      inputSchema: deviceGitDiffInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "git-diff",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-git-diff.",
+          }
+        }
+      },
+    }),
     [DEVICE_GLOB_TOOL_NAME]: tool({
       description: globDescription,
       inputSchema: deviceGlobInputSchema,
@@ -2841,6 +3076,27 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-write-file.",
+          }
+        }
+      },
+    }),
+    [DEVICE_WRITE_FILES_TOOL_NAME]: tool({
+      description: writeFilesDescription,
+      inputSchema: deviceWriteFilesInputSchema,
+      execute: async ({ deviceId, ...input }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "write-files",
+            input,
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-write-files.",
           }
         }
       },

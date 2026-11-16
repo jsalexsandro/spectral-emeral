@@ -26,7 +26,12 @@ const DEVICE_FIND_APP = "device-find-app"
 const DEVICE_WRITE_CLIPBOARD = "device-write-clipboard"
 const DEVICE_LIST_FILES = "device-list-files"
 const DEVICE_READ_FILE = "device-read-file"
+const DEVICE_READ_FILES = "device-read-files"
+const DEVICE_PROJECT_INFO = "device-project-info"
+const DEVICE_GIT_STATUS = "device-git-status"
+const DEVICE_GIT_DIFF = "device-git-diff"
 const DEVICE_WRITE_FILE = "device-write-file"
+const DEVICE_WRITE_FILES = "device-write-files"
 const DEVICE_EDIT_FILE = "device-edit-file"
 const DEVICE_MKDIR = "device-mkdir"
 const DEVICE_STAT = "device-stat"
@@ -97,6 +102,34 @@ function formatValue(value: unknown): string {
 
 function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part)).join(" · ")
+}
+
+function countWord(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".0", "")} MB`
+}
+
+function textBytes(value: unknown): number {
+  if (typeof value !== "string" || value.length === 0) {
+    return 0
+  }
+
+  try {
+    return new TextEncoder().encode(value).length
+  } catch {
+    return value.length
+  }
 }
 
 function point(record: InputRecord, key: string): string | undefined {
@@ -353,6 +386,60 @@ export function summarizeToolInput(
           : undefined,
       ])
       break
+
+    case DEVICE_READ_FILES: {
+      const paths = Array.isArray(record.paths) ? record.paths : []
+      const first = paths[0]
+
+      summary = joinParts([
+        countWord(paths.length, "arquivo", "arquivos"),
+        paths.length === 1 && typeof first === "string" ? first : undefined,
+      ])
+      break
+    }
+
+    case DEVICE_PROJECT_INFO:
+      summary = joinParts([
+        readString(record, "path") ?? "raio-x do projeto",
+      ])
+      break
+
+    case DEVICE_GIT_STATUS:
+      summary = joinParts([
+        readString(record, "path") ?? "repositório",
+        record.includeUntracked === false ? "sem não rastreados" : undefined,
+      ])
+      break
+
+    case DEVICE_GIT_DIFF: {
+      const context = readNumber(record, "context")
+
+      summary = joinParts([
+        record.staged === true ? "staged" : "local",
+        readString(record, "file") ?? readString(record, "path"),
+        context !== undefined ? `contexto ${context}` : undefined,
+      ])
+      break
+    }
+
+    case DEVICE_WRITE_FILES: {
+      const files = Array.isArray(record.files) ? record.files : []
+      let bytes = 0
+
+      for (const item of files) {
+        const file = asRecord(item)
+
+        if (file) {
+          bytes += textBytes(file.content)
+        }
+      }
+
+      summary = joinParts([
+        countWord(files.length, "arquivo", "arquivos"),
+        bytes > 0 ? formatBytes(bytes) : undefined,
+      ])
+      break
+    }
 
     case DEVICE_WRITE_FILE:
     case DEVICE_EDIT_FILE:

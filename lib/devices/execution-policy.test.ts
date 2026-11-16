@@ -88,7 +88,18 @@ describe("device tool risk classification", () => {
       "destructive",
     )
     expect(classifyDeviceToolRisk("device-stat", {})).toBe("read")
+    expect(classifyDeviceToolRisk("device-read-files", { paths: ["a.ts"] })).toBe(
+      "read",
+    )
+    expect(classifyDeviceToolRisk("device-project-info", {})).toBe("read")
+    expect(classifyDeviceToolRisk("device-git-status", {})).toBe("read")
+    expect(classifyDeviceToolRisk("device-git-diff", {})).toBe("read")
     expect(classifyDeviceToolRisk("device-mkdir", {})).toBe("write")
+    expect(
+      classifyDeviceToolRisk("device-write-files", {
+        files: [{ path: "a.ts", content: "x" }],
+      }),
+    ).toBe("write")
     expect(classifyDeviceToolRisk("device-copy", {})).toBe("write")
     expect(classifyDeviceToolRisk("device-move", {})).toBe("write")
     expect(classifyDeviceToolRisk("device-apply-patch", {})).toBe("write")
@@ -254,6 +265,24 @@ describe("device tool risk classification", () => {
     ).toBe("destructive")
     expect(
       classifyDeviceToolRisk("device-apply-patch", { path: "D:\\projeto\\code.ts", patches: [] }),
+    ).toBe("destructive")
+
+    // Lote de escrita: qualquer caminho fora do home eleva o lote inteiro.
+    expect(
+      classifyDeviceToolRisk("device-write-files", {
+        files: [
+          { path: `${home}\\a.ts`, content: "x" },
+          { path: `${home}\\b.ts`, content: "y" },
+        ],
+      }),
+    ).toBe("write")
+    expect(
+      classifyDeviceToolRisk("device-write-files", {
+        files: [
+          { path: `${home}\\a.ts`, content: "x" },
+          { path: "D:\\fora.ts", content: "y" },
+        ],
+      }),
     ).toBe("destructive")
 
     // device-delete continua sempre destrutivo, independente do caminho

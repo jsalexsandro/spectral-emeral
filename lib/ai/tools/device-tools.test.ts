@@ -11,6 +11,10 @@ import {
   DEVICE_OPEN_URL_TOOL_NAME,
   DEVICE_PRESS_KEY_TOOL_NAME,
   DEVICE_READ_FILE_TOOL_NAME,
+  DEVICE_READ_FILES_TOOL_NAME,
+  DEVICE_PROJECT_INFO_TOOL_NAME,
+  DEVICE_GIT_STATUS_TOOL_NAME,
+  DEVICE_GIT_DIFF_TOOL_NAME,
   DEVICE_REGISTER_APP_TOOL_NAME,
   DEVICE_REMOVE_APP_TOOL_NAME,
   DEVICE_TYPE_TEXT_TOOL_NAME,
@@ -18,6 +22,7 @@ import {
   DEVICE_GREP_TOOL_NAME,
   DEVICE_CHECK_ADMIN_TOOL_NAME,
   DEVICE_WRITE_FILE_TOOL_NAME,
+  DEVICE_WRITE_FILES_TOOL_NAME,
   DEVICE_EDIT_FILE_TOOL_NAME,
   DEVICE_MKDIR_TOOL_NAME,
   DEVICE_STAT_TOOL_NAME,
@@ -72,6 +77,11 @@ import {
   devicePressKeyInputSchema,
   deviceListFilesInputSchema,
   deviceReadFileInputSchema,
+  deviceReadFilesInputSchema,
+  deviceProjectInfoInputSchema,
+  deviceGitStatusInputSchema,
+  deviceGitDiffInputSchema,
+  deviceWriteFilesInputSchema,
   deviceGlobInputSchema,
   deviceGrepInputSchema,
   deviceCheckAdminInputSchema,
@@ -153,10 +163,15 @@ describe("device tools", () => {
         DEVICE_PRESS_KEY_TOOL_NAME,
         DEVICE_LIST_FILES_TOOL_NAME,
         DEVICE_READ_FILE_TOOL_NAME,
+        DEVICE_READ_FILES_TOOL_NAME,
+        DEVICE_PROJECT_INFO_TOOL_NAME,
+        DEVICE_GIT_STATUS_TOOL_NAME,
+        DEVICE_GIT_DIFF_TOOL_NAME,
         DEVICE_GLOB_TOOL_NAME,
         DEVICE_GREP_TOOL_NAME,
         DEVICE_CHECK_ADMIN_TOOL_NAME,
         DEVICE_WRITE_FILE_TOOL_NAME,
+        DEVICE_WRITE_FILES_TOOL_NAME,
         DEVICE_EDIT_FILE_TOOL_NAME,
         DEVICE_MKDIR_TOOL_NAME,
         DEVICE_STAT_TOOL_NAME,
@@ -466,6 +481,108 @@ describe("device tools", () => {
         deviceId: "device-1",
         path: "notas.txt",
         limit: 2001,
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida os lotes de leitura e escrita", () => {
+    const read = deviceReadFilesInputSchema.safeParse({
+      deviceId: "device-1",
+      paths: ["a.ts", "b.ts"],
+    })
+
+    expect(read.success).toBe(true)
+    expect(read.success ? read.data : null).toMatchObject({
+      paths: ["a.ts", "b.ts"],
+      offset: 1,
+      limit: 2000,
+    })
+
+    expect(
+      deviceReadFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        paths: [],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceReadFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        paths: Array.from({ length: 21 }, (_, index) => `arquivo-${index}.ts`),
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWriteFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        files: [
+          { path: "a.ts", content: "um" },
+          { path: "b.ts", content: "dois" },
+        ],
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceWriteFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        files: [],
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWriteFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        files: Array.from({ length: 21 }, (_, index) => ({
+          path: `arquivo-${index}.ts`,
+          content: "x",
+        })),
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceWriteFilesInputSchema.safeParse({
+        deviceId: "device-1",
+        files: [{ path: "grande.txt", content: "x".repeat(1024 * 1024 + 1) }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it("valida project-info e git somente leitura", () => {
+    expect(
+      deviceProjectInfoInputSchema.safeParse({ deviceId: "device-1" }).success,
+    ).toBe(true)
+
+    expect(
+      deviceProjectInfoInputSchema.safeParse({
+        deviceId: "device-1",
+        path: "C:\\projetos\\app",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      deviceGitStatusInputSchema.safeParse({ deviceId: "device-1" }).success,
+    ).toBe(true)
+
+    const diff = deviceGitDiffInputSchema.safeParse({ deviceId: "device-1" })
+
+    expect(diff.success).toBe(true)
+    expect(diff.success ? diff.data : null).toMatchObject({
+      staged: false,
+      context: 3,
+      maxBytes: 200 * 1024,
+    })
+
+    expect(
+      deviceGitDiffInputSchema.safeParse({
+        deviceId: "device-1",
+        context: 11,
+      }).success,
+    ).toBe(false)
+
+    expect(
+      deviceGitDiffInputSchema.safeParse({
+        deviceId: "device-1",
+        maxBytes: 200 * 1024 + 1,
       }).success,
     ).toBe(false)
   })
