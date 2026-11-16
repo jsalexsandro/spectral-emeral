@@ -3,6 +3,7 @@ import {
   DEVICE_APP_SOURCES,
   DEVICE_COMMAND_NAMES,
   DEVICE_JOB_STATUSES,
+  DEVICE_TOOLCHAIN_IDS,
   DEVICE_UI_ACTIONS,
   type DeviceCommand,
   type DeviceUiAction,
@@ -508,6 +509,16 @@ export const commandResultMessageSchema = z.object({
       job: deviceJobSchema.optional(),
       jobs: z.array(deviceJobSchema).max(200).optional(),
       jobOutput: deviceJobOutputSchema.optional(),
+      toolchain: z
+        .object({
+          id: z.enum(DEVICE_TOOLCHAIN_IDS),
+          name: z.string().min(1).max(120),
+          packageId: z.string().min(1).max(120),
+          action: z.enum(["install", "already_installed"]),
+          version: z.string().max(120).nullable(),
+          jobId: z.string().max(128).nullable(),
+        })
+        .optional(),
       cancelled: z.boolean().optional(),
       windows: z.array(deviceWindowSchema).max(30).optional(),
       window: deviceWindowSchema.optional(),

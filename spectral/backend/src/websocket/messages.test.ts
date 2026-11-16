@@ -203,4 +203,64 @@ describe("commandResultMessageSchema", () => {
     expect(parsed.data.result.delete?.toTrash).toBe(true)
     expect(parsed.data.result.patch?.replacements).toBe(2)
   })
+
+  it("preserva o resultado de setup-toolchain", () => {
+    const parsed = parseResult({
+      ok: true,
+      toolchain: {
+        id: "uv",
+        name: "uv",
+        packageId: "astral-sh.uv",
+        action: "install",
+        version: null,
+        jobId: "job-1",
+      },
+      job: {
+        id: "job-1",
+        label: "winget: uv",
+        status: "running",
+        shell: "powershell",
+        shellPath: "powershell.exe",
+        cwd: "C:\\",
+        startedAt: "2026-11-16T12:00:00.000Z",
+        durationMs: 0,
+        exitCode: null,
+        error: null,
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        outputChars: 0,
+        truncated: false,
+        timedOut: false,
+        cancelled: false,
+      },
+    })
+
+    expect(parsed.success).toBe(true)
+
+    if (!parsed.success || !parsed.data.result.ok) {
+      throw new Error("Esperava um resultado ok.")
+    }
+
+    expect(parsed.data.result.toolchain?.id).toBe("uv")
+    expect(parsed.data.result.toolchain?.packageId).toBe("astral-sh.uv")
+    expect(parsed.data.result.toolchain?.action).toBe("install")
+    expect(parsed.data.result.toolchain?.jobId).toBe("job-1")
+    expect(parsed.data.result.job?.id).toBe("job-1")
+  })
+
+  it("recusa toolchain fora do catálogo", () => {
+    const parsed = parseResult({
+      ok: true,
+      toolchain: {
+        id: "não-existe",
+        name: "x",
+        packageId: "x",
+        action: "install",
+        version: null,
+        jobId: null,
+      },
+    })
+
+    expect(parsed.success).toBe(false)
+  })
 })

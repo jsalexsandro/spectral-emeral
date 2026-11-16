@@ -154,6 +154,64 @@ describe("device tool risk classification", () => {
     ).toBe("destructive")
   })
 
+  it("classifica instalações de software no shell como install", () => {
+    const scripts = [
+      "winget install OpenJS.NodeJS.LTS",
+      "choco install git",
+      "scoop install python",
+      "msiexec /i setup.msi /qn",
+      "npm i -g some-cli",
+      "pnpm add -g some-cli",
+      "yarn global add some-cli",
+      "cargo install ripgrep",
+      "go install example.com/cli@latest",
+      "dotnet tool install -g some-tool",
+      "gem install rails",
+      "pip install requests",
+    ]
+
+    for (const script of scripts) {
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe(
+        "install",
+      )
+    }
+  })
+
+  it("não classifica dependências do projeto como install", () => {
+    for (const script of [
+      "npm ci",
+      "npm install",
+      "pnpm install --frozen-lockfile",
+      "yarn install",
+      "bun install",
+      "uv sync",
+      "cargo add serde",
+      "dotnet add package Newtonsoft.Json",
+      "go mod download",
+    ]) {
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("exec")
+    }
+  })
+
+  it("install pede aprovação sempre, inclusive em Poder Total", () => {
+    for (const confirmDestructive of [true, false]) {
+      expect(decide(confirmDestructive, "build", "install")).toBe("approval")
+      expect(decide(confirmDestructive, "plan", "install")).toBe("deny")
+    }
+  })
+
+  it("classifica device-setup-toolchain como install", () => {
+    expect(classifyDeviceToolRisk("device-setup-toolchain", {})).toBe(
+      "install",
+    )
+  })
+
+  it("não promove comandos comuns de build a install", () => {
+    for (const script of ["npm test", "git status", "python script.py"]) {
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("exec")
+    }
+  })
+
   it("não promove comandos comuns de build a launch", () => {
     for (const script of [
       "npm test",

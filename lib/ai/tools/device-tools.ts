@@ -7,6 +7,9 @@ import {
   type SendDeviceCommandOutput,
 } from "@/lib/devices/command-client"
 import {
+  DEVICE_TOOLCHAIN_IDS,
+} from "@/spectral/shared/device-commands"
+import {
   DEVICE_APP_ID_PATTERN,
   DEVICE_APP_QUERY_MAX_LENGTH,
   DEVICE_APP_RESULTS_MAX,
@@ -209,6 +212,7 @@ export const DEVICE_SET_BRIGHTNESS_TOOL_NAME = "device-set-brightness"
 export const DEVICE_LOCK_SCREEN_TOOL_NAME = "device-lock-screen"
 export const DEVICE_POWER_TOOL_NAME = "device-power"
 export const DEVICE_MEDIA_CONTROL_TOOL_NAME = "device-media-control"
+export const DEVICE_SETUP_TOOLCHAIN_TOOL_NAME = "device-setup-toolchain"
 export const DEVICE_INSPECT_UI_TOOL_NAME = "device-inspect-ui"
 export const DEVICE_UI_ACTION_TOOL_NAME = "device-ui-action"
 
@@ -404,6 +408,19 @@ export const deviceGetOsInputSchema = z.object({
 
 export const deviceEnvInputSchema = z.object({
   deviceId: deviceIdSchema,
+  refresh: z
+    .boolean()
+    .optional()
+    .describe(
+      "Quando true, descarta o cache de runtimes e shells do driver para enxergar instalações recentes (ex.: após device-setup-toolchain).",
+    ),
+})
+
+export const deviceSetupToolchainInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  toolchain: z.enum(DEVICE_TOOLCHAIN_IDS).describe(
+    "Runtime a instalar (catálogo fechado: node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java). O driver monta o comando winget inteiro; nunca informe versão, packageId ou flags.",
+  ),
 })
 
 const deviceWindowIdSchema = z
@@ -1638,6 +1655,7 @@ function toCommandToolResult(
     ...(output.result.job ? { job: output.result.job } : {}),
     ...(output.result.jobs ? { jobs: output.result.jobs } : {}),
     ...(output.result.jobOutput ? { jobOutput: output.result.jobOutput } : {}),
+    ...(output.result.toolchain ? { toolchain: output.result.toolchain } : {}),
     ...(output.result.cancelled !== undefined
       ? { cancelled: output.result.cancelled }
       : {}),
@@ -1888,6 +1906,14 @@ const jobCancelDescription = [
 const jobListDescription = [
   "Lista todos os jobs do dispositivo (ativos e concluídos dentro da retenção de ~10 min), ordenados do mais recente para o mais antigo.",
   "Use para encontrar o `jobId` de um job em andamento ou para verificar quantos dos 3 slots de job estão ocupados.",
+].join("\n")
+
+const setupToolchainDescription = [
+  "Instala um runtime no dispositivo via winget, com catálogo fechado e aprovação obrigatória.",
+  "Informe apenas o `toolchain` (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`). Nunca informe versão, `packageId` nem flags do winget: o driver monta o comando inteiro.",
+  "O resultado devolve um `jobId`: acompanhe com `device-job-status` e `device-job-output`.",
+  "Depois do job, confirme a instalação com `device-env` passando `refresh: true`.",
+  "Runtime já instalado retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro. Nunca tente contornar com `device-shell` + winget.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -2467,11 +2493,11 @@ export function createDeviceTools(
     [DEVICE_ENV_TOOL_NAME]: tool({
       description: envDescription,
       inputSchema: deviceEnvInputSchema,
-      execute: async ({ deviceId }) => {
+      execute: async ({ deviceId, refresh }) => {
         try {
           return await runCommand(deviceId, {
             command: "get-env",
-            input: {},
+            input: refresh !== undefined ? { refresh } : {},
           })
         } catch (error) {
           return {
@@ -3807,6 +3833,27 @@ export function createDeviceTools(
               data: { type: "data", data: stored.bytes.toString("base64") },
             },
           ],
+        }
+      },
+    }),
+    [DEVICE_SETUP_TOOLCHAIN_TOOL_NAME]: tool({
+      description: setupToolchainDescription,
+      inputSchema: deviceSetupToolchainInputSchema,
+      execute: async ({ deviceId, toolchain }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "setup-toolchain",
+            input: { toolchain },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-setup-toolchain.",
+          }
         }
       },
     }),

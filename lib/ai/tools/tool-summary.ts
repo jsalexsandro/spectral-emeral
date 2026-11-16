@@ -43,6 +43,7 @@ const DEVICE_RUN_COMMAND = "device-run-command"
 const DEVICE_ENV = "device-env"
 const DEVICE_SHELL = "device-shell"
 const DEVICE_SCREENSHOT = "device-screenshot"
+const DEVICE_SETUP_TOOLCHAIN = "device-setup-toolchain"
 
 type InputRecord = Record<string, unknown>
 
@@ -483,8 +484,15 @@ export function summarizeToolInput(
     }
 
     case DEVICE_ENV:
-      summary = "ambiente da máquina"
+      summary = record.refresh === true ? "ambiente · refresh" : "ambiente da máquina"
       break
+
+    case DEVICE_SETUP_TOOLCHAIN: {
+      const toolchain = readString(record, "toolchain")
+
+      summary = toolchain ? `instalar ${toolchain}` : "instalar runtime"
+      break
+    }
 
     case DEVICE_SHELL: {
       const script = readString(record, "script")

@@ -52,6 +52,7 @@ import {
   DEVICE_INSPECT_UI_TOOL_NAME,
   DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_SCREENSHOT_TOOL_NAME,
+  DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
   DEVICE_READ_CLIPBOARD_TOOL_NAME,
   DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
   DEVICE_MOVE_MOUSE_TOOL_NAME,
@@ -71,6 +72,8 @@ import {
   deviceScrollInputSchema,
   deviceDragInputSchema,
   deviceScreenshotInputSchema,
+  deviceEnvInputSchema,
+  deviceSetupToolchainInputSchema,
   deviceListAppsInputSchema,
   deviceFindAppInputSchema,
   deviceOpenUrlInputSchema,
@@ -201,6 +204,7 @@ describe("device tools", () => {
         DEVICE_INSPECT_UI_TOOL_NAME,
         DEVICE_UI_ACTION_TOOL_NAME,
         DEVICE_SCREENSHOT_TOOL_NAME,
+        DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
         DEVICE_READ_CLIPBOARD_TOOL_NAME,
         DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
         DEVICE_MOVE_MOUSE_TOOL_NAME,
@@ -213,6 +217,25 @@ describe("device tools", () => {
     for (const chatTool of Object.values(tools)) {
       expect(typeof chatTool.execute).toBe("function")
     }
+  })
+
+  it("expose device-setup-toolchain com catálogo fechado e device-env com refresh", () => {
+    const tools = createDeviceTools("user-1")
+
+    expect(tools[DEVICE_SETUP_TOOLCHAIN_TOOL_NAME]).toBeDefined()
+    expect(typeof tools[DEVICE_SETUP_TOOLCHAIN_TOOL_NAME].execute).toBe("function")
+    expect(tools[DEVICE_ENV_TOOL_NAME]).toBeDefined()
+
+    const setupSchema = deviceSetupToolchainInputSchema
+
+    expect(() => setupSchema.parse({ deviceId: "d", toolchain: "uv" })).not.toThrow()
+    expect(() => setupSchema.parse({ deviceId: "d", toolchain: "não-existe" })).toThrow()
+    expect(() => setupSchema.parse({ deviceId: "d" })).toThrow()
+
+    const envSchema = deviceEnvInputSchema
+    expect(() => envSchema.parse({ deviceId: "d", refresh: true })).not.toThrow()
+    expect(() => envSchema.parse({ deviceId: "d", refresh: false })).not.toThrow()
+    expect(() => envSchema.parse({ deviceId: "d" })).not.toThrow()
   })
 
   it("rejects unsafe URLs and app ids", () => {

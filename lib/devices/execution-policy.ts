@@ -36,6 +36,7 @@ export const DEVICE_TOOL_RISKS = [
   "write",
   "exec",
   "launch",
+  "install",
   "destructive",
   "system",
 ] as const
@@ -318,6 +319,26 @@ const LAUNCH_COMMAND_PATTERNS: RegExp[] = [
   /(?:^|[;&|]\s*)["']?[a-z]:\\[^\n]*\.(?:exe|com|bat|cmd|lnk|msc)["']?(?:\s|$)/im,
 ]
 
+/**
+ * Comandos que instalam software na máquina (fora do escopo de um projeto).
+ * O modelo não pode instalar esses pacotes pelo shell sem aprovação, senão
+ * contornaria o catálogo fechado de `device-setup-toolchain`.
+ */
+const INSTALL_COMMAND_PATTERNS: RegExp[] = [
+  /\bwinget\b/i,
+  /\bchoco\b/i,
+  /\bscoop\b/i,
+  /\bmsiexec\b/i,
+  /\bnpm\s+(install|i)\b[^\n]*\s-g\b/i,
+  /\bpnpm\s+(add|install)\b[^\n]*\s-g\b/i,
+  /\byarn\s+global\s+add\b/i,
+  /\bcargo\s+install\b/i,
+  /\bgo\s+install\b/i,
+  /\bdotnet\s+tool\s+install\b/i,
+  /\bgem\s+install\b/i,
+  /\bpip\s+install\b/i,
+]
+
 function collectCommandText(toolName: string, input: unknown): string {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return ""
@@ -426,6 +447,10 @@ export function classifyDeviceToolRisk(
     return "system"
   }
 
+  if (toolName === "device-setup-toolchain") {
+    return "install"
+  }
+
   if (toolName === "device-window-action") {
     const action =
       typeof input === "object" && input !== null
@@ -437,6 +462,10 @@ export function classifyDeviceToolRisk(
 
   if (EXEC_TOOLS.has(toolName)) {
     const text = collectCommandText(toolName, input)
+
+    if (matchesAny(INSTALL_COMMAND_PATTERNS, text)) {
+      return "install"
+    }
 
     if (matchesAny(SYSTEM_COMMAND_PATTERNS, text)) {
       return "system"
@@ -469,6 +498,7 @@ const RISK_LABELS: Record<DeviceToolRisk, string> = {
   write: "escrita",
   exec: "execução",
   launch: "abertura com argumentos",
+  install: "instalação de software",
   destructive: "destrutiva",
   system: "de sistema",
 }
@@ -500,6 +530,14 @@ export function evaluateDeviceToolCall({
       action: "deny",
       reason:
         "O Modo Leitura só consulta. Troque para o Modo Construtor (Shift+Tab) para executar esta ação.",
+    }
+  }
+
+  if (risk === "install") {
+    return {
+      action: "approval",
+      reason:
+        "Instalação de software no dispositivo. Confirme antes de instalar.",
     }
   }
 

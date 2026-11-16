@@ -24,6 +24,8 @@ import {
   DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_WINDOW_ACTION_TOOL_NAME,
   DEVICE_WRITE_FILES_TOOL_NAME,
+  DEVICE_ENV_TOOL_NAME,
+  DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
 } from "./device-tools"
 import { summarizeToolInput } from "./tool-summary"
 
@@ -310,5 +312,25 @@ describe("summarizeToolInput", () => {
     expect(summarizeToolInput(DEVICE_UI_ACTION_TOOL_NAME, undefined)).toBe("")
     expect(summarizeToolInput(DEVICE_UI_ACTION_TOOL_NAME, null)).toBe("")
     expect(summarizeToolInput(DEVICE_UI_ACTION_TOOL_NAME, "texto")).toBe("")
+  })
+
+  it("resume device-setup-toolchain com o runtime alvo", () => {
+    expect(
+      summarizeToolInput(DEVICE_SETUP_TOOLCHAIN_TOOL_NAME, {
+        toolchain: "uv",
+      }),
+    ).toBe("instalar uv")
+    expect(
+      summarizeToolInput(DEVICE_SETUP_TOOLCHAIN_TOOL_NAME, {}),
+    ).toBe("instalar runtime")
+  })
+
+  it("resume device-env com refresh", () => {
+    expect(
+      summarizeToolInput(DEVICE_ENV_TOOL_NAME, { refresh: true }),
+    ).toBe("ambiente · refresh")
+    expect(summarizeToolInput(DEVICE_ENV_TOOL_NAME, {})).toBe(
+      "ambiente da máquina",
+    )
   })
 })

@@ -13,6 +13,8 @@ import {
   DEVICE_SET_BRIGHTNESS_TOOL_NAME,
   DEVICE_SET_VOLUME_TOOL_NAME,
   DEVICE_WRITE_FILES_TOOL_NAME,
+  DEVICE_ENV_TOOL_NAME,
+  DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
   createDeviceTools,
 } from "./device-tools"
 
@@ -318,5 +320,85 @@ describe("device command results — lote, projeto e git", () => {
     )
     expect(noRepo).toMatchObject({ ok: true })
     expect(noRepo).toHaveProperty("gitStatus", null)
+  })
+
+  it("repassa toolchain e job de setup-toolchain", async () => {
+    const tools = createDeviceTools("user-1")
+
+    const toolchain = {
+      id: "uv",
+      name: "uv",
+      packageId: "astral-sh.uv",
+      action: "install" as const,
+      version: null,
+      jobId: "job-uv",
+    }
+    const job = { id: "job-uv", label: "winget: uv", status: "running" as const }
+
+    stubResult({ toolchain, job })
+
+    const output = await tools[DEVICE_SETUP_TOOLCHAIN_TOOL_NAME].execute!(
+      { deviceId: "device-1", toolchain: "uv" },
+      toolContext,
+    )
+
+    expect(output).toMatchObject({ ok: true, toolchain, job })
+  })
+
+  it("repassa already_installed sem job de setup-toolchain", async () => {
+    const tools = createDeviceTools("user-1")
+
+    const toolchain = {
+      id: "node",
+      name: "Node.js LTS",
+      packageId: "OpenJS.NodeJS.LTS",
+      action: "already_installed" as const,
+      version: "v26.13.1",
+      jobId: null,
+    }
+
+    stubResult({ toolchain })
+
+    const output = await tools[DEVICE_SETUP_TOOLCHAIN_TOOL_NAME].execute!(
+      { deviceId: "device-1", toolchain: "node" },
+      toolContext,
+    )
+
+    expect(output).toMatchObject({ ok: true, toolchain })
+    expect(output).not.toHaveProperty("job")
+  })
+
+  it("repassa env com refresh quando o comando devolve env", async () => {
+    const tools = createDeviceTools("user-1")
+
+    const env = {
+      platform: "win32",
+      arch: "x64",
+      hostname: "pc",
+      user: "u",
+      home: "C:\\Users\\u",
+      temp: "C:\\Users\\u\\AppData\\Local\\Temp",
+      cwd: "C:\\projeto",
+      shell: { kind: "powershell", path: "powershell.exe", version: "5.1" },
+      shells: [],
+      runtimes: [{ id: "uv", version: "0.13.8", path: "C:\\uv\\uv.exe" }],
+      elevated: false,
+      locale: "pt-BR",
+      capabilities: [],
+      collectedAt: new Date().toISOString(),
+    }
+
+    stubResult({ env })
+
+    const output = await tools[DEVICE_ENV_TOOL_NAME].execute!(
+      { deviceId: "device-1", refresh: true },
+      toolContext,
+    )
+
+    expect(output).toMatchObject({ ok: true, env })
+    expect(
+      ((output as { env?: { runtimes?: { id?: string }[] } }).env?.runtimes ??
+        []).some((r) => r.id === "uv"),
+    ).toBe(true)
   })
 })
