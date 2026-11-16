@@ -608,6 +608,7 @@ continuam sendo cérebro e não vão para o driver.
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` | `zip`/`unzip` via shell |
 | Abrir aplicativos | atalhos do sistema | ✅ `find-app`, `list-apps`, `open-app` (descoberta + catálogo local), `open-path` (arquivo/pasta), `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` (aprovação); macOS/Linux na Fase 6 |
 | Processos | `ps`, `top`, `kill` | ✅ `device-list-processes`, `device-kill-process` (Windows) | Fase 3 |
+| Instalar runtimes/toolchain | instalação manual | ❌ | Fase 7b (winget, catálogo fechado, aprovação sempre) |
 | Rede | `curl`/WebFetch | ✅ via `shell` | mantém via shell |
 | Upload/download binário | leitura/escrita local | ❌ | Fase 5a |
 | GUI/UIA, mouse, teclado, janelas | ❌ | ✅ | diferencial do Spectral |
@@ -810,8 +811,70 @@ tarefas de leitura ou de escrita em massa. Nenhuma tool nova executa código:
 arquivos sai em 1 chamada, um repositório desconhecido entrega stack, scripts,
 versões e git em 1 chamada, e o Modo Leitura enxerga arquivos e git sem shell. ✅
 
-**Fora desta release:** instalação de runtimes (7b, winget com aprovação) e
-`run-snippet` (7c).
+**Fora da 7a:** instalação de runtimes (ver Fase 7b) e `run-snippet` (7c).
+
+### Fase 7b — Toolchain via winget (M) — 📝 planejada
+
+> **Status:** plano fechado, aguardando implementação. Plano detalhado em
+> `~/.opencode/plan/2026-11-16-fase-7b-toolchain-winget.md`.
+
+Instalar runtime ausente no PC do usuário sem sair do chat, com catálogo fechado,
+aprovação obrigatória e execução por job. Nenhuma tool nova executa código: o argv do
+winget é montado em código a partir do catálogo, nunca pelo modelo.
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `setup-toolchain` | `{ toolchain: DeviceToolchainId }` | **install** (aprovação sempre) |
+| `get-env` | `{ refresh?: boolean }` | read |
+
+Catálogo inicial (IDs verificados com `winget search --exact` em 2026-11-16):
+
+| `toolchain` | Pacote winget | Escopo |
+|---|---|---|
+| `node` | `OpenJS.NodeJS.LTS` | user |
+| `pnpm` | `pnpm.pnpm` | user |
+| `yarn` | `Yarn.Yarn` | user |
+| `bun` | `Oven-sh.Bun` | user |
+| `python` | `Python.Python.3.14` | user |
+| `uv` | `astral-sh.uv` | user |
+| `rust` | `Rustlang.Rustup` | user |
+| `git` | `Git.Git` | machine |
+| `go` | `GoLang.Go` | machine |
+| `dotnet` | `Microsoft.DotNet.SDK.10` | machine |
+| `java` | `Microsoft.OpenJDK.25` | machine |
+
+- `setup-toolchain` devolve `{ toolchain: { id, name, packageId, action, version,
+  jobId }, job? }`. Runtime já detectado → `already_installed`, sem job.
+- Risco novo `install`: sempre `approval`, inclusive em Poder Total; Modo Leitura nega.
+  A auditoria usa a coluna `risk` (texto), sem migração.
+- Instalação roda por `job-start` interno (`label: "winget: <nome>"`, teto de 15 min),
+  com `--exact --id --source winget --silent --disable-interactivity --accept-*` e
+  `--scope user` quando a entrada permite. Uma instalação por vez (`toolchain_busy`).
+- Entradas `machine` (git/go/.NET/Java) exigem driver elevado; sem elevação falham cedo
+  com `elevation_required` e instrução em linguagem simples, em vez de rodar um job que
+  já vai falhar.
+- Erros: `unsupported_platform` (fora do Windows), `winget_missing`,
+  `elevation_required`, `toolchain_busy`, `job_limit`.
+- `get-env refresh: true` limpa o cache de runtimes e de shells. A detecção também
+  procura caminhos absolutos conhecidos (`Program Files`, `%LOCALAPPDATA%\Programs`,
+  `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `~\.cargo\bin`), porque o PATH do processo do
+  driver fica velho depois da instalação.
+- `project-info` cruza manifesto × runtimes e emite warning quando falta runtime, já
+  apontando o `toolchain`: "Este projeto usa Node.js, mas o `node` não foi encontrado
+  neste PC. Posso instalar com `device-setup-toolchain` (`toolchain: node`)." Ruby e PHP
+  entram na detecção, mas não no catálogo (instalação manual).
+- Backend: `commandResultMessageSchema` ganha `toolchain`; `job` já existe.
+- Prompt v42 com o playbook de "falta runtime": instalar só id do catálogo, confirmar
+  com `get-env refresh`, traduzir `elevation_required`/`winget_missing` e nunca
+  contornar com `device-shell` + winget.
+
+**Pronto quando:** um runtime ausente (ex.: `uv`) instalar em 1 chamada, o job puder ser
+acompanhado e cancelado, `get-env refresh: true` mostrar o runtime novo sem reiniciar o
+driver, runtime já instalado devolver `already_installed`, Poder Total ainda pedir
+aprovação e o Modo Leitura negar. 📝
+
+**Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2);
+`run-snippet` (7c); macOS/Linux via brew/apt.
 
 ### Fase 6 — Multiplataforma e robustez (G)
 
@@ -831,6 +894,7 @@ versões e git em 1 chamada, e o Modo Leitura enxerga arquivos e git sem shell. 
 | 2 | Fase 3 — processos ✅ | M | alto ("o que travou?") |
 | 3 | Fase 4 — jobs/background ✅ | G | altíssimo (dev server, builds) |
 | 3.5 | Fase 7a — programação assistida ✅ | M | altíssimo (programar no PC) |
+| 3.6 | Fase 7b — toolchain via winget 📝 | M | altíssimo (projeto novo roda de primeira) |
 | 4 | Fase 5a — transferência binária (5b ✅) | G | alto (uso diário) |
 | 5 | Fase 5d — Playwright | G | alto (web sem UIA) |
 | 6 | Fase 6 — macOS/Linux | G | expansão |
@@ -855,11 +919,20 @@ Resolvidas na Fase 2:
    ✅
 3. Fase 2 inteira (arquivos); `zip`/`unzip` via shell. ✅
 
+Resolvidas na Fase 7b:
+
+4. Instalação de runtime pede aprovação **sempre**, inclusive em Poder Total (risco
+   `install`), e é negada no Modo Leitura. ✅
+5. Pacotes que instalam para todos os usuários (git/go/.NET/Java) exigem driver
+   elevado: falham cedo com `elevation_required` em vez de tentar em background. ✅
+6. Catálogo inicial com 11 runtimes; versão exata pinada e `winget upgrade` ficam para
+   7b.2. ✅
+
 Ainda abertas:
 
-4. Sessão persistente/PTY agora ou só jobs? (recomendado: jobs primeiro)
-5. macOS/Linux entram agora ou depois de jobs? (recomendado: depois)
-6. Playwright e elevação UAC entram no escopo? (recomendado: sim, nas fases
+7. Sessão persistente/PTY agora ou só jobs? (recomendado: jobs primeiro)
+8. macOS/Linux entram agora ou depois de jobs? (recomendado: depois)
+9. Playwright e elevação UAC entram no escopo? (recomendado: sim, nas fases
    5d/5e)
 
 ---
