@@ -166,6 +166,7 @@ const READ_TOOLS = new Set<string>([
   "device-job-output",
   "device-job-list",
   "device-list-processes",
+  "device-get-system-status",
 ])
 
 const INPUT_TOOLS = new Set<string>([
@@ -176,7 +177,6 @@ const INPUT_TOOLS = new Set<string>([
   "device-scroll",
   "device-drag",
   "device-open-url",
-  "device-get-system-status",
   "device-set-volume",
   "device-set-brightness",
   "device-media-control",
