@@ -876,6 +876,19 @@ aprovação e o Modo Leitura negar. 📝
 **Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2);
 `run-snippet` (7c); macOS/Linux via brew/apt.
 
+**Suporte a Linux (planejado, não implementado):**
+- Depois que a 7b estiver validada no Windows, o mesmo contrato (`device-setup-toolchain`
+  com catálogo fechado, aprovação sempre, instalação por job) se aplica ao Linux
+  via gerenciadores do sistema (`apt`, `dnf`, `pacman`) e/ou `brew`.
+- O driver escolhe o gerenciador (`apt-get`/`dnf`/`pacman`/`brew`) e monta o argv
+  inteiro; o modelo nunca informa versão, nome do pacote nem flags.
+- Pacotes que exigem root (`sudo`) falham cedo com mensagem clara quando o driver
+  não está rodando como root/sudoers — igual ao `elevation_required` do Windows.
+- Detecção em caminhos absolutos de Linux (`/usr/bin`, `/usr/local/bin`,
+  `~/.local/bin`, `~/.cargo/bin`, `~/.nvm/versions/node/*/bin`) porque o PATH do
+  processo do driver fica velho depois da instalação.
+- `get-env refresh: true` funciona da mesma forma: limpa cache de runtimes e shells.
+
 ### Fase 6 — Multiplataforma e robustez (G)
 
 - macOS/Linux para shell, arquivos, processos e jobs; UIA/GUI segue Windows.
