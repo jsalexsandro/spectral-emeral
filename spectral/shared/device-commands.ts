@@ -59,6 +59,7 @@ export const DEVICE_COMMAND_NAMES = [
   "power",
   "media-control",
   "setup-toolchain",
+  "run-snippet",
 ] as const
 
 export type DeviceCommandName = (typeof DEVICE_COMMAND_NAMES)[number]
@@ -1026,7 +1027,13 @@ export type DeviceCommandInputMap = {
     toolchain?: DeviceToolchainId
     packageId?: string
     scope?: "user" | "machine"
-    action?: "install" | "uninstall"
+    action?: "install" | "uninstall" | "upgrade"
+    version?: string
+  }
+  "run-snippet": {
+    language: string
+    code: string
+    cwd?: string
   }
   shell: {
     script: string
@@ -1219,6 +1226,8 @@ export function deviceCommandTimeoutMs(
       return 20_000
     case "setup-toolchain":
       return 20_000
+    case "run-snippet":
+      return 30_000
     default:
       return undefined
   }
@@ -1264,6 +1273,7 @@ export type DeviceCommandSuccess = {
   jobs?: DeviceJob[]
   jobOutput?: DeviceJobOutput
   toolchain?: DeviceToolchainResult
+  snippet?: DeviceSnippetResult
   /** Presente em `job-cancel`: true quando um job em execução recebeu o sinal. */
   cancelled?: boolean
   windows?: DeviceWindow[]
@@ -1304,9 +1314,18 @@ export type DeviceToolchainResult = {
   id: string
   name: string
   packageId: string
-  action: "install" | "already_installed" | "uninstalled"
+  action: "install" | "already_installed" | "uninstalled" | "upgraded"
   version: string | null
   jobId: string | null
+}
+
+export type DeviceSnippetResult = {
+  language: string
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  durationMs: number
+  truncated: boolean
 }
 
 export type DeviceCommandResult = DeviceCommandSuccess | DeviceCommandFailure
@@ -1596,19 +1615,47 @@ function readOptionalScope(input: unknown): "user" | "machine" | undefined {
   return input.scope
 }
 
-function readOptionalAction(input: unknown): "install" | "uninstall" | undefined {
+function readOptionalAction(input: unknown): "install" | "uninstall" | "upgrade" | undefined {
   if (!isRecord(input) || input.action === undefined || input.action === null) {
     return undefined
   }
 
-  if (input.action !== "install" && input.action !== "uninstall") {
+  if (input.action !== "install" && input.action !== "uninstall" && input.action !== "upgrade") {
     throw new DeviceCommandValidationError(
       "invalid_action",
-      'Campo "action" deve ser "install" ou "uninstall".',
+      'Campo "action" deve ser "install", "uninstall" ou "upgrade".',
     )
   }
 
   return input.action
+}
+
+function readOptionalVersion(input: unknown): string | undefined {
+  if (!isRecord(input) || input.version === undefined || input.version === null) {
+    return undefined
+  }
+
+  if (typeof input.version !== "string") {
+    throw new DeviceCommandValidationError(
+      "invalid_version",
+      'Campo "version" deve ser um texto.',
+    )
+  }
+
+  const value = input.version.trim()
+
+  if (value.length === 0) {
+    return undefined
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new DeviceCommandValidationError(
+      "invalid_version",
+      "A versão não pode conter caracteres de controle.",
+    )
+  }
+
+  return value
 }
 
 function parseListApps(input: unknown): DeviceCommand {
@@ -3790,6 +3837,7 @@ export function parseDeviceCommand(
       const packageId = readOptionalPackageId(input)
       const scope = readOptionalScope(input)
       const action = readOptionalAction(input)
+      const version = readOptionalVersion(input)
 
       if (toolchain === undefined && packageId === undefined) {
         throw new DeviceCommandValidationError(
@@ -3802,7 +3850,8 @@ export function parseDeviceCommand(
         toolchain?: DeviceToolchainId
         packageId?: string
         scope?: "user" | "machine"
-        action?: "install" | "uninstall"
+        action?: "install" | "uninstall" | "upgrade"
+        version?: string
       } = {}
 
       if (toolchain !== undefined) {
@@ -3821,7 +3870,46 @@ export function parseDeviceCommand(
         toolchainInput.action = action
       }
 
+      if (version !== undefined) {
+        toolchainInput.version = version
+      }
+
       return { command, input: toolchainInput }
+    }
+    case "run-snippet": {
+      const language = readString(input, "language", "invalid_snippet_language")
+      const code = readString(input, "code", "invalid_snippet_code")
+      const cwd = readOptionalTrimmedString(
+        input,
+        "cwd",
+        DEVICE_PATH_MAX_LENGTH,
+        "invalid_snippet_cwd",
+      )
+
+      if (
+        cwd !== undefined &&
+        (!isAbsoluteAppPath(cwd) || /[\u0000-\u001f\u007f]/.test(cwd))
+      ) {
+        throw new DeviceCommandValidationError(
+          "invalid_snippet_cwd",
+          "O diretório de trabalho deve ser um caminho absoluto válido.",
+        )
+      }
+
+      const snippetInput: {
+        language: string
+        code: string
+        cwd?: string
+      } = {
+        language,
+        code,
+      }
+
+      if (cwd !== undefined) {
+        snippetInput.cwd = cwd
+      }
+
+      return { command, input: snippetInput }
     }
     case "shell":
       return parseShell(input)

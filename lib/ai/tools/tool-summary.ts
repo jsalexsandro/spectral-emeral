@@ -44,6 +44,7 @@ const DEVICE_ENV = "device-env"
 const DEVICE_SHELL = "device-shell"
 const DEVICE_SCREENSHOT = "device-screenshot"
 const DEVICE_SETUP_TOOLCHAIN = "device-setup-toolchain"
+const DEVICE_RUN_SNIPPET = "device-run-snippet"
 
 type InputRecord = Record<string, unknown>
 
@@ -493,7 +494,20 @@ export function summarizeToolInput(
       const action = readString(record, "action")
 
       const nome = toolchain ?? packageId ?? "runtime"
-      summary = action === "uninstall" ? `desinstalar ${nome}` : `instalar ${nome}`
+      if (action === "uninstall") {
+        summary = `desinstalar ${nome}`
+      } else if (action === "upgrade") {
+        summary = `atualizar ${nome}`
+      } else {
+        summary = `instalar ${nome}`
+      }
+      break
+    }
+
+    case DEVICE_RUN_SNIPPET: {
+      const language = readString(record, "language")
+
+      summary = language ? `executar snippet ${language}` : "executar snippet"
       break
     }
 

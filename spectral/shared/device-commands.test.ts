@@ -102,6 +102,67 @@ describe("parseDeviceCommand — setup-toolchain", () => {
 
     expect(erro).toMatchObject({ code: "invalid_package_id" })
   })
+
+  it("aceita version com toolchain do catálogo", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      toolchain: "node",
+      version: "20.0.0",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { toolchain: "node", version: "20.0.0" },
+    })
+  })
+
+  it("aceita version com packageId livre", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      packageId: "7zip.7zip",
+      version: "24.1.0",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { packageId: "7zip.7zip", version: "24.1.0" },
+    })
+  })
+
+  it("aceita action upgrade com toolchain do catálogo", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      toolchain: "python",
+      action: "upgrade",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { toolchain: "python", action: "upgrade" },
+    })
+  })
+
+  it("aceita action upgrade com version", () => {
+    const cmd = parseDeviceCommand("setup-toolchain", {
+      toolchain: "node",
+      action: "upgrade",
+      version: "22.0.0",
+    })
+
+    expect(cmd).toEqual({
+      command: "setup-toolchain",
+      input: { toolchain: "node", action: "upgrade", version: "22.0.0" },
+    })
+  })
+
+  it("recusa version vazia", () => {
+    let erro: unknown = null
+
+    try {
+      parseDeviceCommand("setup-toolchain", { toolchain: "node", version: "" })
+    } catch (e) {
+      erro = e
+    }
+
+    expect(erro).toMatchObject({ code: "invalid_version" })
+  })
 })
 
 describe("parseDeviceCommand — get-env", () => {

@@ -213,6 +213,7 @@ export const DEVICE_LOCK_SCREEN_TOOL_NAME = "device-lock-screen"
 export const DEVICE_POWER_TOOL_NAME = "device-power"
 export const DEVICE_MEDIA_CONTROL_TOOL_NAME = "device-media-control"
 export const DEVICE_SETUP_TOOLCHAIN_TOOL_NAME = "device-setup-toolchain"
+export const DEVICE_RUN_SNIPPET_TOOL_NAME = "device-run-snippet"
 export const DEVICE_INSPECT_UI_TOOL_NAME = "device-inspect-ui"
 export const DEVICE_UI_ACTION_TOOL_NAME = "device-ui-action"
 
@@ -441,10 +442,19 @@ export const deviceSetupToolchainInputSchema = z
         'Escopo da instalação: "user" (só o usuário atual) ou "machine" (todos os usuários, exige elevação). Padrão: "user" para catálogo, "user" para pacotes livres.',
       ),
     action: z
-      .enum(["install", "uninstall"])
+      .enum(["install", "uninstall", "upgrade"])
       .optional()
       .describe(
-        'Ação a executar: "install" instala o pacote, "uninstall" remove o pacote. Padrão: "install".',
+        'Ação a executar: "install" instala o pacote, "uninstall" remove o pacote, "upgrade" atualiza para a versão especificada. Padrão: "install".',
+      ),
+    version: z
+      .string()
+      .trim()
+      .min(1)
+      .max(50)
+      .optional()
+      .describe(
+        "Versão exata a instalar ou atualizar (ex.: 20.0.0, 3.11.0). O driver passa para o winget via --version. Use apenas quando souber a versão exata do pacote.",
       ),
   })
   .refine(
@@ -455,6 +465,34 @@ export const deviceSetupToolchainInputSchema = z
       path: ["toolchain"],
     },
   )
+
+export const deviceRunSnippetInputSchema = z.object({
+  deviceId: deviceIdSchema,
+  language: z
+    .string()
+    .trim()
+    .min(1)
+    .max(50)
+    .describe(
+      "Idioma do snippet: node, javascript, python ou py. O driver escolhe o interpretador automaticamente.",
+    ),
+  code: z
+    .string()
+    .min(1)
+    .max(64 * 1024)
+    .describe(
+      "Código do snippet a executar. Máximo 64 KB. Será gravado em um arquivo temporário e executado com o interpretador da linguagem informada.",
+    ),
+  cwd: z
+    .string()
+    .trim()
+    .min(1)
+    .max(DEVICE_PATH_MAX_LENGTH)
+    .optional()
+    .describe(
+      "Diretório de trabalho para executar o snippet. Padrão: pasta padrão do dispositivo.",
+    ),
+})
 
 const deviceWindowIdSchema = z
   .string()
@@ -1689,6 +1727,7 @@ function toCommandToolResult(
     ...(output.result.jobs ? { jobs: output.result.jobs } : {}),
     ...(output.result.jobOutput ? { jobOutput: output.result.jobOutput } : {}),
     ...(output.result.toolchain ? { toolchain: output.result.toolchain } : {}),
+    ...(output.result.snippet ? { snippet: output.result.snippet } : {}),
     ...(output.result.cancelled !== undefined
       ? { cancelled: output.result.cancelled }
       : {}),
@@ -1942,13 +1981,23 @@ const jobListDescription = [
 ].join("\n")
 
 const setupToolchainDescription = [
-  "Instala ou desinstala um runtime no dispositivo via winget.",
-  "Informe o `toolchain` do catálogo fechado (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`) ou um `packageId` livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`). Nunca informe versão nem flags do winget: o driver monta o comando inteiro.",
-  "Use `action: \"install\"` (padrão) para instalar ou `action: \"uninstall\"` para remover o pacote.",
+  "Instala, desinstala ou atualiza um runtime no dispositivo via winget.",
+  "Informe o `toolchain` do catálogo fechado (ex.: `node`, `python`, `uv`, `git`, `go`, `dotnet`, `java`) ou um `packageId` livre de qualquer pacote winget (ex.: `7zip.7zip`, `Docker.DockerDesktop`). Nunca informe flags do winget: o driver monta o comando inteiro.",
+  'Use `action: "install"` (padrão) para instalar, `action: "uninstall"` para remover ou `action: "upgrade"` para atualizar.',
+  'Informe `version` quando quiser uma versão exata (ex.: `20.0.0`, `3.11.0`). O driver passa para o winget via --version.',
   "O resultado devolve um `jobId`: acompanhe com `device-job-status` e `device-job-output`.",
-  "Depois do job, confirme a instalação/desinstalação com `device-env` passando `refresh: true`.",
-  "Pacote já instalado (install) retorna `already_installed` sem iniciar job. Fora do Windows ou sem winget retorna erro.",
-  "Instalação e desinstalação de software exigem aprovação caso a caso, salvo quando o dispositivo está em Poder Total com a opção 'Instalação de software sem confirmação' ligada. O Modo Leitura nega sempre.",
+  "Depois do job, confirme com `device-env` passando `refresh: true`.",
+  "Pacote já instalado (install) retorna `already_installed` sem iniciar job. Já na versão desejada (upgrade) também retorna `already_installed`.",
+  "Fora do Windows ou sem winget retorna erro.",
+  "Instalação, desinstalação e atualização exigem aprovação caso a caso, salvo quando o dispositivo está em Poder Total com a opção 'Instalação de software sem confirmação' ligada. O Modo Leitura nega sempre.",
+].join("\n")
+
+const runSnippetDescription = [
+  "Executa um trecho de código no dispositivo com o interpretador da linguagem informada.",
+  "Informe `language` (ex.: `node`, `javascript`, `python`, `py`) e o `code` a executar.",
+  "O código é gravado em um arquivo temporário e executado com o interpretador correspondente.",
+  "O resultado traz `exitCode`, `stdout`, `stderr`, `durationMs` e `truncated`.",
+  "Atualmente suportado: node/javascript e python. Outros idiomas retornam `unsupported_language`.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -3893,6 +3942,27 @@ export function createDeviceTools(
               error instanceof Error
                 ? error.message
                 : "Erro desconhecido ao executar device-setup-toolchain.",
+          }
+        }
+      },
+    }),
+    [DEVICE_RUN_SNIPPET_TOOL_NAME]: tool({
+      description: runSnippetDescription,
+      inputSchema: deviceRunSnippetInputSchema,
+      execute: async ({ deviceId, language, code, cwd }) => {
+        try {
+          return await runCommand(deviceId, {
+            command: "run-snippet",
+            input: { language, code, ...(cwd !== undefined ? { cwd } : {}) },
+          })
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "tool_execution_error",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao executar device-run-snippet.",
           }
         }
       },

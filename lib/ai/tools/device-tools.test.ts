@@ -53,6 +53,7 @@ import {
   DEVICE_UI_ACTION_TOOL_NAME,
   DEVICE_SCREENSHOT_TOOL_NAME,
   DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
+  DEVICE_RUN_SNIPPET_TOOL_NAME,
   DEVICE_READ_CLIPBOARD_TOOL_NAME,
   DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
   DEVICE_MOVE_MOUSE_TOOL_NAME,
@@ -74,6 +75,7 @@ import {
   deviceScreenshotInputSchema,
   deviceEnvInputSchema,
   deviceSetupToolchainInputSchema,
+  deviceRunSnippetInputSchema,
   deviceListAppsInputSchema,
   deviceFindAppInputSchema,
   deviceOpenUrlInputSchema,
@@ -205,6 +207,7 @@ describe("device tools", () => {
         DEVICE_UI_ACTION_TOOL_NAME,
         DEVICE_SCREENSHOT_TOOL_NAME,
         DEVICE_SETUP_TOOLCHAIN_TOOL_NAME,
+        DEVICE_RUN_SNIPPET_TOOL_NAME,
         DEVICE_READ_CLIPBOARD_TOOL_NAME,
         DEVICE_WRITE_CLIPBOARD_TOOL_NAME,
         DEVICE_MOVE_MOUSE_TOOL_NAME,
@@ -246,6 +249,25 @@ describe("device tools", () => {
     expect(() => envSchema.parse({ deviceId: "d", refresh: true })).not.toThrow()
     expect(() => envSchema.parse({ deviceId: "d", refresh: false })).not.toThrow()
     expect(() => envSchema.parse({ deviceId: "d" })).not.toThrow()
+  })
+
+  it("expose device-run-snippet com linguagem e código", () => {
+    const tools = createDeviceTools("user-1")
+
+    expect(tools[DEVICE_RUN_SNIPPET_TOOL_NAME]).toBeDefined()
+    expect(typeof tools[DEVICE_RUN_SNIPPET_TOOL_NAME].execute).toBe("function")
+
+    const schema = deviceRunSnippetInputSchema
+
+    expect(() =>
+      schema.parse({ deviceId: "d", language: "node", code: "console.log('hi')" }),
+    ).not.toThrow()
+    expect(() =>
+      schema.parse({ deviceId: "d", language: "python", code: "print('hi')", cwd: "C:\\projeto" }),
+    ).not.toThrow()
+    expect(() => schema.parse({ deviceId: "d" })).toThrow()
+    expect(() => schema.parse({ deviceId: "d", language: "node" })).toThrow()
+    expect(() => schema.parse({ deviceId: "d", code: "x" })).toThrow()
   })
 
   it("rejects unsafe URLs and app ids", () => {

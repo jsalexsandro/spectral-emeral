@@ -151,9 +151,10 @@ async function detectEntryVersion(entry: ToolchainEntry): Promise<string | null>
 }
 
 /**
- * Instalação/desinstalação em andamento no driver. winget usa um lock próprio
- * e duas operações simultâneas brigam, então serializamos pelo menos durante
- * a largada do job (`startJob`). O modelo acompanha o restante via `job-output`.
+ * Instalação/desinstalação/atualização em andamento no driver. winget usa um
+ * lock próprio e duas operações simultâneas brigam, então serializamos pelo
+ * menos durante a largada do job (`startJob`). O modelo acompanha o restante
+ * via `job-output`.
  */
 let installing: Promise<DeviceJob> | null = null
 
@@ -165,10 +166,12 @@ async function buildWingetScript({
   packageId,
   scope,
   action,
+  version,
 }: {
   packageId: string
   scope: "user" | "machine"
-  action: "install" | "uninstall"
+  action: "install" | "uninstall" | "upgrade"
+  version?: string
 }): Promise<string> {
   const args = [
     "winget",
@@ -184,6 +187,10 @@ async function buildWingetScript({
     "--accept-source-agreements",
   ]
 
+  if (version) {
+    args.push("--version", version)
+  }
+
   if (scope === "user") {
     args.push("--scope", "user")
   }
@@ -194,18 +201,20 @@ async function buildWingetScript({
 }
 
 /**
- * Instala ou desinstala um runtime via winget.
+ * Instala, desinstala ou atualiza um runtime via winget.
  * Aceita um id do catálogo fechado (`toolchain`) ou um `packageId` livre
  * (qualquer pacote do winget). O modelo escolhe; o driver monta o argv.
  * Quando `action` é "uninstall", não há detecção de "já instalado" nem
  * verificação de elevação no driver (fica por conta do winget).
+ * Quando `action` é "upgrade", o pacote deve já estar instalado.
  */
 export async function setupToolchain(
   input: {
     toolchain?: DeviceToolchainId
     packageId?: string
     scope?: "user" | "machine"
-    action?: "install" | "uninstall"
+    action?: "install" | "uninstall" | "upgrade"
+    version?: string
   },
   defaultFolder?: string,
 ): Promise<{ toolchain: DeviceToolchainResult; jobId: string | null }> {
@@ -228,16 +237,16 @@ export async function setupToolchain(
   if (isInstalling()) {
     throw new DeviceToolchainError(
       "toolchain_busy",
-      "Já existe uma instalação/desinstalação de runtime em andamento. Espere o job terminar.",
+      "Já existe uma instalação/desinstalação/atualização de runtime em andamento. Espere o job terminar.",
     )
   }
 
   const action = input.action ?? "install"
 
-  if (action !== "install" && action !== "uninstall") {
+  if (action !== "install" && action !== "uninstall" && action !== "upgrade") {
     throw new DeviceToolchainError(
       "invalid_action",
-      'Campo "action" deve ser "install" ou "uninstall".',
+      'Campo "action" deve ser "install", "uninstall" ou "upgrade".',
     )
   }
 
@@ -267,16 +276,55 @@ export async function setupToolchain(
 
   // Para pacotes do catálogo fechado em instalação, verifica se já está instalado.
   if (action === "install" && input.toolchain) {
-    const version = await detectEntryVersion(entry)
+    const versionInstalled = await detectEntryVersion(entry)
 
-    if (version !== null) {
+    if (versionInstalled !== null) {
+      // Se uma versão específica foi pedida e já está instalada, verificar se
+      // bate com a desejada. Se não bater, fazer upgrade.
+      if (input.version && versionInstalled !== input.version) {
+        // Fall-through para upgrade abaixo
+      } else {
+        return {
+          toolchain: {
+            id: entry.id,
+            name: entry.name,
+            packageId: entry.packageId,
+            action: "already_installed",
+            version: versionInstalled,
+            jobId: null,
+          },
+          jobId: null,
+        }
+      }
+    }
+
+    if (entry.scope === "machine" && !getOsInfo().elevated) {
+      throw new DeviceToolchainError(
+        "elevation_required",
+        `O ${entry.name} instala para todos os usuários e precisa do Spectral como administrador. Feche e abra o Spectral como admin, ou instale manualmente.`,
+      )
+    }
+  }
+
+  // Para upgrade, verificar se o pacote está instalado e qual a versão atual.
+  if (action === "upgrade" && input.toolchain) {
+    const versionInstalled = await detectEntryVersion(entry)
+
+    if (versionInstalled === null) {
+      throw new DeviceToolchainError(
+        "not_installed",
+        `O ${entry.name} não está instalado. Use action: "install" para instalá-lo primeiro.`,
+      )
+    }
+
+    if (input.version && versionInstalled === input.version) {
       return {
         toolchain: {
           id: entry.id,
           name: entry.name,
           packageId: entry.packageId,
           action: "already_installed",
-          version,
+          version: versionInstalled,
           jobId: null,
         },
         jobId: null,
@@ -295,6 +343,7 @@ export async function setupToolchain(
     packageId: entry.packageId,
     scope,
     action,
+    version: input.version,
   })
 
   installing = startJob(
@@ -315,7 +364,7 @@ export async function setupToolchain(
         id: entry.id,
         name: entry.name,
         packageId: entry.packageId,
-        action: action === "install" ? "install" : "uninstalled",
+        action: action === "install" ? "install" : action === "uninstall" ? "uninstalled" : "upgraded",
         version: null,
         jobId: snapshot.id,
       },
@@ -326,7 +375,7 @@ export async function setupToolchain(
   }
 }
 
-/** Testa se há instalação/desinstalação em andamento (exposto para testes). */
+/** Testa se há instalação/desinstalação/atualização em andamento (exposto para testes). */
 export function isToolchainInstalling(): boolean {
   return isInstalling()
 }

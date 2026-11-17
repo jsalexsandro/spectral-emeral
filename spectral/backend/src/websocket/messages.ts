@@ -514,9 +514,19 @@ export const commandResultMessageSchema = z.object({
           id: z.string().min(1).max(120),
           name: z.string().min(1).max(120),
           packageId: z.string().min(1).max(120),
-          action: z.enum(["install", "already_installed", "uninstalled"]),
+          action: z.enum(["install", "already_installed", "uninstalled", "upgraded"]),
           version: z.string().max(120).nullable(),
           jobId: z.string().max(128).nullable(),
+        })
+        .optional(),
+      snippet: z
+        .object({
+          language: z.string().min(1).max(50),
+          exitCode: z.number().int().nullable(),
+          stdout: z.string().max(64 * 1024),
+          stderr: z.string().max(64 * 1024),
+          durationMs: z.number().int().nonnegative(),
+          truncated: z.boolean(),
         })
         .optional(),
       cancelled: z.boolean().optional(),

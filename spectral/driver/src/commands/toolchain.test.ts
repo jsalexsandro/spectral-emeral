@@ -253,12 +253,92 @@ describe("setupToolchain", () => {
     )
   })
 
+  it("atualiza pacote do catálogo fechado (upgrade)", async () => {
+    mockRead.mockResolvedValue("18.0.0")
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { toolchain: "node", action: "upgrade", version: "20.0.0" },
+      "C:\\projeto",
+    )
+
+    expect(result.toolchain.action).toBe("upgraded")
+    expect(result.toolchain.packageId).toBe("OpenJS.NodeJS.LTS")
+    expect(result.toolchain.jobId).toBe("job-1")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringMatching(
+          /winget upgrade --exact --id OpenJS.NodeJS.LTS.*--version 20\.0\.0/,
+        ),
+        shell: "powershell",
+        label: "winget upgrade: Node.js LTS",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\projeto",
+    )
+  })
+
+  it("upgrade sem versão instalada falha com not_installed", async () => {
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    await expect(
+      setupToolchain(
+        { toolchain: "node", action: "upgrade", version: "20.0.0" },
+        "C:\\pasta",
+      ),
+    ).rejects.toMatchObject({ code: "not_installed" })
+  })
+
+  it("upgrade com versão já instalada retorna already_installed", async () => {
+    mockRead.mockResolvedValue("20.0.0")
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { toolchain: "node", action: "upgrade", version: "20.0.0" },
+      "C:\\projeto",
+    )
+
+    expect(result.toolchain.action).toBe("already_installed")
+    expect(result.toolchain.version).toBe("20.0.0")
+    expect(result.jobId).toBeNull()
+    expect(mockStartJob).not.toHaveBeenCalled()
+  })
+
+  it("instala versão específica (install com version)", async () => {
+    mockRead.mockResolvedValue(null)
+
+    const { setupToolchain } = await importFresh()
+
+    const result = await setupToolchain(
+      { toolchain: "node", version: "20.0.0" },
+      "C:\\projeto",
+    )
+
+    expect(result.toolchain.action).toBe("install")
+    expect(result.toolchain.packageId).toBe("OpenJS.NodeJS.LTS")
+    expect(mockStartJob).toHaveBeenCalledWith(
+      {
+        script: expect.stringMatching(
+          /winget install --exact --id OpenJS.NodeJS.LTS.*--version 20\.0\.0/,
+        ),
+        shell: "powershell",
+        label: "winget install: Node.js LTS",
+        maxRuntimeMs: 15 * 60_000,
+      },
+      "C:\\projeto",
+    )
+  })
+
   it("recusa action inválido", async () => {
     const { setupToolchain } = await importFresh()
 
-    // @ts-ignore - testando entrada inválida
     await expect(
-      setupToolchain({ packageId: "7zip.7zip", action: "remover" }, "C:\\pasta"),
+      // @ts-ignore - testando entrada inválida
+      setupToolchain({ packageId: "7zip.7zip", action: "remover" as any }, "C:\\pasta"),
     ).rejects.toMatchObject({ code: "invalid_action" })
   })
 
