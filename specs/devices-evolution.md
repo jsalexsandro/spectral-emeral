@@ -893,8 +893,55 @@ driver, runtime já instalado devolver `already_installed`, Poder Total ainda pe
 aprovação e o Modo Leitura negar. Pacote livre (ex.: `7zip.7zip`) instalar em 1 chamada
 com `jobId`. Desinstalação via `action: "uninstall"` funcionar em 1 chamada. 📝
 
-**Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2);
-`run-snippet` (7c); macOS/Linux via brew/apt.
+### Fase 7c — `run-snippet` para qualquer linguagem instalada (M) — ✅ implementado
+
+Executa um trecho de código no PC do usuário com o interpretador da linguagem
+informada. Não é uma lista fechada: o modelo pode pedir qualquer linguagem que
+tenha o interpretador instalado. Linguagens conhecidas usam descritor curado
+(comando, extensão e forma de execução corretos); as demais usam o próprio nome
+da linguagem como comando, com `extension` opcional para sufixos específicos.
+
+| Comando | Entrada | Risco |
+|---|---|---|
+| `run-snippet` | `{ language, code, cwd?, extension? }` | **exec** (liberado no Modo Construtor; negado no Modo Leitura) |
+
+- `node/js/ts` → `node`/`deno`; `python` → `python`/`python3`; `go` → `go run`;
+  `java` → single-file source nomeado pela classe pública; `dotnet` → `dotnet run`
+  (.NET 10+); `rust`/`c`/`cpp` → compilam e depois executam (`rustc`/`gcc`/`g++`);
+  `ruby`/`php`/`perl`/`lua`/`r`/`swift`/`bash`/`powershell` → script direto.
+- Qualquer outra linguagem: executa `<language>` como comando; sem descrição de
+  extensão, usa `.txt`.
+- Valida `language` (sem espaços, separadores ou `..`), `cwd` (absoluto e
+  existente), `code` (≤ 64 KB) e `extension` (`.` + até 10 alfanuméricos).
+- Orçamento total de 30s: estouro vira `snippet_timeout`. Saída truncada em ~60k
+  chars com `truncated: true`; `command` informa o interpretador resolvido.
+- `exitCode` ≠ 0 não é erro de tool: o snippet rodou e o código falhou — ler
+  `stderr`. Só falhas de infraestrutura (runtime ausente, compilação, timeout,
+  `cwd` inválido) devolvem `ok: false`.
+- Runtime ausente → `runtime_not_installed`; sugere `device-setup-toolchain`
+  apenas quando a linguagem tem id no catálogo fechado (node, python, go, rust,
+  java, dotnet, bun). Linguagens fora do catálogo (ruby, php, ...) não recebem
+  sugestão de catálogo inexistente.
+- Governança: `device-run-snippet` está em `EXEC_TOOLS` (risco `exec`) e é
+  auditado como `snippet <language> (cwd ...)`; o conteúdo do código não entra no
+  log. Instalação de software continua sendo `device-setup-toolchain` (risco
+  `install`, aprovação sempre).
+- Prompt v43 com o playbook de snippet: checagem rápida/protótipo, `get-env`
+  antes de assumir runtime, não usar para build/teste longo (job), não colar
+  segredos.
+
+**Pronto quando:** `node` executa e devolve stdout + `command`; `rust`/`c`/`cpp`
+compilam e executam quando o compilador existe; linguagem desconhecida instalada
+roda via fallback; linguagem ausente devolve `runtime_not_installed` sem sugerir
+catálogo; `cwd` inválido devolve `invalid_snippet_cwd`; timeout devolve
+`snippet_timeout`; Modo Leitura nega; auditoria mostra `snippet <language>` com
+risco `exec`.
+
+**Fora desta release:** sandbox de snippet (roda com o usuário do driver), saída
+em streaming e suporte a macOS/Linux.
+
+**Fora desta release:** versão exata a partir de `pinned` e `winget upgrade` (7b.2); macOS/Linux via brew/apt.
+
 
 **Suporte a Linux (planejado, não implementado):**
 - Depois que a 7b estiver validada no Windows, o mesmo contrato (`device-setup-toolchain`
