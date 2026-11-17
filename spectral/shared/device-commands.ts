@@ -1034,6 +1034,7 @@ export type DeviceCommandInputMap = {
     language: string
     code: string
     cwd?: string
+    extension?: string
   }
   shell: {
     script: string
@@ -1321,6 +1322,8 @@ export type DeviceToolchainResult = {
 
 export type DeviceSnippetResult = {
   language: string
+  /** Intérprete/compilador resolvido e executado. */
+  command?: string
   exitCode: number | null
   stdout: string
   stderr: string
@@ -3885,6 +3888,12 @@ export function parseDeviceCommand(
         DEVICE_PATH_MAX_LENGTH,
         "invalid_snippet_cwd",
       )
+      const extension = readOptionalTrimmedString(
+        input,
+        "extension",
+        20,
+        "invalid_snippet_extension",
+      )
 
       if (
         cwd !== undefined &&
@@ -3900,6 +3909,7 @@ export function parseDeviceCommand(
         language: string
         code: string
         cwd?: string
+        extension?: string
       } = {
         language,
         code,
@@ -3907,6 +3917,10 @@ export function parseDeviceCommand(
 
       if (cwd !== undefined) {
         snippetInput.cwd = cwd
+      }
+
+      if (extension !== undefined) {
+        snippetInput.extension = extension
       }
 
       return { command, input: snippetInput }
