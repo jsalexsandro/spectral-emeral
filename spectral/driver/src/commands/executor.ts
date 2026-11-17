@@ -11,6 +11,7 @@ import {
   hasBlockedOpenPathExtension,
   isStoreAppTarget,
   type DeviceCommand,
+  type DeviceCommandInputMap,
   type DeviceCommandResult,
   type DeviceKey,
   type DeviceKeyModifier,
@@ -40,6 +41,7 @@ import {
   DeviceToolchainError,
   setupToolchain,
 } from "./toolchain.js"
+import { runSnippet } from "./snippet.js"
 import {
   getGitDiff,
   getGitStatus,
@@ -990,6 +992,13 @@ export async function executeDeviceCommand(
           toolchain,
           ...(jobId ? { jobId } : {}),
         }
+      }
+
+      case "run-snippet": {
+        return await runSnippet(
+          command.input as DeviceCommandInputMap["run-snippet"],
+          options?.defaultFolder,
+        )
       }
 
       case "run-command":
