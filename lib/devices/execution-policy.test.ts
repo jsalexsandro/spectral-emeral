@@ -109,6 +109,9 @@ describe("device tool risk classification", () => {
     expect(classifyDeviceToolRisk("device-kill-process", {})).toBe(
       "destructive",
     )
+    expect(classifyDeviceToolRisk("device-run-snippet", { language: "node" })).toBe(
+      "exec",
+    )
   })
 
   it("promotes dangerous shell scripts", () => {

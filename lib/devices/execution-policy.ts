@@ -256,6 +256,7 @@ const FILE_WRITE_TOOLS = new Set<string>([
 
 const EXEC_TOOLS = new Set<string>([
   "device-run-command",
+  "device-run-snippet",
   "device-shell",
   "device-job-start",
 ])

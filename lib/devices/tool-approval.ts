@@ -100,6 +100,12 @@ export function readDeviceToolCommand(
     return record.path
   }
 
+  if (toolName === "device-run-snippet") {
+    const language = typeof record.language === "string" ? record.language : ""
+    const cwd = typeof record.cwd === "string" ? ` (cwd ${record.cwd})` : ""
+    return `snippet ${language}${cwd}`
+  }
+
   return undefined
 }
 
