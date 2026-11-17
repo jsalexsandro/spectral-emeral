@@ -474,7 +474,7 @@ export const deviceRunSnippetInputSchema = z.object({
     .min(1)
     .max(50)
     .describe(
-      "Idioma do snippet: node, javascript, python ou py. O driver escolhe o interpretador automaticamente.",
+      "Idioma do snippet (ex.: node, python, ruby, go, java, php, rust, c, cpp, deno, etc.). O driver aceita qualquer linguagem instalada no dispositivo: usa um descritor curado quando conhece a linguagem e, caso contrário, executa o próprio nome da linguagem como comando. Se o interpretador não estiver instalado, retorna erro sugerindo instalar via device-setup-toolchain (somente quando a linguagem está no catálogo fechado).",
     ),
   code: z
     .string()
@@ -483,6 +483,16 @@ export const deviceRunSnippetInputSchema = z.object({
     .describe(
       "Código do snippet a executar. Máximo 64 KB. Será gravado em um arquivo temporário e executado com o interpretador da linguagem informada.",
     ),
+  extension: z
+    .string()
+    .trim()
+    .min(1)
+    .max(11)
+    .regex(/^\.[a-z0-9]{1,10}$/, "Extensão inválida. Use um ponto seguido de até 10 letras ou dígitos minúsculos (ex.: .exs).")
+    .optional()
+    .describe(
+      "Extensão do arquivo temporário (ex.: .exs, .r). Só é necessária para linguagens fora dos descritores conhecidos. Padrão: inferido da linguagem (.js, .py, .rs, .cs, ...).",
+    ),
   cwd: z
     .string()
     .trim()
@@ -490,7 +500,7 @@ export const deviceRunSnippetInputSchema = z.object({
     .max(DEVICE_PATH_MAX_LENGTH)
     .optional()
     .describe(
-      "Diretório de trabalho para executar o snippet. Padrão: pasta padrão do dispositivo.",
+      "Diretório de trabalho para executar o snippet. Padrão: pasta padrão do dispositivo. Deve ser um caminho absoluto para um diretório existente.",
     ),
 })
 
@@ -1994,10 +2004,13 @@ const setupToolchainDescription = [
 
 const runSnippetDescription = [
   "Executa um trecho de código no dispositivo com o interpretador da linguagem informada.",
-  "Informe `language` (ex.: `node`, `javascript`, `python`, `py`) e o `code` a executar.",
-  "O código é gravado em um arquivo temporário e executado com o interpretador correspondente.",
-  "O resultado traz `exitCode`, `stdout`, `stderr`, `durationMs` e `truncated`.",
-  "Atualmente suportado: node/javascript e python. Outros idiomas retornam `unsupported_language`.",
+  "Informe `language` (qualquer linguagem instalada no dispositivo: `node`, `python`, `ruby`, `go`, `java`, `php`, `rust`, `c`, `cpp`, `deno`, ...) e o `code` a executar.",
+  "O driver usa um descritor curado para as linguagens conhecidas e, para as demais, executa o próprio nome da linguagem como comando. Use `extension` quando a linguagem exigir um sufixo específico (ex.: `.exs`).",
+  "O código é gravado em um arquivo temporário e executado com o interpretador correspondente. `rust`, `c` e `cpp` compilam e depois executam; `java` roda single-file source (Java 11+).",
+  "O resultado traz `command`, `language`, `exitCode`, `stdout`, `stderr`, `durationMs` e `truncated`.",
+  "`exitCode` diferente de zero não é erro da tool: o snippet rodou e o código falhou. Leia `stderr` para entender. Erros de tool (`ok: false`) acontecem apenas com runtime ausente, falha de compilação, timeout (~30s) ou `cwd` inválido.",
+  "Se o interpretador não estiver instalado, o erro sugere `device-setup-toolchain` somente quando a linguagem está no catálogo fechado (node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java).",
+  "Não use para build/teste/lint longo: use `device-write-file` + `device-job-start`. Não cole segredos no snippet.",
 ].join("\n")
 
 const typeTextDescription = [

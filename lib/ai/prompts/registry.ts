@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 42
+export const SYSTEM_PROMPT_VERSION = 43
 
 export type SystemPromptChange = {
   version: number
@@ -252,5 +252,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-16",
     summary:
       "Toolchain via winget: adiciona device-setup-toolchain (instala runtimes do catalogo fechado - node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java - via winget, so com aprovacao e por job), get-env com refresh: true (limpa cache de runtimes e shells para enxergar instalacoes recentes) e warning de runtime ausente no device-project-info. Risco novo install exige aprovacao sempre, inclusive em Poder Total; o Modo Leitura nega. O modelo nunca escolhe versao, packageId nem flags do winget. Prompt v42.",
+  },
+  {
+    version: 43,
+    date: "2026-11-17",
+    summary:
+      "Execucao de trecho sem lista fechada: device-run-snippet aceita qualquer linguagem instalada no dispositivo (descritor curado para node/python/go/rust/java/dotnet/ruby/php/c/cpp e fallback genérico para as demais), com extension opcional, compilacao-then-run para rust/c/cpp, nome do arquivo Java pela classe publica, cwd validado, timeout de ~30s como snippet_timeout, saida truncada com truncated e command no resultado. device-run-snippet passa a ter risco exec e a ser auditado como `snippet <linguagem>`. Runtime ausente sugere device-setup-toolchain apenas quando a linguagem esta no catalogo fechado. Prompt v43.",
   },
 ]

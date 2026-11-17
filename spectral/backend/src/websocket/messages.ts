@@ -522,6 +522,7 @@ export const commandResultMessageSchema = z.object({
       snippet: z
         .object({
           language: z.string().min(1).max(50),
+          command: z.string().min(1).max(260).optional(),
           exitCode: z.number().int().nullable(),
           stdout: z.string().max(64 * 1024),
           stderr: z.string().max(64 * 1024),
