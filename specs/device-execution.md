@@ -49,7 +49,7 @@
 | Shell / scripts | ✅ `shell` — script em arquivo temporário, até 60 s | `commands/shell.ts` |
 | Processo longo / servidor | ✅ `job-start/status/output/cancel/list` — até 3 jobs, retenção ~10 min | `commands/jobs.ts` |
 | Trecho em linguagem | ✅ `run-snippet` — qualquer linguagem instalada, sem lista fechada | `commands/snippet.ts` |
-| Instalar runtime | ✅ `setup-toolchain` — catálogo fechado via winget, governado por `confirmInstall` | `commands/toolchain.ts` |
+| Instalar software | ✅ qualquer instalador pelos degraus de execução, classificado como risco `install` no app; `setup-toolchain` é o atalho do catálogo via winget | `commands/files.ts`, `commands/shell.ts`, `commands/jobs.ts`, `commands/snippet.ts`, `commands/toolchain.ts` |
 | Descobrir ambiente | ✅ `env` / `get-os` — shell, runtimes, home, elevação, `capabilities` | `commands/system.ts` |
 | Arquivos | ✅ `read`, `write`, `edit`, `glob`, `grep`, `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira), `apply-patch` | `commands/files.ts`, `commands/project.ts` |
 | Apps | ✅ `list-apps`, `find-app`, `open-app`, `open-path`, `register-app`, `remove-app`; abertura com args/cwd é risco `launch` | `commands/apps.ts` |
@@ -120,7 +120,7 @@ Use a ferramenta mais baixa que resolve:
 | 2 | `device-shell` | script de shell curto | 30 s padrão / 60 s máx., 64 KB por stream |
 | 3 | `device-job-start` | processo longo ou servidor | 30 min padrão / 60 min máx., 3 jobs por PC |
 | Especialista | `device-run-snippet` | trecho em linguagem específica | ~30 s, ~60k chars por stream |
-| Especialista | `device-setup-toolchain` | instalar runtime do catálogo | via winget, como job, governado por `confirmInstall` |
+| Especialista | `device-setup-toolchain` | atalho para runtime do catálogo | via winget, como job, governado por `confirmInstall` |
 
 Um comando simples não vira script; um script não vira job por hábito.
 `device-open-app` continua sendo o caminho para **lançar aplicativos**; abrir com
@@ -141,8 +141,9 @@ Um comando simples não vira script; um script não vira job por hábito.
   `command` quanto em cada `arg`. Não há interpretação de shell.
 - Interpretadores com `-c`/`-e` (incluindo `cmd /c`) retornam
   `inline_script_denied`; use `device-shell` ou `device-run-snippet`.
-- Instalação de runtime retorna `runtime_install_denied`; use
-  `device-setup-toolchain`.
+- Instalações por comando são permitidas, inclusive npm, cargo, pip, winget,
+  msiexec e apt. O app classifica pelo texto como risco `install` e decide sobre
+  aprovação; `device-setup-toolchain` é apenas o atalho do catálogo.
 - Limites: `DEVICE_RUN_ARGS_MAX_LENGTH = 1024`, `DEVICE_RUN_OUTPUT_MAX_BYTES =
   64 KB`.
 - Na política do app, comandos comuns (`node`, `git`, `npm run build`, `curl`)
@@ -198,7 +199,7 @@ job-list:   { } → { jobs: [...] }
 - `run-snippet`: qualquer linguagem instalada; descritores curados para
   node/python/go/rust/java/dotnet/ruby/php/c/cpp e fallback genérico; `rust`,
   `c`, `cpp` compilam e executam; `java` usa single-file source. Código que
-  instala runtime é barrado com `runtime_install_denied`.
+  instala ferramentas é permitido e classificado como risco `install` no app.
 - `setup-toolchain`: catálogo fechado (`node`, `pnpm`, `yarn`, `bun`, `python`,
   `uv`, `git`, `go`, `rust`, `dotnet`, `java`), sem `version`, `packageId` ou
   flags do winget escolhidos pelo modelo. `packageId`/`version` vazios retornam
@@ -230,8 +231,8 @@ Defesa em profundidade, independente da decisão do app:
 
 - Caminhos protegidos (instalação do Spectral, System32, WinSxS, Boot) e
   credenciais (`.ssh`, `.env`, cookies, chaves privadas) continuam barrados.
-- `runtime_install_denied`: `shell`, `job-start`, `run-snippet` e `run-command`
-  recusam instalação de runtime fora de `setup-toolchain`, mesmo em Poder Total.
+- Sem bloqueio de instalação: `shell`, `job-start`, `run-snippet` e `run-command`
+  executam instaladores sem allowlist/denylist de nomes. A decisão é só do app.
 - `inline_script_denied`: interpretador com `-c`/`-e` em `run-command`.
 - `cwd_protected`: usado por `shell`, `jobs`, `snippet` e `run-command`, inclusive
   quando vem de `defaultFolder`.
@@ -239,8 +240,8 @@ Defesa em profundidade, independente da decisão do app:
 - `job_limit`, kill de árvore, timeout e limites de saída.
 
 > As duas camadas são complementares: o app decide **se pode**; o driver garante
-> **como** executa. Uma decisão permissiva do app nunca desliga uma barreira do
-> driver.
+> **como** executa. Instalação não é mais barrada no driver; uma decisão
+> permissiva do app nunca desliga as barreiras restantes.
 
 ---
 
@@ -311,12 +312,13 @@ Observabilidade para o humano; **nenhum estado novo é duplicado**.
 
 ## 8. Prompt e descrições das tools
 
-- `SYSTEM_PROMPT_VERSION = 44`, com changelog em `lib/ai/prompts/registry.ts`.
+- `SYSTEM_PROMPT_VERSION = 45`, com changelog em `lib/ai/prompts/registry.ts`.
 - `lib/ai/prompts/sections/devices.ts` documenta a escada, as barreiras do
   driver, o task runner e a tradução de `inline_script_denied` /
-  `runtime_install_denied` / `cwd_protected`.
-- O texto de instalação/Poder Total foi mantido, inclusive a orientação de que
-  `device-setup-toolchain` pede aprovação no Modo Construtor.
+  `cwd_protected`, além da instalação governada pelo app.
+- O texto de instalação/Poder Total foi mantido: `device-setup-toolchain` segue
+  a configuração de aprovação do dispositivo, inclusive a exceção de Poder Total
+  com `confirmInstall` ligado.
 - `setupToolchainDescription` permanece com o texto original: instalação,
   desinstalação e atualização exigem aprovação caso a caso, **salvo quando o
   dispositivo está em Poder Total com a opção “Instalação de software sem
@@ -349,7 +351,7 @@ fora do commit.
 | Risco | Mitigação |
 |---|---|
 | Execução arbitrária (RCE por design) | opt-in por dispositivo + aprovação + auditoria + barreiras do driver + rate limit |
-| Contorno de aprovação por shell/job/snippet | `LAUNCH_COMMAND_PATTERNS` e `INSTALL_COMMAND_PATTERNS` no app; `runtime_install_denied` no driver |
+| Contorno de aprovação por shell/job/snippet | `LAUNCH_COMMAND_PATTERNS` e `INSTALL_COMMAND_PATTERNS` no app; driver sem allowlist/denylist de instaladores |
 | Prompt injection vindo de arquivo/saída | tratar saída como dado; aprovação para destrutivo; nunca executar instruções de output |
 | Exfiltração de dados | sem tool HTTP dedicada; `env` sem segredos do driver; auditoria |
 | Caminhos protegidos/credenciais | `resolvePath` + `realpath` + `cwd_protected` + `path_protected` |
