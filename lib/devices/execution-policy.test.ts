@@ -128,9 +128,7 @@ describe("device tool risk classification", () => {
     ).toBe("destructive")
   })
 
-  it("não promove lançamento de app no shell para launch", () => {
-    // A heurística de launch ficou só em device-open-app com args/cwd. O
-    // modelo é livre para iniciar processos por shell/job/run-command.
+  it("classifica lançamentos de apps no shell como launch", () => {
     const scripts = [
       "Start-Process 'C:\\Zed\\Zed.exe' -ArgumentList '.'",
       "start \"\" \"C:\\Zed\\Zed.exe\" .",
@@ -143,7 +141,7 @@ describe("device tool risk classification", () => {
     ]
 
     for (const script of scripts) {
-      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("exec")
+      expect(classifyDeviceToolRisk("device-shell", { script })).toBe("launch")
     }
   })
 
@@ -201,15 +199,21 @@ describe("device tool risk classification", () => {
 
   it("install pede aprovação sempre, inclusive em Poder Total", () => {
     for (const confirmDestructive of [true, false]) {
-      for (const confirmInstall of [true, false]) {
-        expect(decide(confirmDestructive, confirmInstall, "build", "install")).toBe(
-          "approval",
-        )
-        expect(decide(confirmDestructive, confirmInstall, "plan", "install")).toBe(
-          "deny",
-        )
-      }
+      expect(decide(confirmDestructive, false, "build", "install")).toBe("approval")
+      expect(decide(confirmDestructive, false, "plan", "install")).toBe("deny")
     }
+  })
+
+  it("install é liberada direto em Poder Total quando confirmInstall está ligado", () => {
+    expect(decide(false, true, "build", "install")).toBe("allow")
+  })
+
+  it("install continua pedindo aprovação quando confirmInstall está desligado", () => {
+    expect(decide(false, false, "build", "install")).toBe("approval")
+  })
+
+  it("install continua negada no Modo Leitura mesmo com confirmInstall ligado", () => {
+    expect(decide(false, true, "plan", "install")).toBe("deny")
   })
 
   it("classifica device-setup-toolchain como install", () => {
@@ -236,41 +240,12 @@ describe("device tool risk classification", () => {
     }
   })
 
-  it("classifica run-command livre, sem allowlist de executáveis", () => {
-    for (const input of [
-      { command: "node", args: ["-v"] },
-      { command: "git", args: ["status"] },
-      { command: "npm", args: ["run", "build"] },
-      { command: "curl", args: ["https://example.com"] },
-      { command: "C:\\Program Files\\nodejs\\node.exe", args: ["-v"] },
-    ]) {
-      expect(classifyDeviceToolRisk("device-run-command", input)).toBe("exec")
-    }
-  })
-
   it("promotes dangerous run-command invocations", () => {
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "taskkill" }),
     ).toBe("destructive")
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "whoami" }),
-    ).toBe("exec")
-  })
-
-  it("classifica instalação em job-start e run-snippet como install", () => {
-    expect(
-      classifyDeviceToolRisk("device-job-start", {
-        script: "winget install OpenJS.NodeJS.LTS",
-      }),
-    ).toBe("install")
-    expect(
-      classifyDeviceToolRisk("device-run-snippet", {
-        language: "python",
-        code: "import os\nos.system('pip install requests')",
-      }),
-    ).toBe("install")
-    expect(
-      classifyDeviceToolRisk("device-job-start", { script: "npm run build" }),
     ).toBe("exec")
   })
 

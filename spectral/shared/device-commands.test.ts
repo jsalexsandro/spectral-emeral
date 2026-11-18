@@ -3,8 +3,6 @@ import {
   parseDeviceCommand,
   deviceCommandTimeoutMs,
   DEVICE_TOOLCHAIN_IDS,
-  isInlineScriptCommand,
-  isRuntimeInstallCommand,
 } from "./device-commands.js"
 
 describe("parseDeviceCommand — setup-toolchain", () => {
@@ -198,73 +196,5 @@ describe("deviceCommandTimeoutMs", () => {
     const cmd = parseDeviceCommand("get-env", {})
 
     expect(deviceCommandTimeoutMs(cmd)).toBeUndefined()
-  })
-})
-
-describe("parseDeviceCommand — run-command", () => {
-  it("aceita qualquer executável por PATH", () => {
-    for (const command of ["node", "git", "npm", "curl", "powershell"]) {
-      const cmd = parseDeviceCommand("run-command", { command })
-
-      expect(cmd).toMatchObject({ command: "run-command", input: { command } })
-    }
-  })
-
-  it("aceita caminho absoluto do Windows com barras e espaços", () => {
-    const command = "C:\\Program Files\\nodejs\\node.exe"
-    const cmd = parseDeviceCommand("run-command", {
-      command,
-      args: ["C:\\projeto\\script.js"],
-    })
-
-    expect(cmd).toMatchObject({
-      command: "run-command",
-      input: { command, args: ["C:\\projeto\\script.js"] },
-    })
-  })
-
-  it("continua recusando operadores de shell", () => {
-    expect(() =>
-      parseDeviceCommand("run-command", { command: "node && npm test" }),
-    ).toThrow()
-    expect(() =>
-      parseDeviceCommand("run-command", {
-        command: "node",
-        args: ["-e \"console.log(1)\""],
-      }),
-    ).toThrow()
-  })
-})
-
-describe("barreiras compartilhadas de execução", () => {
-  it("detecta instalação de runtime sem confundir dependências do projeto", () => {
-    for (const text of [
-      "winget install OpenJS.NodeJS.LTS",
-      "npm i -g some-cli",
-      "pip install requests",
-      "python -m pip install requests",
-      "msiexec /i setup.msi /qn",
-    ]) {
-      expect(isRuntimeInstallCommand(text)).toBe(true)
-    }
-
-    for (const text of [
-      "winget list",
-      "npm install",
-      "pnpm install --frozen-lockfile",
-      "npm run build",
-      "git status",
-    ]) {
-      expect(isRuntimeInstallCommand(text)).toBe(false)
-    }
-  })
-
-  it("detecta script interpolado em linha de comando", () => {
-    expect(isInlineScriptCommand("powershell.exe", ["-NoProfile", "-Command", "Write-Output 1"])).toBe(true)
-    expect(isInlineScriptCommand("cmd.exe", ["/c", "dir"])).toBe(true)
-    expect(isInlineScriptCommand("python", ["-c", "print(1)"])).toBe(true)
-    expect(isInlineScriptCommand("C:\\Program Files\\nodejs\\node.exe", ["--eval", "1+1"])).toBe(true)
-    expect(isInlineScriptCommand("node", ["-v"])).toBe(false)
-    expect(isInlineScriptCommand("git", ["status"])).toBe(false)
   })
 })

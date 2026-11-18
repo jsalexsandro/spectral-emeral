@@ -45,10 +45,8 @@ import {
   DEVICE_RUN_ARGS_MAX_LENGTH,
   DEVICE_RUN_OUTPUT_MAX_BYTES,
   DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
-  isInlineScriptCommand,
-  isRuntimeInstallCommand,
 } from "../../../shared/device-commands.js"
-import { PROTECTED_PATHS, resolveWorkingDirectory } from "./shell.js"
+import { PROTECTED_PATHS } from "./shell.js"
 import {
   isGitignored,
   readGitignoreRules,
@@ -66,6 +64,91 @@ const MAX_WRITE_FILE_BYTES = 1024 * 1024
 const TRASH_TIMEOUT_MS = 20_000
 
 const execFileAsync = promisify(execFile)
+
+const RUN_COMMAND_ALLOWLIST_WINDOWS = new Set([
+  "dir",
+  "type",
+  "echo",
+  "tasklist",
+  "systeminfo",
+  "ipconfig",
+  "ping",
+  "netstat",
+  "whoami",
+  "hostname",
+  "date",
+  "ver",
+  "cd",
+  "cls",
+  "find",
+  "findstr",
+  "tree",
+  "vol",
+])
+
+const RUN_COMMAND_ALLOWLIST_UNIX = new Set([
+  "ls",
+  "pwd",
+  "echo",
+  "cat",
+  "ps",
+  "df",
+  "free",
+  "whoami",
+  "hostname",
+  "date",
+  "uname",
+  "ping",
+  "netstat",
+  "ifconfig",
+  "find",
+  "grep",
+  "head",
+  "tail",
+  "wc",
+  "uptime",
+  "w",
+])
+
+const RUN_COMMAND_ALLOWLIST: Record<string, Set<string>> = {
+  win32: RUN_COMMAND_ALLOWLIST_WINDOWS,
+  darwin: RUN_COMMAND_ALLOWLIST_UNIX,
+  linux: RUN_COMMAND_ALLOWLIST_UNIX,
+}
+
+const RUN_COMMAND_DENYLIST_PATTERNS = [
+  /sudo/,
+  /su /,
+  /runas/,
+  /rm -rf/,
+  /del /,
+  /format/,
+  /shutdown/,
+  /reboot/,
+  /poweroff/,
+  /halt/,
+  /mkfs/,
+  /fdisk/,
+  /reg delete/,
+  /sc delete/,
+  /net stop/,
+  /net start/,
+  /taskkill/,
+  /xcopy/,
+  /robocopy/,
+  /cscript/,
+  /wscript/,
+  /powershell/,
+  /pwsh/,
+  /cmd/,
+  /bash/,
+  /sh /,
+  /zsh/,
+  /curl/,
+  /wget/,
+  /chmod/,
+  /chown/,
+]
 
 const IS_WINDOWS = process.platform === "win32"
 
@@ -1715,26 +1798,46 @@ export class FileSandbox {
     defaultFolder?: string,
   ): Promise<DeviceCommandSuccess> {
     const { command: rawCommand, args = [], timeoutMs = DEVICE_RUN_TIMEOUT_DEFAULT_MS, cwd } = input
+
+    // Valida o comando base contra a allowlist
+    const allowlist = RUN_COMMAND_ALLOWLIST[process.platform]
+
+    if (!allowlist || !allowlist.has(rawCommand)) {
+      throw new DeviceFileError(
+        "command_not_allowed",
+        `O comando '${rawCommand}' não está na allowlist de comandos permitidos.`,
+      )
+    }
+
+    // Verifica se nenhum argumento bate com padrões perigosos
     const fullCommandLine = [rawCommand, ...args].join(" ")
 
-    // Barreiras inegociáveis do driver: não há allowlist/denylist de executáveis.
-    if (isRuntimeInstallCommand(fullCommandLine)) {
-      throw new DeviceFileError(
-        "runtime_install_denied",
-        "Instalação de runtime bloqueada. Use device-setup-toolchain, que sempre pede aprovação.",
-      )
+    for (const pattern of RUN_COMMAND_DENYLIST_PATTERNS) {
+      if (pattern.test(fullCommandLine)) {
+        throw new DeviceFileError(
+          "command_blocked",
+          `O comando '${rawCommand}' contém um padrão bloqueado por segurança.`,
+        )
+      }
     }
 
-    if (isInlineScriptCommand(rawCommand, args)) {
-      throw new DeviceFileError(
-        "inline_script_denied",
-        "Script interpolado na linha de comando é bloqueado. Use device-shell ou device-run-snippet.",
-      )
-    }
+    // Resolve o diretório de trabalho
+    let runCwd: string | undefined
+    if (cwd) {
+      const resolved = await this.resolvePath(cwd)
+      const stats = await lstat(resolved.absolute)
 
-    // Mesmo caminho protegido usado por shell/jobs: realpath + deny de
-    // instalação do Spectral, System32, WinSxS e Boot.
-    const runCwd = await resolveWorkingDirectory(cwd, defaultFolder)
+      if (!stats.isDirectory()) {
+        throw new DeviceFileError(
+          "not_a_directory",
+          "O caminho cwd não é um diretório.",
+        )
+      }
+
+      runCwd = resolved.absolute
+    } else if (defaultFolder) {
+      runCwd = defaultFolder
+    }
 
     const startTime = Date.now()
 
