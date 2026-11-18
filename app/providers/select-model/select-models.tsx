@@ -27,16 +27,20 @@ export type ModelGroup = {
 type SelectModelsProps = {
   groups: readonly ModelGroup[]
   preferences: readonly InstantModelPreference[]
+  allowModelFallbackOnFailure: boolean
 }
 
 export function SelectModels({
   groups,
   preferences: initialPreferences,
+  allowModelFallbackOnFailure: initialAllowFallback,
 }: SelectModelsProps) {
   const [preferences, setPreferences] = useState(initialPreferences)
   const [pendingKeys, setPendingKeys] = useState<readonly string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
+  const [allowFallback, setAllowFallback] = useState(initialAllowFallback)
+  const [savingFallback, setSavingFallback] = useState(false)
 
   const filteredGroups = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -110,6 +114,36 @@ export function SelectModels({
     }
   }
 
+  async function handleFallbackToggle(enabled: boolean) {
+    if (savingFallback) {
+      return
+    }
+
+    const previous = allowFallback
+    setAllowFallback(enabled)
+    setSavingFallback(true)
+    setError(null)
+
+    try {
+      const response = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowModelFallbackOnFailure: enabled }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Falha ao salvar")
+      }
+    } catch {
+      setAllowFallback(previous)
+      setError(
+        "Não foi possível salvar a preferência de alternância. Tente novamente.",
+      )
+    } finally {
+      setSavingFallback(false)
+    }
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
       <header className="space-y-4">
@@ -146,6 +180,51 @@ export function SelectModels({
           />
         </div>
       </header>
+
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <h2 className="font-heading text-base font-semibold">
+              Alternância entre modelos
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Permitir alternação entre modelos em caso de falha?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Quando ativado, se o modelo selecionado falhar, o Spectral tenta
+              automaticamente o próximo modelo rápido ativado com chave
+              configurada.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={allowFallback}
+            aria-label="Permitir alternação entre modelos em caso de falha"
+            disabled={savingFallback}
+            onClick={() => void handleFallbackToggle(!allowFallback)}
+            className={cn(
+              "relative mt-1 inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+              allowFallback
+                ? "border-primary bg-primary"
+                : "border-border bg-muted",
+            )}
+          >
+            <span
+              className={cn(
+                "pointer-events-none flex size-4 items-center justify-center rounded-full bg-background transition-transform",
+                allowFallback ? "translate-x-6" : "translate-x-1",
+              )}
+            >
+              {savingFallback ? (
+                <Loader2 className="size-3 animate-spin text-muted-foreground" />
+              ) : allowFallback ? (
+                <Check className="size-3 text-primary" />
+              ) : null}
+            </span>
+          </button>
+        </div>
+      </section>
 
       {error && (
         <p role="alert" className="text-sm text-destructive">

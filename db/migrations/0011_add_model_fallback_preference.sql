@@ -1,0 +1,1 @@
+ALTER TABLE "user" ADD COLUMN "allowModelFallbackOnFailure" boolean DEFAULT false NOT NULL;

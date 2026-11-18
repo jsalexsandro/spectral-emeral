@@ -70,3 +70,26 @@ export function upsertInstantPreference(
     currentIndex === index ? next : preference,
   )
 }
+
+export function getFallbackCandidateModels(
+  configuredProviders: readonly ProviderId[],
+  preferences: readonly InstantModelPreference[],
+  primary: { provider: ProviderId; modelId: string },
+  limit = 3,
+): Array<{ provider: ProviderId; modelId: string }> {
+  const candidates: Array<{ provider: ProviderId; modelId: string }> = []
+
+  for (const model of getQuickModels(configuredProviders, preferences)) {
+    if (model.provider === primary.provider && model.id === primary.modelId) {
+      continue
+    }
+
+    candidates.push({ provider: model.provider, modelId: model.id })
+
+    if (candidates.length >= limit) {
+      break
+    }
+  }
+
+  return candidates
+}

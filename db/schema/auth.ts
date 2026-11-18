@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, integer, index, uniqueIndex, boolean } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 import type { AdapterAccountType } from "next-auth/adapters"
 
@@ -10,6 +10,9 @@ export const users = pgTable("user", {
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
   password: text("password"),
+  allowModelFallbackOnFailure: boolean("allowModelFallbackOnFailure")
+    .default(false)
+    .notNull(),
   createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
 })

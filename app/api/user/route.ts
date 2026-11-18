@@ -34,6 +34,7 @@ export async function PATCH(request: Request) {
   const values: {
     name?: string;
     nickname?: string | null;
+    allowModelFallbackOnFailure?: boolean;
     updatedAt: Date;
   } = {
     updatedAt: new Date(),
@@ -48,6 +49,10 @@ export async function PATCH(request: Request) {
       parsed.data.nickname === "" ? null : parsed.data.nickname;
   }
 
+  if (parsed.data.allowModelFallbackOnFailure !== undefined) {
+    values.allowModelFallbackOnFailure = parsed.data.allowModelFallbackOnFailure;
+  }
+
   try {
     const [updated] = await db
       .update(users)
@@ -59,6 +64,7 @@ export async function PATCH(request: Request) {
         nickname: users.nickname,
         email: users.email,
         image: users.image,
+        allowModelFallbackOnFailure: users.allowModelFallbackOnFailure,
       });
 
     if (!updated) {

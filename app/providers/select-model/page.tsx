@@ -4,7 +4,7 @@ import { connection } from "next/server"
 import { eq } from "drizzle-orm"
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { aiKeys, instantModels } from "@/db/schema"
+import { aiKeys, instantModels, users } from "@/db/schema"
 import { getAvailableModels, type InstantModelPreference } from "@/lib/ai/instant-models"
 import { getModel } from "@/lib/ai/models"
 import { aiProviders, isProviderId, type ProviderId } from "@/lib/ai/providers"
@@ -25,7 +25,7 @@ export default async function SelectModelsPage() {
     redirect("/login?callbackUrl=/providers/select-model")
   }
 
-  const [keys, preferences] = await Promise.all([
+  const [keys, preferences, userRows] = await Promise.all([
     db
       .select({ provider: aiKeys.provider })
       .from(aiKeys)
@@ -38,6 +38,11 @@ export default async function SelectModelsPage() {
       })
       .from(instantModels)
       .where(eq(instantModels.userId, session.user.id)),
+    db
+      .select({ allowModelFallbackOnFailure: users.allowModelFallbackOnFailure })
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .limit(1),
   ])
 
   const configuredProviders = Array.from(
@@ -73,5 +78,13 @@ export default async function SelectModelsPage() {
     }))
     .filter((group) => group.models.length > 0)
 
-  return <SelectModels groups={groups} preferences={instantPreferences} />
+  return (
+    <SelectModels
+      groups={groups}
+      preferences={instantPreferences}
+      allowModelFallbackOnFailure={
+        userRows[0]?.allowModelFallbackOnFailure ?? false
+      }
+    />
+  )
 }

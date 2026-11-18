@@ -15,10 +15,17 @@ export const updateProfileSchema = z
   .object({
     name: nameSchema.optional(),
     nickname: nicknameSchema.nullable().optional(),
+    allowModelFallbackOnFailure: z.boolean().optional(),
   })
-  .refine((data) => data.name !== undefined || data.nickname !== undefined, {
-    message: "Nenhum campo para atualizar",
-    path: ["name"],
-  });
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.nickname !== undefined ||
+      data.allowModelFallbackOnFailure !== undefined,
+    {
+      message: "Nenhum campo para atualizar",
+      path: ["name"],
+    },
+  );
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
