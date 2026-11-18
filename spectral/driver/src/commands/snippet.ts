@@ -8,7 +8,6 @@ import {
   type DeviceCommandResult,
   type DeviceSnippetResult,
 } from "../../../shared/device-commands.js"
-import { isRuntimeInstallCommand } from "../../../shared/device-commands.js"
 import {
   DeviceShellError,
   locateCommand,
@@ -327,15 +326,6 @@ export async function runSnippet(
       ok: false,
       code: "invalid_snippet_code",
       error: "O código excede o limite de 64 KB.",
-    }
-  }
-
-  if (isRuntimeInstallCommand(`${language}\n${input.code}`)) {
-    return {
-      ok: false,
-      code: "runtime_install_denied",
-      error:
-        "Instalação de runtime bloqueada no snippet. Use device-setup-toolchain, que sempre pede aprovação.",
     }
   }
 

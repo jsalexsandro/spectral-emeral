@@ -14,7 +14,6 @@ import {
   type DeviceJobStream,
   type DeviceShellKind,
 } from "../../../shared/device-commands.js"
-import { isRuntimeInstallCommand } from "../../../shared/device-commands.js"
 import {
   buildShellEnv,
   detectShell,
@@ -381,13 +380,6 @@ export async function startJob(
   defaultFolder?: string,
 ): Promise<DeviceJob> {
   purgeExpired()
-
-  if (isRuntimeInstallCommand(input.script)) {
-    throw new DeviceJobError(
-      "runtime_install_denied",
-      "Instalação de runtime bloqueada em job. Use device-setup-toolchain, que sempre pede aprovação.",
-    )
-  }
 
   // Reserva a vaga antes dos `await` de preparação para dois start
   // simultâneos não passarem juntos pelo limite.

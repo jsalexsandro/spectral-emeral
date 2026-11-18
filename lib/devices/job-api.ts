@@ -61,7 +61,6 @@ function statusForJobError(code: string): number {
     case "command_failed":
     case "job_limit":
     case "job_failed":
-    case "runtime_install_denied":
       return 409
     case "command_timeout":
       return 504

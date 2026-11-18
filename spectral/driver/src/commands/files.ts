@@ -46,7 +46,6 @@ import {
   DEVICE_RUN_OUTPUT_MAX_BYTES,
   DEVICE_WRITE_FILES_TOTAL_BYTES_MAX,
   isInlineScriptCommand,
-  isRuntimeInstallCommand,
 } from "../../../shared/device-commands.js"
 import { PROTECTED_PATHS, resolveWorkingDirectory } from "./shell.js"
 import {
@@ -1715,16 +1714,10 @@ export class FileSandbox {
     defaultFolder?: string,
   ): Promise<DeviceCommandSuccess> {
     const { command: rawCommand, args = [], timeoutMs = DEVICE_RUN_TIMEOUT_DEFAULT_MS, cwd } = input
-    const fullCommandLine = [rawCommand, ...args].join(" ")
 
-    // Barreiras inegociáveis do driver: não há allowlist/denylist de executáveis.
-    if (isRuntimeInstallCommand(fullCommandLine)) {
-      throw new DeviceFileError(
-        "runtime_install_denied",
-        "Instalação de runtime bloqueada. Use device-setup-toolchain, que sempre pede aprovação.",
-      )
-    }
-
+    // Barreiras inegociáveis do driver: não há allowlist/denylist de
+    // executáveis, nem bloqueio de instalação. A política do app classifica o
+    // risco `install` e decide sobre aprovação.
     if (isInlineScriptCommand(rawCommand, args)) {
       throw new DeviceFileError(
         "inline_script_denied",

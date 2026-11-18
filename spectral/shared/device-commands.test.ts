@@ -4,7 +4,6 @@ import {
   deviceCommandTimeoutMs,
   DEVICE_TOOLCHAIN_IDS,
   isInlineScriptCommand,
-  isRuntimeInstallCommand,
 } from "./device-commands.js"
 
 describe("parseDeviceCommand — setup-toolchain", () => {
@@ -237,25 +236,14 @@ describe("parseDeviceCommand — run-command", () => {
 })
 
 describe("barreiras compartilhadas de execução", () => {
-  it("detecta instalação de runtime sem confundir dependências do projeto", () => {
-    for (const text of [
-      "winget install OpenJS.NodeJS.LTS",
-      "npm i -g some-cli",
-      "pip install requests",
-      "python -m pip install requests",
-      "msiexec /i setup.msi /qn",
+  it("aceita instalação de ferramentas no run-command sem allowlist de nomes", () => {
+    for (const input of [
+      { command: "npm", args: ["install", "-g", "nodemon"] },
+      { command: "cargo", args: ["install", "ripgrep"] },
+      { command: "pip", args: ["install", "requests"] },
+      { command: "winget", args: ["install", "--id", "OpenJS.NodeJS.LTS"] },
     ]) {
-      expect(isRuntimeInstallCommand(text)).toBe(true)
-    }
-
-    for (const text of [
-      "winget list",
-      "npm install",
-      "pnpm install --frozen-lockfile",
-      "npm run build",
-      "git status",
-    ]) {
-      expect(isRuntimeInstallCommand(text)).toBe(false)
+      expect(() => parseDeviceCommand("run-command", input)).not.toThrow()
     }
   })
 

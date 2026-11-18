@@ -490,33 +490,6 @@ export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
 export const DEVICE_RUN_ARGS_MAX_LENGTH = 1024
 
 /**
- * Instalar/atualizar runtime é responsabilidade exclusiva de
- * `device-setup-toolchain`. Estes padrões são a barreira compartilhada entre a
- * política do app e o driver: qualquer shell, job, snippet ou `run-command` que
- * tente instalar algo é recusado, mesmo em Poder Total.
- */
-const RUNTIME_INSTALL_PATTERNS: readonly RegExp[] = [
-  /\bwinget\s+(?:install|uninstall|upgrade|configure)\b/i,
-  /\bchoco(?:latey)?\s+(?:install|upgrade)\b/i,
-  /\bscoop\s+install\b/i,
-  /\bmsiexec\b/i,
-  /\bnpm\s+(?:install|i|add)\b[^\n]*\s(?:-g|--global)\b/i,
-  /\bpnpm\s+(?:add|install)\b[^\n]*\s(?:-g|--global)\b/i,
-  /\byarn\s+global\s+add\b/i,
-  /\bcargo\s+install\b/i,
-  /\bgo\s+install\b/i,
-  /\bdotnet\s+tool\s+install\b/i,
-  /\bgem\s+install\b/i,
-  /\bpip(?:3)?\s+install\b/i,
-  /\bpython(?:[0-9.]*)?\s+-m\s+pip\s+install\b/i,
-  /\b(?:apt|apt-get|brew|dnf|yum|pacman)\s+(?:install|upgrade)\b/i,
-]
-
-export function isRuntimeInstallCommand(text: string): boolean {
-  return RUNTIME_INSTALL_PATTERNS.some((pattern) => pattern.test(text))
-}
-
-/**
  * `run-command` recebe argv, nunca uma linha de comando interpretada. Um
  * interpretador com `-c`/`-e` (ou `cmd /c`) recriaria a interpolação que a
  * ferramenta evita; use `device-shell` ou `device-run-snippet` nesses casos.
