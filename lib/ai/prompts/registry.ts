@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 44
+export const SYSTEM_PROMPT_VERSION = 43
 
 export type SystemPromptChange = {
   version: number
@@ -258,11 +258,5 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-17",
     summary:
       "Execucao de trecho sem lista fechada: device-run-snippet aceita qualquer linguagem instalada no dispositivo (descritor curado para node/python/go/rust/java/dotnet/ruby/php/c/cpp e fallback genérico para as demais), com extension opcional, compilacao-then-run para rust/c/cpp, nome do arquivo Java pela classe publica, cwd validado, timeout de ~30s como snippet_timeout, saida truncada com truncated e command no resultado. device-run-snippet passa a ter risco exec e a ser auditado como `snippet <linguagem>`. Runtime ausente sugere device-setup-toolchain apenas quando a linguagem esta no catalogo fechado. Prompt v43.",
-  },
-  {
-    version: 44,
-    date: "2026-11-18",
-    summary:
-      "Execução em camadas: device-run-command aceita qualquer executável por PATH ou caminho absoluto, sem allowlist/denylist de nomes; a escada é run-command → device-shell → device-job-start, com device-run-snippet para um trecho em linguagem específica e device-setup-toolchain como único caminho de instalação. Barreiras inegociáveis no driver: Modo Leitura nega mutação, caminhos protegidos e credenciais continuam barrados, instalação fora do setup-toolchain é recusada (runtime_install_denied), script interpolado em -c/-e é recusado (inline_script_denied) e cwd protegido devolve cwd_protected. Instalação sempre pede aprovação, inclusive em Poder Total; o campo confirmInstall vira legado sem efeito e sai da UI. Lançamento de app fica só em device-open-app. O task runner do dispositivo passa a ser observável no app por /api/devices/[id]/jobs e na aba Dispositivos → Tarefas. Prompt v44.",
   },
 ]
