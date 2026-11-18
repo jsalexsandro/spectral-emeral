@@ -9,6 +9,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "spectral/backend/src/**/*.test.ts", "spectral/driver/src/**/*.test.ts"],
+    include: [
+      "lib/**/*.test.ts",
+      "spectral/shared/**/*.test.ts",
+      "spectral/backend/src/**/*.test.ts",
+      "spectral/driver/src/**/*.test.ts",
+    ],
   },
 })

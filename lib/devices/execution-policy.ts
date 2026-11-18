@@ -11,6 +11,7 @@
 
 import { homedir } from "node:os"
 import { isAbsolute, resolve, sep } from "node:path"
+import { isRuntimeInstallCommand } from "@/spectral/shared/device-commands"
 
 export const CHAT_EXECUTION_MODES = ["plan", "build"] as const
 
@@ -24,10 +25,9 @@ export type DeviceExecutionPolicy = {
   /** `true` = ações destrutivas/de sistema pedem aprovação no chat. */
   confirmDestructive: boolean
   /**
-   * `true` = instalações de software (risco `install`) podem rodar sem
-   * aprovação caso a caso quando o dispositivo estiver em Poder Total.
-   * Padrão `false`: toda instalação exige aprovação, mesmo em Poder Total.
-   * O Modo Leitura continua negando instalação independente desse valor.
+   * Campo legado mantido apenas para compatibilidade com políticas salvas e
+   * com o payload da API. Não tem efeito: instalação sempre pede aprovação,
+   * inclusive em Poder Total.
    */
   confirmInstall: boolean
   updatedAt?: string
@@ -119,7 +119,7 @@ export const DEVICE_CONFIRMATION_LABELS = {
 export const DEVICE_CONFIRMATION_DESCRIPTIONS = {
   confirm:
     "Escrita, execução e cliques rodam direto no Modo Construtor. Ações destrutivas ou de sistema pedem aprovação no chat.",
-  full: "Ações destrutivas e de sistema rodam sem confirmação. O Modo Leitura continua bloqueando qualquer alteração.",
+  full: "Ações destrutivas e de sistema rodam sem confirmação. Instalações e o Modo Leitura continuam exigindo aprovação/negação, respectivamente.",
 } as const
 
 /** Diretório de referência do usuário: escrita fora dele é tratada como destrutiva. */
@@ -320,45 +320,6 @@ const DESTRUCTIVE_COMMAND_PATTERNS: RegExp[] = [
   /\bnpm\s+publish\b/i,
 ]
 
-/**
- * Scripts que iniciam outro aplicativo. O `open-app` com argumentos já é
- * `launch`; sem estes padrões, o mesmo lançamento via `device-shell` rodaria
- * como `exec` e contornaria a aprovação. É heurística: entradas indiretas
- * (`cmd /c start`, `Invoke-Expression`, `schtasks`) ainda não são cobertas.
- */
-const LAUNCH_COMMAND_PATTERNS: RegExp[] = [
-  /\bstart-process\b/i,
-  /(?:^|[;&|]\s*)start(?:\s|$)/im,
-  /\bxdg-open\b/i,
-  /\bexplorer(?:\.exe)?\s+[^\n]/i,
-  /(?:^|[;&|]\s*)open\s+-[a-zA-Z-]+\s+/im,
-  /(?:^|[;&|]\s*)open\s+(?:["'~./\\]|https?:\/\/)/im,
-  /^\s*&\s*["']?[a-z]:\\[^\n]*\.(?:exe|com|bat|cmd|lnk|msc)["']?/im,
-  /(?:^|[;&|]\s*)["']?[a-z]:\\[^\n]*\.(?:exe|com|bat|cmd|lnk|msc)["']?(?:\s|$)/im,
-]
-
-/**
- * Comandos que instalam software na máquina (fora do escopo de um projeto).
- * O modelo não pode instalar esses pacotes pelo shell sem aprovação, senão
- * contornaria o catálogo fechado de `device-setup-toolchain`.
- */
-const INSTALL_COMMAND_PATTERNS: RegExp[] = [
-  // winget somente é instalação/desinstalação quando tem verbo de mutação.
-  // winget list, show, search, source etc. continuam como exec (leitura/consulta).
-  /\bwinget\s+(install|uninstall|upgrade|configure)\b/i,
-  /\bchoco\s+(install|upgrade)\b/i,
-  /\bscoop\s+install\b/i,
-  /\bmsiexec\b/i,
-  /\bnpm\s+(install|i)\b[^\n]*\s-g\b/i,
-  /\bpnpm\s+(add|install)\b[^\n]*\s-g\b/i,
-  /\byarn\s+global\s+add\b/i,
-  /\bcargo\s+install\b/i,
-  /\bgo\s+install\b/i,
-  /\bdotnet\s+tool\s+install\b/i,
-  /\bgem\s+install\b/i,
-  /\bpip\s+install\b/i,
-]
-
 function collectCommandText(toolName: string, input: unknown): string {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return ""
@@ -366,8 +327,15 @@ function collectCommandText(toolName: string, input: unknown): string {
 
   const record = input as Record<string, unknown>
 
-  if (toolName === "device-shell") {
+  if (toolName === "device-shell" || toolName === "device-job-start") {
     return typeof record.script === "string" ? record.script : ""
+  }
+
+  if (toolName === "device-run-snippet") {
+    const language = typeof record.language === "string" ? record.language : ""
+    const code = typeof record.code === "string" ? record.code : ""
+
+    return [language, code].join("\n")
   }
 
   if (toolName === "device-run-command") {
@@ -483,7 +451,9 @@ export function classifyDeviceToolRisk(
   if (EXEC_TOOLS.has(toolName)) {
     const text = collectCommandText(toolName, input)
 
-    if (matchesAny(INSTALL_COMMAND_PATTERNS, text)) {
+    // Instalação nunca é `exec`: o driver também barra, mas a política do app
+    // precisa classificar antes para exigir aprovação sempre.
+    if (isRuntimeInstallCommand(text)) {
       return "install"
     }
 
@@ -493,10 +463,6 @@ export function classifyDeviceToolRisk(
 
     if (matchesAny(DESTRUCTIVE_COMMAND_PATTERNS, text)) {
       return "destructive"
-    }
-
-    if (matchesAny(LAUNCH_COMMAND_PATTERNS, text)) {
-      return "launch"
     }
 
     return "exec"
@@ -554,14 +520,10 @@ export function evaluateDeviceToolCall({
   }
 
   if (risk === "install") {
-    if (policy.confirmInstall) {
-      return { action: "allow" }
-    }
-
     return {
       action: "approval",
       reason:
-        "Instalação de software no dispositivo. Confirme antes de instalar.",
+        "Instalação de software no dispositivo. Confirme antes de instalar. Use device-setup-toolchain; instalações pelo shell/job/snippet são bloqueadas pelo driver.",
     }
   }
 

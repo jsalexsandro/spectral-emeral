@@ -13,6 +13,7 @@ import type {
   DeviceShellKind,
   DeviceShellResult,
 } from "../../../shared/device-commands.js"
+import { isRuntimeInstallCommand } from "../../../shared/device-commands.js"
 
 const execFileAsync = promisify(execFile)
 const IS_WINDOWS = process.platform === "win32"
@@ -652,6 +653,13 @@ export async function runShell(
   input: DeviceCommandInputMap["shell"],
   defaultFolder?: string,
 ): Promise<DeviceShellResult> {
+  if (isRuntimeInstallCommand(input.script)) {
+    throw new DeviceShellError(
+      "runtime_install_denied",
+      "Instalação de runtime bloqueada no shell. Use device-setup-toolchain, que sempre pede aprovação.",
+    )
+  }
+
   const cwd = await resolveWorkingDirectory(input.cwd, defaultFolder)
   const { info, candidate } = await detectShell(input.shell)
   const { directory, scriptPath } = await prepareShellScript(
