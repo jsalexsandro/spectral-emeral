@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VERSION = 44
+export const SYSTEM_PROMPT_VERSION = 45
 
 export type SystemPromptChange = {
   version: number
@@ -264,5 +264,11 @@ export const systemPromptChangelog: readonly SystemPromptChange[] = [
     date: "2026-11-18",
     summary:
       "Execução em camadas: device-run-command aceita qualquer executável por PATH ou caminho absoluto, sem allowlist/denylist de nomes; a escada é run-command → device-shell → device-job-start, com device-run-snippet para um trecho em linguagem específica e device-setup-toolchain para instalar runtime. O lançamento de app com args/cwd continua como risco launch e mantém a heurística de aprovação. Barreiras inegociáveis no driver: Modo Leitura nega mutação, caminhos protegidos e credenciais continuam barrados, instalação de runtime fora do setup-toolchain é recusada (runtime_install_denied), script interpolado em -c/-e é recusado (inline_script_denied) e cwd protegido devolve cwd_protected. A governança fica intacta: install pede aprovação por padrão, libera sem aprovação somente em Poder Total com 'Instalação de software sem confirmação' ligada e é negada no Modo Leitura. O task runner do dispositivo passa a ser observável no app por /api/devices/[id]/jobs e na aba Dispositivos → Tarefas. Prompt v44.",
+  },
+  {
+    version: 45,
+    date: "2026-11-18",
+    summary:
+      "Liberdade de instalação no driver: removido o bloqueio `runtime_install_denied` de shell, jobs, snippet e run-command; npm, cargo, pip, winget, msiexec, apt e demais instaladores não são recusados por nome. `device-setup-toolchain` continua como atalho opcional do catálogo. `INSTALL_COMMAND_PATTERNS`, `LAUNCH_COMMAND_PATTERNS`, `confirmInstall` e o ramo `install` seguem governando no app: aprovação por padrão, liberação sem aprovação só em Poder Total com 'Instalação de software sem confirmação' ligada e negação no Modo Leitura. Permanecem `inline_script_denied`, `cwd_protected`, caminhos protegidos/credenciais e segredos do driver. Prompt v45.",
   },
 ]

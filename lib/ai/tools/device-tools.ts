@@ -1949,7 +1949,7 @@ const shellDescription = [
   "A saída é limitada por `maxOutputBytes` (padrão 64 KB por stream, máximo 512 KB) com cabeça e cauda; `truncated` indica corte.",
   "Timeout padrão 30s (máximo 60s). Ao estourar, a árvore de processos é encerrada e `timedOut` vem true.",
   "A ação passa pela política do dispositivo: ações destrutivas ou de sistema podem exigir aprovação no chat. Nunca rode scripts que fecham janelas/apps sem o usuário pedir.",
-  "Instalação de runtime é barrada no driver com `runtime_install_denied`: use `device-setup-toolchain`, que segue a configuração de instalação do dispositivo.",
+  "Instalações de software pelo script são permitidas e seguem a política do app: risco `install`, com aprovação conforme a configuração do dispositivo. O driver não bloqueia ferramentas por nome.",
   "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",
 ].join("\n")
 
@@ -1961,7 +1961,7 @@ const jobStartDescription = [
   "Até 3 jobs rodam simultâneos por dispositivo. Se o limite estiver atingido, cancele um job existente com `device-job-cancel` ou espere terminar.",
   "O driver espera até 500 ms antes de responder: um processo que falha na largada já volta com `exited`/`failed` e o `exitCode`. Mesmo assim, confirme com `device-job-status` antes de afirmar que está rodando.",
   "Leia a saída aos poucos com `device-job-output` passando o `cursor` da resposta anterior; nunca releia tudo do zero.",
-  "Passa pela política do dispositivo: ações destrutivas/de sistema podem pedir aprovação e o Modo Leitura nega. Instalação de runtime é barrada com `runtime_install_denied`; use `device-setup-toolchain`.",
+  "Passa pela política do dispositivo: ações destrutivas/de sistema podem pedir aprovação e o Modo Leitura nega. Instalações no script são permitidas e classificadas como risco `install` pelo app, com a mesma aprovação configurada.",
   "No Windows o shell do plano de execução é suportado nesta versão; macOS/Linux retornam `unsupported_platform`.",
 ].join("\n")
 
@@ -2011,7 +2011,7 @@ const runSnippetDescription = [
   "O resultado traz `command`, `language`, `exitCode`, `stdout`, `stderr`, `durationMs` e `truncated`.",
   "`exitCode` diferente de zero não é erro da tool: o snippet rodou e o código falhou. Leia `stderr` para entender. Erros de tool (`ok: false`) acontecem apenas com runtime ausente, falha de compilação, timeout (~30s) ou `cwd` inválido.",
   "Se o interpretador não estiver instalado, o erro sugere `device-setup-toolchain` somente quando a linguagem está no catálogo fechado (node, pnpm, yarn, bun, python, uv, git, go, rust, dotnet, java).",
-  "Código que instala runtime é barrado com `runtime_install_denied`; use `device-setup-toolchain`. Não use para build/teste/lint longo: use `device-write-file` + `device-job-start`. Não cole segredos no snippet.",
+  "Código que instala ferramentas é permitido e classificado como risco `install` pelo app, sujeito à aprovação configurada. Não use para build/teste/lint longo: use `device-write-file` + `device-job-start`. Não cole segredos no snippet.",
 ].join("\n")
 
 const typeTextDescription = [
@@ -2211,7 +2211,7 @@ const runCommandDescription = [
   "Executa um executável do dispositivo com uma lista de argumentos argv. Primeiro degrau da escada de execução.",
   "Aceita qualquer comando por PATH ou caminho absoluto (node, git, npm, curl, powershell, binários do sistema). Não há allowlist/denylist de nomes.",
   "Use para comandos curtos. Para um script de várias linhas use `device-shell`; para processo longo use `device-job-start`; para um trecho em linguagem específica use `device-run-snippet`.",
-  "Barreiras inegociáveis: operadores de shell (`&&`, `|`, `;`, redirecionamento) e aspas são recusados no parsing; `-c`/`-e` de interpretador retorna `inline_script_denied`; instalação de runtime retorna `runtime_install_denied` (use `device-setup-toolchain`); `cwd` protegido retorna `cwd_protected`.",
+  "Barreiras inegociáveis: operadores de shell (`&&`, `|`, `;`, redirecionamento) e aspas são recusados no parsing; `-c`/`-e` de interpretador retorna `inline_script_denied`; `cwd` protegido retorna `cwd_protected`. Instalações por comando são permitidas: o app classifica como risco `install` e decide sobre aprovação.",
   "Ação destrutiva ou de sistema passa pela política do dispositivo e pode pedir aprovação no chat. No Modo Leitura toda mutação é negada.",
   "Saída limitada a 64 KB. Timeout configurável (padrão 15s, máximo 60s).",
 ].join("\n")
