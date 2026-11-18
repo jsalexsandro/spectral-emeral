@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Laptop,
+  ListTodo,
   Loader2,
   MonitorSmartphone,
   Pencil,
@@ -11,6 +12,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react"
+import { TaskRunnerDialog } from "@/components/devices/task-runner-dialog"
 import { toast } from "@/components/ui/sonner"
 import {
   AlertDialog,
@@ -121,6 +123,11 @@ export function DevicesSection() {
   const [confirmDestructive, setConfirmDestructive] = useState(true)
   const [confirmInstall, setConfirmInstall] = useState(false)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+
+  const [taskRunnerOpen, setTaskRunnerOpen] = useState(false)
+  const [taskRunnerDevice, setTaskRunnerDevice] = useState<DeviceSummary | null>(
+    null,
+  )
 
   const requestId = useRef(0)
   const isMounted = useRef(true)
@@ -480,6 +487,19 @@ export function DevicesSection() {
                 </div>
 
                 <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Tarefas de ${device.name}`}
+                    disabled={device.status !== "online"}
+                    onClick={() => {
+                      setTaskRunnerDevice(device)
+                      setTaskRunnerOpen(true)
+                    }}
+                  >
+                    <ListTodo />
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -851,6 +871,12 @@ export function DevicesSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TaskRunnerDialog
+        device={taskRunnerDevice}
+        open={taskRunnerOpen}
+        onOpenChange={setTaskRunnerOpen}
+      />
     </div>
   )
 }
