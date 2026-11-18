@@ -1,9 +1,9 @@
 # Execução no dispositivo — o driver como “Claude Code sem cérebro”
 
-> **Status:** Fases 0, 1, 2 (arquivos e processos), 3 (jobs) e o task runner
-> implementadas. `run-command` executa qualquer executável em camadas com
-> `shell`/`job-start`, com barreiras inegociáveis apenas no driver; o prompt
-> está na v44. Detalha o item 7 de
+> **Status:** Fase 0 (fundação), Fase 1 (shell MVP) e Fase 2 de arquivos
+> (`mkdir`, `stat`, `copy`, `move`, `delete` para a lixeira e `apply-patch`)
+> implementadas. Processos (restante da Fase 2) e jobs (Fase 3) seguem como
+> plano. Detalha o item 7 de
 > [`specs/devices-evolution.md`](./devices-evolution.md) e é a base para os
 > itens 5, 8 e 13.
 >
@@ -41,19 +41,19 @@
 
 | Capacidade | Claude Code | Spectral hoje | Entrega |
 |---|---|---|---|
-| Shell / scripts | Bash livre, cwd, exit code | ✅ `run-command` livre + `shell` com script em arquivo | — |
+| Shell / scripts | Bash livre, cwd, exit code | allowlist `dir`, `type`, `echo`… | `shell` (item 7a) |
 | Descobrir ambiente | `env`, `which`, `uname` | `get-os` básico | `env` (item 7b) |
 | Ler arquivo | `Read` com offset/limit | ✅ `read-file` | — |
 | Escrever/editar | `Write`, `Edit`, `MultiEdit` | ✅ `write-file`, `edit-file`, `apply-patch` atômico | — |
 | Buscar arquivos/texto | `Glob`, `Grep` (rg) | ✅ `glob`, `grep` | — |
 | Operações de arquivo | `cp`, `mv`, `rm`, `mkdir`, `stat` | ✅ `mkdir`, `stat`, `copy`, `move`, `delete` (lixeira) | `zip`/`unzip` via shell |
 | Abrir aplicativos | `open`/atalhos do sistema | ✅ `open-app`, `list-apps`, `find-app` (descoberta no Windows), `open-path`, `register-app`/`remove-app` | `open-app` com args/cwd é risco `launch` |
-| Processos | `ps`, `kill`, `top` | ✅ `list-processes`, `kill-process` (sempre por pid) | — |
-| Comandos longos | background + streaming | ✅ jobs com cursor, até 3 por PC + task runner na UI | — |
-| Rede | `curl`/WebFetch | ✅ via `run-command`/`shell` no Modo Construtor | — |
+| Processos | `ps`, `kill`, `top` | ❌ | item 8 |
+| Comandos longos | background + streaming | ❌ teto de 60 s honrado de ponta a ponta, 1 por PC | jobs (item 13) |
+| Rede | `curl`/WebFetch | ❌ (bloqueado) | via `shell` no Modo Construtor |
 | GUI nativa | ❌ | ✅ UIA, mouse, screenshot, janelas | diferencial |
 | Clipboard | limitado | ✅ texto | — |
-| Sistema | volume/energia/etc. | ✅ Windows-first (item 9) | expandir macOS/Linux |
+| Sistema | volume/energia/etc. | ❌ | item 9 |
 | Navegador | via Playwright/MCP | ❌ | item 4c |
 | **Cérebro** | plano, todo, memória, subagents, MCP, hooks | app | app |
 
@@ -158,27 +158,6 @@ Execução (decisão de projeto):
 Erros: `unsupported_platform` (macOS/Linux nesta versão), `policy_denied`,
 `shell_unavailable`, `cwd_protected`, `cwd_not_found`, `not_a_directory`,
 `command_timeout`, `output_too_large`, `command_failed` e `approval_denied`.
-
-#### 4.1.1 Escada de execução (v44)
-
-1. `run-command`: qualquer executável por PATH ou caminho absoluto, com `args`
-   em argv. Sem allowlist/denylist de nomes. Para um comando curto.
-2. `shell`: script de várias linhas em arquivo temporário, até 60 s. Para
-   build, teste, git e fluxos sem tool dedicada.
-3. `job-start`: mesmo script em segundo plano, com cursor de saída e teto de
-   60 min. Para servidores e processos longos.
-4. `run-snippet`: um trecho de código na linguagem informada, sem lista
-   fechada; compilação-then-run quando necessário.
-5. `setup-toolchain`: único caminho permitido para instalar/atualizar runtime,
-   sempre com aprovação.
-
-Barreiras inegociáveis no driver (fora da política do app): Modo Leitura,
-caminhos protegidos e credenciais, instalação de runtime fora do
-`setup-toolchain` (`runtime_install_denied`), script interpolado em `-c`/`-e`
-(`inline_script_denied`), `cwd` protegido (`cwd_protected`) e segredos do
-driver. Helpers compartilhados:
-`spectral/shared/device-commands.ts` (`isRuntimeInstallCommand`,
-`isInlineScriptCommand`) e `shell.ts` (`resolveWorkingDirectory`).
 
 ### 4.2 `env` (item 7b) — o modelo para de adivinhar
 
@@ -310,11 +289,7 @@ O executor foi exercitado direto (`executeDeviceCommand`), sem passar pelo
 | `open-path` em `.exe` | `invalid_path` |
 | `register-app` repetido | idempotente, preserva o id |
 | `remove-app` de id inexistente | `app_not_found` |
-| `run-command` com `node -v` | `exec`: direto no Construtor, negado no Modo Leitura |
-| `run-command` com `taskkill` | risco `destructive`: aprovação no Construtor, livre em Poder Total |
-| `run-command` com `cmd /c dir` | `inline_script_denied` no driver |
-| `run-command` com `cwd: C:\Windows\System32` | `cwd_protected` no driver |
-| `shell` com `winget install ...` | `runtime_install_denied` no driver |
+| `run-command` com `taskkill` | `command_not_allowed` (allowlist) |
 | `shell` com `Write-Output` | exit 0, saída capturada |
 
 **Achado 1 — `open-path` executava scripts fora da denylist.** Um arquivo
@@ -329,20 +304,18 @@ por testes de contrato, do schema da tool e de `parseDeviceCommand`.
 **Achado 2 — o fallback via `device-shell` contornava a aprovação de
 `launch`.** `device-shell` com `Start-Process <app>.exe -ArgumentList '.'` era
 classificado como `exec` e rodava sem aprovação no build com confirmação,
-enquanto o mesmo lançamento via `open-app` com `args` era `launch`. A correção
-inicial usou `LAUNCH_COMMAND_PATTERNS` nas tools de execução. **Revisão v44:** a
-heurística foi removida de `shell`/`job-start`/`run-command` — o Spectral precisa
-ser livre para operar a máquina, e regex não é sandbox. `launch` ficou só em
-`device-open-app` com `args`/`cwd`, onde o aplicativo realmente recebe
-instruções. Iniciar processos por `run-command`/`shell`/job voltou a ser `exec`,
-com a política normal de Modo Leitura/destrutivo.
+enquanto o mesmo lançamento via `open-app` com `args` era `launch`. **Correção
+aplicada:** `LAUNCH_COMMAND_PATTERNS` classifica `Start-Process`, `start`,
+`open`, `xdg-open`, `explorer` e a invocação direta de `.exe`/`.cmd` ancorada no
+início da linha ou depois de `&`/`;`/`|` como `launch`, sempre depois de
+`system` e `destructive`. Coberto por testes de classificação e da matriz
+plan/build/Poder Total.
 
-Limites que continuam: as barreiras do driver são inegociáveis (Modo Leitura,
-caminhos protegidos/credenciais, instalação de runtime fora do
-`setup-toolchain`, script interpolado em `-c`/`-e` e segredos do driver), mas
-não são uma sandbox de comandos. `open-path` continua abrindo qualquer
-documento fora da blocklist e `device-shell` com script arbitrário continua
-sendo execução plena no build.
+Limites que continuam: os regexes são heurísticos e não são sandbox. Entradas
+indiretas como `cmd /c start`, `Invoke-Expression`, `wmic process call create` e
+`schtasks` ainda podem lançar apps sem cair no padrão de `launch`. `open-path`
+continua abrindo qualquer documento fora da blocklist, e `device-shell` com
+script arbitrário continua sendo execução plena no build.
 
 O harness chamou o executor diretamente, então o card Permitir/Negar e a
 auditoria não foram exercitados nesse teste; para isso, use o chat do Spectral.
@@ -401,14 +374,6 @@ job-list:   { } → { jobs: [...] }
 - Sem WebSocket app↔backend: o modelo faz polling pelas tools.
 - Windows primeiro; macOS/Linux retornam `unsupported_platform`.
 
-**Task runner (v44).** Observabilidade no app, sem tabela nova: o driver continua
-sendo a fonte da verdade. `GET/POST /api/devices/[id]/jobs` lista e inicia
-jobs; `GET/DELETE /api/devices/[id]/jobs/[jobId]` consulta status/saída
-(`?view=output&cursor=…`) e cancela. As rotas exigem sessão, posse do
-dispositivo e rate limit, e repassam o comando por `sendDeviceCommand`. A UI em
-Configurações → Dispositivos → `Tarefas` mostra rótulo/id, status, duração,
-`exitCode`, saída incremental por cursor e botão de cancelar (kill da árvore).
-
 ### 4.6 Rede
 
 Não criar uma tool nova de HTTP no MVP: `curl`/`Invoke-WebRequest` via `shell`
@@ -439,7 +404,6 @@ O modelo é deliberadamente pequeno. O usuário escolhe apenas duas coisas:
 ```ts
 DeviceExecutionPolicy = {
   confirmDestructive: boolean   // padrão: true
-  confirmInstall?: boolean      // legado, sem efeito desde a v44
   updatedAt?: string
 }
 ```
@@ -450,18 +414,14 @@ Matriz de decisão (`lib/devices/execution-policy.ts`):
 |---|---|---|---|
 | `read` | allow | allow | allow |
 | `input`, `write`, `exec` | deny | allow | allow |
-| `launch` (`device-open-app` com args/cwd) | deny | approval | allow |
+| `launch` | deny | approval | allow |
 | `destructive`, `system` | deny | approval | allow |
-| `install` | deny | approval | **approval** |
-
-- Instalação nunca é liberada por Poder Total: `confirmInstall` ficou apenas
-  no contrato/persistência para compatibilidade e saiu da UI.
 
 - O Modo Leitura nunca é furado pela preferência do dispositivo.
 - As tools expostas ao modelo são filtradas por capability + modo para reduzir
   escolha errada; o contrato permanece estável.
-- Defesa em profundidade: o app decide risco/aprovação e o driver repete as
-  barreiras inegociáveis, mesmo em Poder Total.
+- Defesa em profundidade: o app bloqueia antes de enviar e o driver repete as
+  validações de sandbox/denylist.
 - Escrita fora do diretorio de referencia do usuario (home) e classificada como
   `destructive`: pede aprovacao no Construtor (salvo Poder Total).
   `device-delete` e comandos perigosos (`rm -rf`, `format`, `shutdown`, etc.)
@@ -590,17 +550,15 @@ Arquivos — ✅ implementado (Windows):
 - macOS/Linux: `delete` sem `permanent` retorna `unsupported_platform`; o
   restante opera por plataforma no driver.
 
-Processos — ✅ implementado:
-- `list-processes` (filtro por nome/comando, limite) e `kill-process` (sempre por
-  `pid`, com `force`/`tree`). `start-process` fica fora: `run-command`, `shell` e
-  jobs cobrem a execução.
+Processos — pendente:
+- `list-processes`, `start-process`, `kill-process`.
 
 **Arquivos prontos quando:** organizar uma pasta (criar, copiar, mover, apagar
 para a lixeira) e editar vários trechos de um arquivo funcionam com aprovação só
 no destrutivo, auditoria e verificação posterior. ✅
 
 **Fase completa quando:** encerrar um processo também funcionar com aprovação e
-auditoria. ✅
+auditoria.
 
 ### P2 — Acesso total a disco (concluído)
 - `cwd` aceita qualquer caminho absoluto na maquina; não há mais
@@ -616,16 +574,12 @@ auditoria. ✅
 `D:\projeto` pede aprovacao (ou libera em Poder Total) e caminhos protegidos
 rejeitam. ✅
 
-### Fase 3 — Jobs (G) — ✅ implementada
-- `job-start/status/output/cancel/list` + buffer por cursor e leitura
-  incremental no chat.
+### Fase 3 — Jobs (G)
+- `job-start/status/output/cancel/list` + buffer + streaming no chat.
 - `maxRuntimeMs`, cancelamento e kill de árvore.
-- Task runner na UI do app (rotas próprias, sem tabela) para listar, iniciar,
-  ler saída e cancelar jobs do dispositivo.
-- `run-command` livre e escada de execução documentada no prompt v44.
 
 **Pronto quando:** um `npm run dev` fica vivo além de 60 s, a IA lê a saída
-incremental e consegue cancelar. ✅
+incremental e consegue cancelar.
 
 ### Fase 4 — Expansão
 - Rede via shell (se necessário, `http-request` com allowlist).
@@ -637,7 +591,7 @@ incremental e consegue cancelar. ✅
 
 | Risco | Mitigação |
 |---|---|
-| Execução arbitrária (RCE por design) | opt-in por dispositivo + aprovação + auditoria + barreiras inegociáveis no driver + rate limit |
+| Execução arbitrária (RCE por design) | opt-in por dispositivo + aprovação + auditoria + denylist + raízes + rate limit |
 | Prompt injection vindo de arquivo/saída | tratar saída como dado; aprovação para destrutivo; nunca executar instruções de output |
 | Exfiltração de dados | `network: off` por padrão; aprovação para rede; auditoria |
 | Escrita fora do sandbox | `resolvePath` + `realpath` + symlink bloqueado + raízes da política |
