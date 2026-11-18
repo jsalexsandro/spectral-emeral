@@ -10,6 +10,8 @@ import {
 } from "@/lib/devices/screenshot-tool"
 import { summarizeToolInput } from "@/lib/ai/tools/tool-summary"
 import { Button } from "@/components/ui/button"
+import { CodeBlock } from "@/components/chat/code-block"
+import { cn } from "@/lib/utils"
 
 type ToolPartCardProps = {
   part: ToolUIPart | DynamicToolUIPart
@@ -37,6 +39,93 @@ function formatInputJson(input: unknown): string | null {
   }
 }
 
+type SnippetOutput = {
+  language?: string
+  command?: string
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  durationMs?: number
+  truncated?: boolean
+}
+
+function readSnippetOutput(part: ToolUIPart | DynamicToolUIPart): SnippetOutput | null {
+  if (getToolName(part) !== "device-run-snippet") return null
+  const output = (part as { output?: unknown }).output
+  if (!output || typeof output !== "object") return null
+  const record = output as Record<string, unknown>
+  const snippet = record.snippet
+  if (!snippet || typeof snippet !== "object") return null
+  const s = snippet as Record<string, unknown>
+  if (typeof s.stdout !== "string" || typeof s.stderr !== "string") return null
+  return {
+    language: typeof s.language === "string" ? s.language : undefined,
+    command: typeof s.command === "string" ? s.command : undefined,
+    exitCode: typeof s.exitCode === "number" ? s.exitCode : null,
+    stdout: s.stdout,
+    stderr: s.stderr,
+    durationMs: typeof s.durationMs === "number" ? s.durationMs : undefined,
+    truncated: s.truncated === true,
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms} ms`
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`
+}
+
+function SnippetOutputView({ snippet }: { snippet: SnippetOutput }) {
+  const ok = snippet.exitCode === 0
+  const hasStdout = snippet.stdout.length > 0
+  const hasStderr = snippet.stderr.length > 0
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        {snippet.language ? (
+          <span className="font-medium text-foreground">{snippet.language}</span>
+        ) : null}
+        {snippet.command ? (
+          <span className="font-mono">{snippet.command}</span>
+        ) : null}
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 font-mono",
+            ok
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "bg-destructive/10 text-destructive",
+          )}
+        >
+          exit {snippet.exitCode ?? "?"}
+        </span>
+        {snippet.durationMs !== undefined ? (
+          <span>{formatDuration(snippet.durationMs)}</span>
+        ) : null}
+        {snippet.truncated ? (
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+            saída truncada
+          </span>
+        ) : null}
+      </div>
+      {hasStdout ? (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground">stdout</p>
+          <CodeBlock code={snippet.stdout} language={snippet.language} showHeader={false} />
+        </div>
+      ) : null}
+      {hasStderr ? (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-destructive">stderr</p>
+          <CodeBlock code={snippet.stderr} language={snippet.language} showHeader={false} />
+        </div>
+      ) : null}
+      {!hasStdout && !hasStderr ? (
+        <p className="text-xs text-muted-foreground">(sem saída)</p>
+      ) : null}
+    </div>
+  )
+}
+
 export function ToolPartCard({ part, onApprovalResponse }: ToolPartCardProps) {
   const toolName = getToolName(part)
   const state = part.state as string
@@ -53,6 +142,7 @@ export function ToolPartCard({ part, onApprovalResponse }: ToolPartCardProps) {
           (part as { output?: unknown }).output,
         )
       : null
+  const snippetOutput = readSnippetOutput(part)
 
   if (state === "approval-requested" && approval?.id) {
     return (
@@ -227,6 +317,7 @@ export function ToolPartCard({ part, onApprovalResponse }: ToolPartCardProps) {
             {summary}
           </p>
         )}
+        {snippetOutput && <SnippetOutputView snippet={snippetOutput} />}
         {inputJson && (
           <details className="mt-1">
             <summary className="cursor-pointer text-[11px] text-muted-foreground select-none">
