@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, writeFile, rm, stat } from "node:fs/promises"
+import { mkdtemp, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, isAbsolute } from "node:path"
 import { promisify } from "node:util"
@@ -8,7 +8,12 @@ import {
   type DeviceCommandResult,
   type DeviceSnippetResult,
 } from "../../../shared/device-commands.js"
-import { locateCommand } from "./shell.js"
+import { isRuntimeInstallCommand } from "../../../shared/device-commands.js"
+import {
+  DeviceShellError,
+  locateCommand,
+  resolveWorkingDirectory,
+} from "./shell.js"
 
 const execFileAsync = promisify(execFile)
 const SNIPPET_TIMEOUT_MS = 30_000
@@ -181,6 +186,19 @@ function invalidSnippetCwd(): {
   }
 }
 
+function protectedSnippetCwd(): {
+  ok: false
+  code: "cwd_protected"
+  error: string
+} {
+  return {
+    ok: false,
+    code: "cwd_protected",
+    error:
+      "Este diretório é protegido pelo sistema e não pode ser usado como diretório de trabalho.",
+  }
+}
+
 function snippetTimeout(durationMs: number): {
   ok: false
   code: "snippet_timeout"
@@ -312,6 +330,15 @@ export async function runSnippet(
     }
   }
 
+  if (isRuntimeInstallCommand(`${language}\n${input.code}`)) {
+    return {
+      ok: false,
+      code: "runtime_install_denied",
+      error:
+        "Instalação de runtime bloqueada no snippet. Use device-setup-toolchain, que sempre pede aprovação.",
+    }
+  }
+
   let extension: string | undefined
   if (input.extension !== undefined) {
     if (!EXTENSION_RE.test(input.extension)) {
@@ -327,20 +354,20 @@ export async function runSnippet(
   const invocation = resolveSnippetInvocation(language)
   const ext = extension ?? invocation.extension
 
-  const cwd = input.cwd ?? defaultFolder ?? tmpdir()
-
-  if (!isAbsolute(cwd)) {
+  if (input.cwd !== undefined && !isAbsolute(input.cwd)) {
     return invalidSnippetCwd()
   }
 
-  let cwdStat
+  let cwd: string
   try {
-    cwdStat = await stat(cwd)
-  } catch {
-    return invalidSnippetCwd()
-  }
+    // Usa o mesmo resolve de shell/jobs para bloquear System32, WinSxS, Boot e
+    // a instalação do Spectral como cwd, inclusive via defaultFolder.
+    cwd = await resolveWorkingDirectory(input.cwd, defaultFolder ?? tmpdir())
+  } catch (error) {
+    if (error instanceof DeviceShellError && error.code === "cwd_protected") {
+      return protectedSnippetCwd()
+    }
 
-  if (!cwdStat.isDirectory()) {
     return invalidSnippetCwd()
   }
 

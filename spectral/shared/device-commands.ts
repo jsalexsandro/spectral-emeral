@@ -490,6 +490,82 @@ export const DEVICE_RUN_OUTPUT_MAX_BYTES = 64 * 1024
 export const DEVICE_RUN_ARGS_MAX_LENGTH = 1024
 
 /**
+ * Instalar/atualizar runtime é responsabilidade exclusiva de
+ * `device-setup-toolchain`. Estes padrões são a barreira compartilhada entre a
+ * política do app e o driver: qualquer shell, job, snippet ou `run-command` que
+ * tente instalar algo é recusado, mesmo em Poder Total.
+ */
+const RUNTIME_INSTALL_PATTERNS: readonly RegExp[] = [
+  /\bwinget\s+(?:install|uninstall|upgrade|configure)\b/i,
+  /\bchoco(?:latey)?\s+(?:install|upgrade)\b/i,
+  /\bscoop\s+install\b/i,
+  /\bmsiexec\b/i,
+  /\bnpm\s+(?:install|i|add)\b[^\n]*\s(?:-g|--global)\b/i,
+  /\bpnpm\s+(?:add|install)\b[^\n]*\s(?:-g|--global)\b/i,
+  /\byarn\s+global\s+add\b/i,
+  /\bcargo\s+install\b/i,
+  /\bgo\s+install\b/i,
+  /\bdotnet\s+tool\s+install\b/i,
+  /\bgem\s+install\b/i,
+  /\bpip(?:3)?\s+install\b/i,
+  /\bpython(?:[0-9.]*)?\s+-m\s+pip\s+install\b/i,
+  /\b(?:apt|apt-get|brew|dnf|yum|pacman)\s+(?:install|upgrade)\b/i,
+]
+
+export function isRuntimeInstallCommand(text: string): boolean {
+  return RUNTIME_INSTALL_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+/**
+ * `run-command` recebe argv, nunca uma linha de comando interpretada. Um
+ * interpretador com `-c`/`-e` (ou `cmd /c`) recriaria a interpolação que a
+ * ferramenta evita; use `device-shell` ou `device-run-snippet` nesses casos.
+ */
+const INLINE_SCRIPT_COMMANDS: ReadonlyArray<{
+  names: readonly string[]
+  flags: RegExp
+}> = [
+  { names: ["cmd"], flags: /^\/[ck]$/i },
+  {
+    names: ["powershell", "pwsh"],
+    flags: /^(?:-(?:c|command|encodedcommand)|\/c)$/i,
+  },
+  { names: ["bash", "sh", "zsh", "ksh"], flags: /^-c$/ },
+  { names: ["node", "deno", "bun"], flags: /^(?:-e|--eval)$/ },
+  { names: ["python", "python3"], flags: /^-c$/ },
+  { names: ["ruby", "perl", "php", "lua"], flags: /^-e$/ },
+]
+
+export function isInlineScriptCommand(
+  command: string,
+  args: readonly string[] = [],
+): boolean {
+  const name = command
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/\.exe$/i, "")
+    .toLowerCase()
+
+  if (!name) {
+    return false
+  }
+
+  const spec = INLINE_SCRIPT_COMMANDS.find((item) =>
+    item.names.includes(name),
+  )
+
+  if (!spec) {
+    return false
+  }
+
+  // A flag de script vem antes do código; limitar a busca evita confundir um
+  // argumento comum (como `-c` dentro de uma mensagem) com a opção real.
+  return args.slice(0, 4).some((arg) => spec.flags.test(arg.trim()))
+}
+
+/**
  * Shell é a primitiva central do plano de execução. O script sempre roda a
  * partir de um arquivo temporário; nunca é interpolado numa linha de comando.
  * O teto de saída fica abaixo do `maxPayload` do WebSocket (4 MB) para não
@@ -1590,7 +1666,10 @@ function readOptionalPackageId(input: unknown): string | undefined {
   const value = input.packageId.trim()
 
   if (value.length === 0) {
-    return undefined
+    throw new DeviceCommandValidationError(
+      "invalid_package_id",
+      'Campo "packageId" não pode ficar vazio.',
+    )
   }
 
   if (/[\u0000-\u001f\u007f]/.test(value)) {
@@ -1648,7 +1727,10 @@ function readOptionalVersion(input: unknown): string | undefined {
   const value = input.version.trim()
 
   if (value.length === 0) {
-    return undefined
+    throw new DeviceCommandValidationError(
+      "invalid_version",
+      'Campo "version" não pode ficar vazio.',
+    )
   }
 
   if (/[\u0000-\u001f\u007f]/.test(value)) {
@@ -3324,7 +3406,7 @@ function parseRunCommand(input: unknown): DeviceCommand {
   }
 
   // Bloqueia caracteres de shell perigosos
-  if (/[;&|`$<>(){}\[\]\\]/.test(command)) {
+  if (/[;&|`$<>(){}\[\]"'\r\n\u0000]/.test(command)) {
     throw new DeviceCommandValidationError(
       "invalid_command_arg",
       "O comando contém caracteres não permitidos.",
@@ -3364,7 +3446,7 @@ function parseRunCommand(input: unknown): DeviceCommand {
       }
 
       // Bloqueia caracteres de shell perigosos nos argumentos
-      if (/[;&|`$<>(){}\[\]\\]/.test(arg)) {
+      if (/[;&|`$<>(){}\[\]"'\r\n\u0000]/.test(arg)) {
         throw new DeviceCommandValidationError(
           "invalid_args",
           `O argumento ${i} contém caracteres não permitidos.`,

@@ -340,7 +340,9 @@ const LAUNCH_COMMAND_PATTERNS: RegExp[] = [
 /**
  * Comandos que instalam software na máquina (fora do escopo de um projeto).
  * O modelo não pode instalar esses pacotes pelo shell sem aprovação, senão
- * contornaria o catálogo fechado de `device-setup-toolchain`.
+ * contornaria o catálogo fechado de `device-setup-toolchain`. Os mesmos padrões
+ * valem para `device-job-start` e `device-run-snippet`, que também carregam
+ * texto executável.
  */
 const INSTALL_COMMAND_PATTERNS: RegExp[] = [
   // winget somente é instalação/desinstalação quando tem verbo de mutação.
@@ -366,8 +368,15 @@ function collectCommandText(toolName: string, input: unknown): string {
 
   const record = input as Record<string, unknown>
 
-  if (toolName === "device-shell") {
+  if (toolName === "device-shell" || toolName === "device-job-start") {
     return typeof record.script === "string" ? record.script : ""
+  }
+
+  if (toolName === "device-run-snippet") {
+    const language = typeof record.language === "string" ? record.language : ""
+    const code = typeof record.code === "string" ? record.code : ""
+
+    return [language, code].join("\n")
   }
 
   if (toolName === "device-run-command") {

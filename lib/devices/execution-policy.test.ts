@@ -240,12 +240,49 @@ describe("device tool risk classification", () => {
     }
   })
 
+  it("classifica run-command livre, sem allowlist de executáveis", () => {
+    for (const input of [
+      { command: "node", args: ["-v"] },
+      { command: "git", args: ["status"] },
+      { command: "npm", args: ["run", "build"] },
+      { command: "curl", args: ["https://example.com"] },
+    ]) {
+      expect(classifyDeviceToolRisk("device-run-command", input)).toBe("exec")
+    }
+
+    // Um executável por caminho absoluto continua caindo na heurística de
+    // launch preservada: abrir um .exe com args pede aprovação.
+    expect(
+      classifyDeviceToolRisk("device-run-command", {
+        command: "C:\\Program Files\\nodejs\\node.exe",
+        args: ["-v"],
+      }),
+    ).toBe("launch")
+  })
+
   it("promotes dangerous run-command invocations", () => {
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "taskkill" }),
     ).toBe("destructive")
     expect(
       classifyDeviceToolRisk("device-run-command", { command: "whoami" }),
+    ).toBe("exec")
+  })
+
+  it("classifica instalação em job-start e run-snippet como install", () => {
+    expect(
+      classifyDeviceToolRisk("device-job-start", {
+        script: "winget install OpenJS.NodeJS.LTS",
+      }),
+    ).toBe("install")
+    expect(
+      classifyDeviceToolRisk("device-run-snippet", {
+        language: "python",
+        code: "import os\nos.system('pip install requests')",
+      }),
+    ).toBe("install")
+    expect(
+      classifyDeviceToolRisk("device-job-start", { script: "npm run build" }),
     ).toBe("exec")
   })
 
