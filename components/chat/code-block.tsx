@@ -2,7 +2,7 @@
 
 import { Check, Copy } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { codeToHtml } from "shiki"
+import { bundledLanguages, getSingletonHighlighter, type BundledLanguage } from "shiki"
 import { cn } from "cn"
 
 type CodeBlockProps = {
@@ -15,6 +15,18 @@ type CodeBlockProps = {
 }
 
 const highlightCache = new Map<string, string>()
+let highlighterPromise: ReturnType<typeof getSingletonHighlighter> | null = null
+
+async function getHighlighter() {
+  if (!highlighterPromise) {
+    highlighterPromise = getSingletonHighlighter({
+      themes: ["github-dark"],
+      langs: [],
+    })
+  }
+
+  return highlighterPromise
+}
 
 function normalizeLanguage(language?: string): string | undefined {
   if (!language) return undefined
@@ -37,6 +49,35 @@ function normalizeLanguage(language?: string): string | undefined {
   if (value === "golang") return "go"
   if (value === "md" || value === "markdown") return "markdown"
   return value
+}
+
+function resolveHighlightLang(lang: string | undefined): BundledLanguage | "text" {
+  if (!lang || lang === "text") return "text"
+  return Object.prototype.hasOwnProperty.call(bundledLanguages, lang)
+    ? (lang as BundledLanguage)
+    : "text"
+}
+
+async function highlightCode(code: string, lang: string | undefined): Promise<string | null> {
+  const resolved = resolveHighlightLang(lang)
+
+  try {
+    const highlighter = await getHighlighter()
+
+    if (resolved !== "text") {
+      const loaded = highlighter.getLoadedLanguages()
+      if (!loaded.includes(resolved)) {
+        await highlighter.loadLanguage(resolved)
+      }
+    }
+
+    return highlighter.codeToHtml(code, {
+      lang: resolved,
+      theme: "github-dark",
+    })
+  } catch {
+    return null
+  }
 }
 
 export function CodeBlock({
@@ -65,25 +106,15 @@ export function CodeBlock({
 
     let cancelled = false
 
-    async function highlight() {
-      try {
-        const result = await codeToHtml(code, {
-          lang: lang && lang !== "text" ? lang : "text",
-          theme: "github-dark",
-        })
-
+    void (async () => {
+      const result = await highlightCode(code, lang)
+      if (result !== null) {
         highlightCache.set(cacheKey, result)
-        if (!cancelled) {
-          setHighlighted({ key: cacheKey, html: result })
-        }
-      } catch {
-        if (!cancelled) {
-          setHighlighted({ key: cacheKey, html: null })
-        }
       }
-    }
-
-    void highlight()
+      if (!cancelled) {
+        setHighlighted({ key: cacheKey, html: result })
+      }
+    })()
 
     return () => {
       cancelled = true
