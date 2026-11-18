@@ -12,23 +12,6 @@ import {
   DEVICE_CUSTOM_APP_NAME_MAX_LENGTH,
 } from "@/lib/devices/custom-apps"
 import { DEVICE_NAME_MAX_LENGTH } from "@/lib/devices/constants"
-import {
-  DEVICE_JOB_ID_MAX_LENGTH,
-  DEVICE_JOB_LABEL_MAX_LENGTH,
-  DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS,
-  DEVICE_JOB_MAX_RUNTIME_MIN_MS,
-  DEVICE_JOB_MAX_RUNTIME_MS,
-  DEVICE_JOB_OUTPUT_DEFAULT_BYTES,
-  DEVICE_JOB_OUTPUT_MAX_BYTES,
-  DEVICE_JOB_OUTPUT_MIN_BYTES,
-  DEVICE_JOB_WAIT_DEFAULT_MS,
-  DEVICE_JOB_WAIT_MAX_MS,
-  DEVICE_JOB_WAIT_MIN_MS,
-  DEVICE_SHELL_ENV_NAME_MAX_LENGTH,
-  DEVICE_SHELL_ENV_VALUE_MAX_LENGTH,
-  DEVICE_SHELL_KINDS,
-  DEVICE_SHELL_SCRIPT_MAX_LENGTH,
-} from "@/spectral/shared/device-commands"
 
 const hostnameSchema = z
   .string()
@@ -119,7 +102,7 @@ export const renameDeviceSchema = z.object({
   confirmInstall: z
     .boolean()
     .describe(
-      "Campo legado sem efeito: instalações sempre pedem aprovação.",
+      "Permitir instalações de software sem confirmação caso a caso em Poder Total.",
     )
     .optional(),
   customApps: z
@@ -246,64 +229,6 @@ export const removeDeviceAppSchema = z.object({
     .toLowerCase()
     .regex(DEVICE_APP_ID_PATTERN, "Identificador de aplicativo inválido."),
 })
-
-const jobIdSchema = z
-  .string()
-  .trim()
-  .min(1, "Informe o job.")
-  .max(DEVICE_JOB_ID_MAX_LENGTH, "Id do job muito longo.")
-
-const jobWaitMsSchema = z.coerce
-  .number()
-  .int()
-  .min(DEVICE_JOB_WAIT_MIN_MS)
-  .max(DEVICE_JOB_WAIT_MAX_MS)
-  .default(DEVICE_JOB_WAIT_DEFAULT_MS)
-
-export const startDeviceJobSchema = z.object({
-  script: z
-    .string()
-    .trim()
-    .min(1, "Informe o script")
-    .max(DEVICE_SHELL_SCRIPT_MAX_LENGTH, "Script muito longo"),
-  shell: z.enum(DEVICE_SHELL_KINDS).default("auto"),
-  cwd: z
-    .string()
-    .trim()
-    .max(DEVICE_PATH_MAX_LENGTH, "Caminho muito longo")
-    .optional(),
-  env: z
-    .record(
-      z.string().max(DEVICE_SHELL_ENV_NAME_MAX_LENGTH),
-      z.string().max(DEVICE_SHELL_ENV_VALUE_MAX_LENGTH),
-    )
-    .optional(),
-  label: z
-    .string()
-    .trim()
-    .max(DEVICE_JOB_LABEL_MAX_LENGTH, "Rótulo muito longo")
-    .optional(),
-  maxRuntimeMs: z
-    .number()
-    .int()
-    .min(DEVICE_JOB_MAX_RUNTIME_MIN_MS)
-    .max(DEVICE_JOB_MAX_RUNTIME_MS)
-    .default(DEVICE_JOB_MAX_RUNTIME_DEFAULT_MS),
-})
-
-export const deviceJobQuerySchema = z.object({
-  view: z.enum(["status", "output"]).default("status"),
-  cursor: z.coerce.number().int().min(0).default(0),
-  maxBytes: z.coerce
-    .number()
-    .int()
-    .min(DEVICE_JOB_OUTPUT_MIN_BYTES)
-    .max(DEVICE_JOB_OUTPUT_MAX_BYTES)
-    .default(DEVICE_JOB_OUTPUT_DEFAULT_BYTES),
-  waitMs: jobWaitMsSchema,
-})
-
-export const deviceJobIdSchema = jobIdSchema
 
 export type CreatePairingInput = z.infer<typeof createPairingSchema>
 export type ConfirmPairingInput = z.infer<typeof confirmPairingSchema>
