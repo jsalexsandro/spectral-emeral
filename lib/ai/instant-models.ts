@@ -77,19 +77,45 @@ export function getFallbackCandidateModels(
   primary: { provider: ProviderId; modelId: string },
   limit = 3,
 ): Array<{ provider: ProviderId; modelId: string }> {
-  const candidates: Array<{ provider: ProviderId; modelId: string }> = []
+  const candidates = getQuickModels(configuredProviders, preferences)
+    .filter(
+      (model) =>
+        !(model.provider === primary.provider && model.id === primary.modelId),
+    )
+    .map((model) => ({ provider: model.provider, modelId: model.id }))
 
-  for (const model of getQuickModels(configuredProviders, preferences)) {
-    if (model.provider === primary.provider && model.id === primary.modelId) {
-      continue
-    }
+  // Intercala provedores para que a primeira alternativa venha de outro
+  // provedor. O provedor que falhou fica por último, mas continua elegível com
+  // outros modelos. A ordem do catálogo é preservada dentro de cada provedor.
+  const groups = new Map<
+    ProviderId,
+    Array<{ provider: ProviderId; modelId: string }>
+  >()
 
-    candidates.push({ provider: model.provider, modelId: model.id })
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.provider) ?? []
+    group.push(candidate)
+    groups.set(candidate.provider, group)
+  }
 
-    if (candidates.length >= limit) {
-      break
+  const providers = [...groups.keys()].sort((left, right) => {
+    const leftFailed = left === primary.provider ? 1 : 0
+    const rightFailed = right === primary.provider ? 1 : 0
+
+    return leftFailed - rightFailed
+  })
+  const rounds = Math.max(0, ...[...groups.values()].map((group) => group.length))
+  const ordered: Array<{ provider: ProviderId; modelId: string }> = []
+
+  for (let round = 0; round < rounds; round++) {
+    for (const provider of providers) {
+      const candidate = groups.get(provider)?.[round]
+
+      if (candidate) {
+        ordered.push(candidate)
+      }
     }
   }
 
-  return candidates
+  return ordered.slice(0, limit)
 }

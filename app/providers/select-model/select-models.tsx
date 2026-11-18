@@ -11,6 +11,7 @@ import {
   type InstantModelPreference,
 } from "@/lib/ai/instant-models"
 import {
+  aiModels,
   formatPricePerMillion,
   formatTokenCount,
   getModelKey,
@@ -28,12 +29,14 @@ type SelectModelsProps = {
   groups: readonly ModelGroup[]
   preferences: readonly InstantModelPreference[]
   allowModelFallbackOnFailure: boolean
+  activeModelKey: string | null
 }
 
 export function SelectModels({
   groups,
   preferences: initialPreferences,
   allowModelFallbackOnFailure: initialAllowFallback,
+  activeModelKey,
 }: SelectModelsProps) {
   const [preferences, setPreferences] = useState(initialPreferences)
   const [pendingKeys, setPendingKeys] = useState<readonly string[]>([])
@@ -41,6 +44,14 @@ export function SelectModels({
   const [query, setQuery] = useState("")
   const [allowFallback, setAllowFallback] = useState(initialAllowFallback)
   const [savingFallback, setSavingFallback] = useState(false)
+
+  const activeModel = useMemo(
+    () =>
+      activeModelKey
+        ? aiModels.find((model) => getModelKey(model) === activeModelKey)
+        : undefined,
+    [activeModelKey],
+  )
 
   const filteredGroups = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -165,6 +176,14 @@ export function SelectModels({
             Ative os modelos que devem aparecer na seleção rápida do chat.
             Modelos desativados continuam disponíveis no catálogo.
           </p>
+          {activeModel && (
+            <p className="text-xs text-muted-foreground">
+              Modelo em uso no chat:{" "}
+              <span className="font-medium text-foreground">
+                {activeModel.name}
+              </span>
+            </p>
+          )}
         </div>
         <div className="relative">
           <Search
@@ -257,6 +276,7 @@ export function SelectModels({
                 const key = getModelKey(model)
                 const enabled = isInstantModelEnabled(model, preferences)
                 const isPending = pendingKeys.includes(key)
+                const isActive = activeModelKey === key
 
                 return (
                   <div key={key} className="flex items-start gap-4 p-4">
@@ -266,6 +286,11 @@ export function SelectModels({
                         <span className="font-mono text-xs text-muted-foreground">
                           {provider.id}/{model.id}
                         </span>
+                        {isActive && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            Em uso
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {model.description}

@@ -9,6 +9,7 @@ import { ChatActionProvider } from "@/app/app/chat-action-provider"
 import { useChatSession } from "@/app/app/chat-provider"
 import { AppActionHandler, RenderHtmlPart } from "@/components/ai-ui"
 import { useTheme } from "@/components/theme-provider"
+import type { ChatUIMessage } from "@/lib/ai/chat-message"
 import { getResolvedTheme } from "@/lib/theme"
 import {
   RUN_ACTION_TOOL_NAME,
@@ -163,15 +164,45 @@ function ChatSession({
     error,
     stop,
     addToolApprovalResponse,
-  } = useChat<UIMessage>({
+  } = useChat<ChatUIMessage>({
     chat,
   })
 
   const draftRefreshedRef = useRef(false)
+  const appliedMetadataMessageIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     rememberChatModel(chatId, model)
   }, [chatId, model])
+
+  useEffect(() => {
+    const responseMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "assistant")
+
+    if (!responseMessage?.metadata) {
+      return
+    }
+
+    const { provider, modelId } = responseMessage.metadata
+
+    if (typeof provider !== "string" || typeof modelId !== "string") {
+      return
+    }
+
+    if (appliedMetadataMessageIdRef.current === responseMessage.id) {
+      return
+    }
+
+    const effectiveModel = `${provider}:${modelId}`
+
+    if (!aiModels.some((item) => getModelKey(item) === effectiveModel)) {
+      return
+    }
+
+    appliedMetadataMessageIdRef.current = responseMessage.id
+    queueMicrotask(() => setModel(effectiveModel))
+  }, [messages])
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -460,8 +491,8 @@ function ChatSession({
           </p>
           {error && (
             <p className="mt-2 text-center text-xs text-destructive">
-              Não foi possível concluir a resposta. Verifique o modelo e a
-              chave do provedor.
+              Não foi possível concluir a resposta com os modelos disponíveis.
+              Verifique as chaves e tente novamente.
             </p>
           )}
         </form>

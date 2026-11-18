@@ -5,11 +5,12 @@ import {
   type ChatOnFinishCallback,
   type UIMessage,
 } from "ai"
+import { chatMessageMetadataSchema, type ChatUIMessage } from "@/lib/ai/chat-message"
 
 export type ChatFinishEvent = Parameters<ChatOnFinishCallback<UIMessage>>[0]
 
 type ChatRuntime = {
-  chat: Chat<UIMessage>
+  chat: Chat<ChatUIMessage>
   model: string | null
 }
 
@@ -34,7 +35,7 @@ export function getOrCreateChat(
   chatId: string,
   messages: UIMessage[],
   model: string | null,
-): Chat<UIMessage> {
+): Chat<ChatUIMessage> {
   if (isBrowser) {
     const existing = runtimes.get(chatId)
 
@@ -43,10 +44,11 @@ export function getOrCreateChat(
     }
   }
 
-  const chat = new Chat<UIMessage>({
+  const chat = new Chat<ChatUIMessage>({
     id: chatId,
-    messages,
-    transport: new DefaultChatTransport<UIMessage>({ api: "/api/chat" }),
+    messages: messages as ChatUIMessage[],
+    messageMetadataSchema: chatMessageMetadataSchema,
+    transport: new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }),
     // Sem isso, responder a um pedido de aprovação não reenvia as mensagens
     // e o agente fica parado esperando para sempre.
     sendAutomaticallyWhen:

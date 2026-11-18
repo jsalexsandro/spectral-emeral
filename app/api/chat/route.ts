@@ -11,6 +11,10 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { aiKeys, instantModels, users } from "@/db/schema"
 import { createSpectralAgent } from "@/lib/ai/agents/spectral-agent"
+import {
+  type ChatMessageMetadata,
+  type ChatUIMessage,
+} from "@/lib/ai/chat-message"
 import { resolveChatModel } from "@/lib/ai/chat-model"
 import {
   ensureOwnedChat,
@@ -18,6 +22,7 @@ import {
   getMessageText,
   saveChatMessage,
   touchChat,
+  updateChatModel,
 } from "@/lib/ai/chat-service"
 import { getFallbackCandidateModels } from "@/lib/ai/instant-models"
 import { getModel, parseModelKey } from "@/lib/ai/models"
@@ -35,6 +40,8 @@ const modelErrorStatus = {
 
 const AGENT_TIMEOUT_MS = 240_000
 const MAX_FALLBACK_ATTEMPTS = 3
+
+type StreamOutcomeStatus = "completed" | "failed" | "aborted" | "unknown"
 
 function isContentChunk(chunk: UIMessageChunk): boolean {
   const type = (chunk as { type?: string }).type
@@ -113,8 +120,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "unknown_model" }, { status: 400 })
   }
 
-  const validation = await safeValidateUIMessages({
-    messages: parsed.data.messages as UIMessage[],
+  const validation = await safeValidateUIMessages<ChatUIMessage>({
+    messages: parsed.data.messages as ChatUIMessage[],
   })
 
   if (!validation.success) {
@@ -137,6 +144,7 @@ export async function POST(request: Request) {
   }
 
   const { chatId } = parsed.data
+  const primaryKey = `${modelKey.provider}:${modelKey.modelId}`
 
   try {
     const [userRow, keyRows, preferenceRows] = await Promise.all([
@@ -226,6 +234,7 @@ export async function POST(request: Request) {
     for (let index = 0; index < attempts.length; index++) {
       const attempt = attempts[index]
       const isLast = index === attempts.length - 1
+      const attemptKey = `${attempt.provider}:${attempt.modelId}`
       const resolved = await resolveChatModel(
         session.user.id,
         attempt.provider,
@@ -244,7 +253,7 @@ export async function POST(request: Request) {
             JSON.stringify({
               event: "agent_model_fallback_skip",
               chatId,
-              from: `${attempt.provider}/${attempt.modelId}`,
+              from: attemptKey,
               reason: resolved.error,
             }),
           )
@@ -291,8 +300,68 @@ export async function POST(request: Request) {
       let inputTokens = 0
       let outputTokens = 0
       let stepCount = 0
-      let errorSeen = false
-      let committed = false
+      let streamThrew = false
+      let streamOutcome: StreamOutcomeStatus | null = null
+      let endedResponseMessage: UIMessage | null = null
+      let endedIsAborted = false
+      let endedFinishReason: string | undefined
+      let persisted = false
+
+      const persist = async () => {
+        if (persisted || !endedResponseMessage) {
+          return
+        }
+
+        persisted = true
+
+        const responseText = getMessageText(endedResponseMessage)
+
+        console.info(
+          JSON.stringify({
+            event: "agent_end",
+            chatId,
+            steps: stepCount,
+            aborted: endedIsAborted,
+            finishReason: endedFinishReason ?? null,
+            outcome: streamOutcome,
+            promptVersion: systemPrompt.version,
+            inputTokens,
+            outputTokens,
+            textLength: responseText.length,
+            emptyResponse: responseText.length === 0,
+            provider: attempt.provider,
+            modelId: attempt.modelId,
+            fallbackFrom: index > 0 ? primaryKey : null,
+          }),
+        )
+
+        try {
+          if (!responseText && endedResponseMessage.parts.length === 0) {
+            return
+          }
+
+          await saveChatMessage({
+            id: endedResponseMessage.id,
+            chatId,
+            role: endedResponseMessage.role,
+            content: responseText,
+            parts: endedResponseMessage.parts,
+            provider: attempt.provider,
+            modelId: attempt.modelId,
+            promptVersion: systemPrompt.version,
+            inputTokens: inputTokens || null,
+            outputTokens: outputTokens || null,
+          })
+          await updateChatModel({
+            chatId,
+            provider: attempt.provider,
+            modelId: attempt.modelId,
+          })
+          await touchChat(chatId)
+        } catch (error) {
+          console.error("Falha ao salvar resposta do assistente:", error)
+        }
+      }
 
       const stream = await createAgentUIStream({
         agent,
@@ -301,8 +370,12 @@ export async function POST(request: Request) {
         generateMessageId: () => createId(),
         abortSignal: request.signal,
         timeout: { totalMs: AGENT_TIMEOUT_MS },
+        messageMetadata: (): ChatMessageMetadata => ({
+          provider: attempt.provider,
+          modelId: attempt.modelId,
+          fallbackFrom: index > 0 ? primaryKey : null,
+        }),
         onError: (error) => {
-          errorSeen = true
           console.error(
             JSON.stringify({
               event: "agent_error",
@@ -335,65 +408,112 @@ export async function POST(request: Request) {
             }),
           )
         },
-        onEnd: async ({ responseMessage, isAborted, outcome }) => {
-          try {
-            if (!committed) {
-              return
-            }
+        onEnd: (event) => {
+          endedResponseMessage = event.responseMessage
+          endedIsAborted = event.isAborted
+          endedFinishReason = event.finishReason
+          streamOutcome = event.outcome.status
 
-            const responseText = getMessageText(responseMessage)
-
-            console.info(
-              JSON.stringify({
-                event: "agent_end",
-                chatId,
-                steps: stepCount,
-                aborted: isAborted,
-                outcome: outcome.status,
-                promptVersion: systemPrompt.version,
-                inputTokens,
-                outputTokens,
-                textLength: responseText.length,
-                emptyResponse: responseText.length === 0,
-                provider: attempt.provider,
-                modelId: attempt.modelId,
-              }),
-            )
-
-            if (!responseText && responseMessage.parts.length === 0) {
-              return
-            }
-
-            await saveChatMessage({
-              id: responseMessage.id,
-              chatId,
-              role: responseMessage.role,
-              content: responseText,
-              parts: responseMessage.parts,
-              provider: attempt.provider,
-              modelId: attempt.modelId,
-              promptVersion: systemPrompt.version,
-              inputTokens: inputTokens || null,
-              outputTokens: outputTokens || null,
-            })
-            await touchChat(chatId)
-          } catch (error) {
-            console.error("Falha ao salvar resposta do assistente:", error)
+          if (
+            !allowFallback &&
+            !request.signal.aborted &&
+            event.outcome.status === "completed"
+          ) {
+            void persist()
           }
         },
       })
 
+      if (allowFallback) {
+        const buffered: UIMessageChunk[] = []
+
+        try {
+          for await (const chunk of stream) {
+            buffered.push(chunk)
+          }
+        } catch (error) {
+          streamThrew = true
+          console.error(
+            JSON.stringify({
+              event: "agent_stream_error",
+              chatId,
+              provider: attempt.provider,
+              modelId: attempt.modelId,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          )
+        }
+
+        const hasContent = buffered.some(isContentChunk)
+        const outcomeStatus =
+          (streamOutcome as StreamOutcomeStatus | null) ?? "unknown"
+        const succeeded =
+          !request.signal.aborted &&
+          !streamThrew &&
+          outcomeStatus === "completed" &&
+          hasContent
+
+        if (!succeeded && !isLast && !request.signal.aborted) {
+          console.info(
+            JSON.stringify({
+              event: "agent_model_fallback",
+              chatId,
+              from: attemptKey,
+              to: `${attempts[index + 1].provider}/${attempts[index + 1].modelId}`,
+              reason: streamThrew
+                ? "stream_error"
+                : hasContent
+                  ? outcomeStatus
+                  : "no_content",
+            }),
+          )
+          continue
+        }
+
+        if (!succeeded) {
+          console.error(
+            JSON.stringify({
+              event: "agent_model_failed",
+              chatId,
+              provider: attempt.provider,
+              modelId: attempt.modelId,
+              outcome: outcomeStatus,
+              streamThrew,
+            }),
+          )
+          return Response.json(
+            {
+              error: "all_models_failed",
+              detail:
+                outcomeStatus === "failed"
+                  ? "A stream do modelo falhou."
+                  : "O modelo não produziu conteúdo útil.",
+            },
+            { status: 502 },
+          )
+        }
+
+        await persist()
+
+        async function* bufferedChunks() {
+          for (const chunk of buffered) {
+            yield chunk
+          }
+        }
+
+        return await toResponseStream(bufferedChunks())
+      }
+
       const iterator = stream[Symbol.asyncIterator]()
       const buffer: UIMessageChunk[] = []
       let hasContent = false
-      let earlyDone = false
 
       while (true) {
         let next: IteratorResult<UIMessageChunk>
         try {
           next = await iterator.next()
         } catch (error) {
-          errorSeen = true
+          streamThrew = true
           console.error(
             JSON.stringify({
               event: "agent_stream_error",
@@ -407,7 +527,6 @@ export async function POST(request: Request) {
         }
 
         if (next.done) {
-          earlyDone = true
           break
         }
 
@@ -415,33 +534,16 @@ export async function POST(request: Request) {
         buffer.push(chunk)
         if (isContentChunk(chunk)) {
           hasContent = true
-          committed = true
           break
         }
       }
-
-      const canRetry = allowFallback && !isLast && !hasContent
-      if (canRetry && (errorSeen || earlyDone)) {
-        console.info(
-          JSON.stringify({
-            event: "agent_model_fallback",
-            chatId,
-            from: `${attempt.provider}/${attempt.modelId}`,
-            to: `${attempts[index + 1].provider}/${attempts[index + 1].modelId}`,
-            reason: errorSeen ? "stream_error" : "no_content",
-          }),
-        )
-        continue
-      }
-
-      committed = true
 
       async function* forward() {
         for (const chunk of buffer) {
           yield chunk
         }
         if (!hasContent) {
-          // Consumir o restante normalmente (pode ter terminado sem conteúdo útil).
+          // Consome o restante normalmente (pode ter terminado sem conteúdo útil).
           while (true) {
             const next = await iterator.next()
             if (next.done) return

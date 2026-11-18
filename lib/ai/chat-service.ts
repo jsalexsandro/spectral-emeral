@@ -116,6 +116,21 @@ export async function saveChatMessage({
     .onConflictDoNothing({ target: chatMessages.id })
 }
 
+export async function updateChatModel({
+  chatId,
+  provider,
+  modelId,
+}: {
+  chatId: string
+  provider: ProviderId
+  modelId: string
+}): Promise<void> {
+  await db
+    .update(chats)
+    .set({ provider, model: modelId })
+    .where(eq(chats.id, chatId))
+}
+
 export async function touchChat(chatId: string): Promise<void> {
   await db
     .update(chats)
