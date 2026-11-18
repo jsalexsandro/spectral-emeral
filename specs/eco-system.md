@@ -445,7 +445,7 @@ Proximos passo:
   Baixar files, Markdown
   Fazer LandingPage, fazer o oAuth, sistema de envio de email, e de conta verificada.
   
-    
+  
     
 
 ### Passo 13 — Notificações de chat
@@ -501,10 +501,24 @@ rodando em segundo plano e, ao voltar, a mensagem já está lá (inclusive parci
 
 
 ### Passo 14 — Continuidade e adição de Ferramentas complexas para o Driver de controle, deixar a ferramenta mais funcional.
-
    veja em @eco-device.md
   
- 
+
+### Passo 15 — Syntax highlighting para visualização de código
+
+- [x] Componente `components/chat/code-block.tsx` com destaque assíncrono via shiki (tema `github-dark`), cache, botão de copiar e fallback em texto simples
+- [x] Renderização de blocos cercados em markdown (`components/chat/markdown-message.tsx`) usando `CodeBlock`, com extração de linguagem e conteúdo
+- [x] Exibição da saída de `device-run-snippet` nos cartões de ferramenta (`components/chat/tool-part-card.tsx`), incluindo linguagem, comando, `exitCode`, duração, `stdout`, `stderr` e indicação de truncamento
+- [x] Dependência `shiki` adicionada ao projeto
+
+### Passo 16 — Alternância de modelos rápidos em caso de falha
+
+- [x] Preferência por usuário `allowModelFallbackOnFailure` (default `false`) em `db/schema/auth.ts`, com migration `db/migrations/0011_add_model_fallback_preference.sql`
+- [x] Validação e persistência via `lib/validations/user.ts` e `PATCH /api/user` (`app/api/user/route.ts`)
+- [x] Switch com auto-save em `/providers/select-model`: "Permitir alternação entre modelos em caso de falha?" (`app/providers/select-model/page.tsx`, `select-models.tsx`)
+- [x] Seleção de candidatos rápidos elegíveis em ordem determinística (`getFallbackCandidateModels` em `lib/ai/instant-models.ts`), excluindo o modelo primário e respeitando modelos ativados com chave configurada
+- [x] Fallback MVP pré-conteúdo em `app/api/chat/route.ts` (stream bufferizada): tenta próximos candidatos em falha/encerramento precoce antes de emitir conteúdo; `model_disabled`/`missing_api_key` podem ser pulados com fallback ligado; `unknown_model` não é retentado
+- [x] Mensagem do usuário salva uma vez e resposta do assistente registrada apenas na tentativa concluída, com provider/modelo efetivo
 
 ### Passo 40 (futuro): configurações personalizadas de prompt
 
