@@ -27,8 +27,12 @@ function getCodeChild(children: ReactNode): {
   const nodes = Children.toArray(children)
   if (nodes.length !== 1) return null
   const node = nodes[0]
-  if (!isValidElement(node) || node.type !== "code") return null
+  if (!isValidElement(node)) return null
+
   const props = node.props as { className?: string; children?: ReactNode }
+
+  // Filhos únicos de <pre> em markdown representam blocos de código
+  // (inclusive quando react-markdown usa o componente customizado de `code`).
   return {
     className: props.className,
     code: extractText(props.children).replace(/\n$/, ""),
